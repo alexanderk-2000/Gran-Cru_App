@@ -1,0 +1,11 @@
+-- Add columns for professional wine profile
+ALTER TABLE public.wines
+ADD COLUMN IF NOT EXISTS vineyard TEXT,
+ADD COLUMN IF NOT EXISTS subregion TEXT,
+ADD COLUMN IF NOT EXISTS wine_type TEXT,
+ADD COLUMN IF NOT EXISTS format TEXT,
+ADD COLUMN IF NOT EXISTS closure_type TEXT,
+ADD COLUMN IF NOT EXISTS fermentation TEXT,
+ADD COLUMN IF NOT EXISTS aging_process TEXT,
+ADD COLUMN IF NOT EXISTS farming TEXT,
+ADD COLUMN IF NOT EXISTS confidence TEXT;

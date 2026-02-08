@@ -1,0 +1,48 @@
+{
+  "name": "grand-cru-vault",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "cd server && npm run dev",
+    "start": "concurrently \"npm run dev\" \"npm run server\" \"npm run db:watch\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'Lint check passed (no linter configured yet)'",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
+    "db:push": "supabase db push",
+    "db:push:remote": "./scripts/supabase-migrate-remote.sh",
+    "db:reset": "supabase db reset",
+    "db:diff": "supabase db diff",
+    "db:seed": "supabase db seed",
+    "db:watch": "node scripts/watch_migrations.js",
+    "baseline:data": "node scripts/baseline-data-quality.mjs",
+    "baseline:ai-mapping": "node scripts/baseline-ai-mapping.mjs",
+    "baseline:sources-ratings": "node scripts/baseline-sources-ratings.mjs",
+    "baseline:all": "npm run baseline:data && npm run baseline:ai-mapping && npm run baseline:sources-ratings",
+    "baseline:ui": "playwright test tests/ui-baseline.spec.ts",
+    "test:ui": "playwright test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.46.1",
+    "lucide-react": "0.454.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.26.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.11",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "supabase": "^1.200.3",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

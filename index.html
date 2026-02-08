@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grand Cru Vault</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%236D071A'/%3E%3Ctext x='16' y='21' font-size='12' text-anchor='middle' fill='white' font-family='Arial'%3EGC%3C/text%3E%3C/svg%3E" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              burgundy: {
+                DEFAULT: '#6D071A',
+                dark: '#4A0404',
+                light: '#8E1B31',
+                mist: 'rgba(109, 7, 26, 0.1)'
+              },
+              alabaster: {
+                DEFAULT: '#F9F7F2',
+                dark: '#F0EBE0'
+              },
+              charcoal: {
+                DEFAULT: '#282325',
+                soft: '#454042'
+              },
+              stone: {
+                gray: '#888585'
+              },
+              gold: {
+                DEFAULT: '#C5A065',
+                bright: '#D4AF37',
+                dim: '#996515'
+              },
+              sage: {
+                DEFAULT: '#758E78',
+                light: '#E8EFE9'
+              }
+            },
+            fontFamily: {
+              serif: ['"Playfair Display"', 'serif'],
+              sans: ['Inter', 'sans-serif'],
+            },
+            boxShadow: {
+              'premium': '0 10px 30px -10px rgba(40, 35, 37, 0.08)',
+              'gold-glow': '0 0 15px rgba(197, 160, 101, 0.3)',
+              'burgundy-glow': '0 0 20px rgba(109, 7, 26, 0.15)'
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #F9F7F2;
+        color: #282325;
+        overflow-x: hidden;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #F9F7F2;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #6D071A;
+        border-radius: 10px;
+      }
+      .custom-blur {
+        backdrop-filter: blur(8px);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.26.2?external=react,react-dom",
+    "lucide-react": "https://esm.sh/lucide-react@0.454.0?external=react",
+    "@google/genai": "https://esm.sh/@google/genai",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.46.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
