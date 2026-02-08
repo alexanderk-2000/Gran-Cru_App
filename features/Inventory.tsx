@@ -3,11 +3,9 @@ import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom';
 import { Wine, Category, WineStatus } from '../types.ts';
 import { WineCard } from '../components/WineCard.tsx';
-import { Search, Plus, X, Loader2, Wand2, Globe, ExternalLink, Upload } from 'lucide-react';
-import { extractVintageFromQuery, getWineFamily, getWineStatus, handleAiOperationError } from '../utils.ts';
-import { aiService } from '../services/ai.ts';
+import { Search, Plus, X, Loader2, Wand2, Upload, Copy, Check } from 'lucide-react';
+import { getWineFamily, getWineStatus } from '../utils.ts';
 import { storageService } from '../services/storage.ts';
-import { Badge } from '../components/Badge.tsx';
 
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
@@ -32,14 +30,13 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [statusFilter, setStatusFilter] = useState<WineStatus | 'All'>('All');
   const [subcellarFilter, setSubcellarFilter] = useState<string>('All');
 
-  // AI States
+  // Add wine modal states
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiInput, setAiInput] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [generatedPrompt, setGeneratedPrompt] = useState('');
+  const [promptCopied, setPromptCopied] = useState(false);
   const [isJsonImporting, setIsJsonImporting] = useState(false);
   const [jsonCodeInput, setJsonCodeInput] = useState('');
-  const [aiPreview, setAiPreview] = useState<Partial<Wine> | null>(null);
-  const [sources, setSources] = useState<{ title: string, uri: string }[]>([]);
   const [targetSubcellar, setTargetSubcellar] = useState('');
   const [storedPocketNames, setStoredPocketNames] = useState<string[]>([]);
   const [isPocketModalOpen, setIsPocketModalOpen] = useState(false);
@@ -274,31 +271,37 @@ export const Inventory: React.FC<InventoryProps> = ({
     return flattened;
   };
 
-  const parseImportedScores = (primary: unknown, detailCritics: unknown) => {
-    const fromPrimary = Array.isArray(primary)
-      ? primary
-          .map((entry: any) => {
-            const rawScore = entry?.score ?? entry?.value;
-            const numericScore = toOptionalNumber(rawScore);
-            const stringScore = toText(rawScore);
-            return {
-              critic: toText(entry?.critic || entry?.source),
-              score: numericScore ?? (stringScore || undefined),
-              year: toOptionalNumber(entry?.year ?? entry?.vintage)
-            };
-          })
-          .filter((entry: any) => entry.critic && entry.score !== undefined)
-      : [];
+  const parseImportedScores = (primary: unknown, detailCritics: unknown): Wine['scores'] => {
+    const fromPrimary: NonNullable<Wine['scores']> = [];
+    if (Array.isArray(primary)) {
+      for (const entry of primary) {
+        const critic = toText((entry as any)?.critic || (entry as any)?.source);
+        const rawScore = (entry as any)?.score ?? (entry as any)?.value;
+        const numericScore = toOptionalNumber(rawScore);
+        const stringScore = toText(rawScore);
+        const score = numericScore ?? (stringScore || null);
+        if (!critic || score === null) continue;
+        fromPrimary.push({
+          critic,
+          score,
+          year: toOptionalNumber((entry as any)?.year ?? (entry as any)?.vintage)
+        });
+      }
+    }
 
-    const fromDetails = Array.isArray(detailCritics)
-      ? detailCritics
-          .map((entry: any) => ({
-            critic: toText(entry?.source || entry?.critic),
-            score: toOptionalNumber(entry?.value ?? entry?.score),
-            year: toOptionalNumber(entry?.vintage ?? entry?.year)
-          }))
-          .filter((entry: any) => entry.critic && entry.score !== undefined)
-      : [];
+    const fromDetails: NonNullable<Wine['scores']> = [];
+    if (Array.isArray(detailCritics)) {
+      for (const entry of detailCritics) {
+        const critic = toText((entry as any)?.source || (entry as any)?.critic);
+        const score = toOptionalNumber((entry as any)?.value ?? (entry as any)?.score);
+        if (!critic || score === undefined) continue;
+        fromDetails.push({
+          critic,
+          score,
+          year: toOptionalNumber((entry as any)?.vintage ?? (entry as any)?.year)
+        });
+      }
+    }
 
     return [...fromPrimary, ...fromDetails].filter((entry, idx, arr) => {
       const key = `${entry.critic.toLowerCase()}::${entry.year || 'na'}`;
@@ -418,10 +421,97 @@ export const Inventory: React.FC<InventoryProps> = ({
     jsonFileInputRef.current?.click();
   };
 
+  const extractFirstJsonFragment = (input: string): string | null => {
+    const startIndex = input.search(/[\{\[]/);
+    if (startIndex === -1) return null;
+
+    const opener = input[startIndex];
+    const closer = opener === '{' ? '}' : ']';
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = startIndex; i < input.length; i += 1) {
+      const ch = input[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === opener) {
+        depth += 1;
+      } else if (ch === closer) {
+        depth -= 1;
+        if (depth === 0) {
+          return input.slice(startIndex, i + 1);
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const parseJsonInput = (raw: string): unknown => {
+    const normalized = raw
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .replace(/```json/gi, '```')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'");
+
+    const attempts: string[] = [];
+    attempts.push(normalized);
+
+    // Falls Chat-Antwort in Markdown-Codeblöcken geliefert wurde.
+    const fencedMatch = normalized.match(/```([\s\S]*?)```/);
+    if (fencedMatch?.[1]) {
+      attempts.push(fencedMatch[1].trim());
+    }
+
+    // Falls zusätzlich erklärender Text vor/nach JSON enthalten ist.
+    const extracted = extractFirstJsonFragment(normalized);
+    if (extracted) {
+      attempts.push(extracted.trim());
+    }
+
+    let lastError: unknown = null;
+    const seen = new Set<string>();
+    for (const attempt of attempts) {
+      const candidate = attempt.trim();
+      if (!candidate || seen.has(candidate)) continue;
+      seen.add(candidate);
+      try {
+        return JSON.parse(candidate);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Ungültiges JSON. Bitte nur JSON ohne zusätzlichen Text einfügen.');
+  };
+
   const importWinesFromJsonText = async (jsonText: string) => {
     setIsJsonImporting(true);
     try {
-      const parsed = JSON.parse(jsonText);
+      const parsed = parseJsonInput(jsonText);
       const candidates = getImportCandidates(parsed);
       if (candidates.length === 0) {
         throw new Error('Keine importierbaren Weindaten gefunden.');
@@ -460,9 +550,10 @@ export const Inventory: React.FC<InventoryProps> = ({
 
       await onWineUpdate();
       setIsAiModalOpen(false);
-      setAiPreview(null);
       setAiInput('');
       setJsonCodeInput('');
+      setGeneratedPrompt('');
+      setPromptCopied(false);
 
       if (failed > 0 || catalogFailed > 0) {
         const parts = [`${saved} Wein(e) importiert`];
@@ -474,7 +565,7 @@ export const Inventory: React.FC<InventoryProps> = ({
       }
     } catch (error: any) {
       console.error('JSON import failed:', error);
-      alert(`JSON-Import fehlgeschlagen: ${error?.message || 'Ungültige Datei.'}`);
+      alert(`JSON-Import fehlgeschlagen: ${error?.message || 'Ungültige Datei.'}\n\nTipp: Nur JSON einfügen oder den generierten Prompt nutzen und die Antwort 1:1 kopieren.`);
     } finally {
       setIsJsonImporting(false);
     }
@@ -543,148 +634,67 @@ export const Inventory: React.FC<InventoryProps> = ({
       }));
   }, [filteredWines]);
 
-  const handleAiSearch = async () => {
-    if (!aiInput.trim()) return;
-    setIsAiLoading(true);
-    setAiPreview(null);
-    setSources([]);
+  const buildPromptForWine = (wineQuery: string): string => {
+    const target = wineQuery.trim();
+    return `Du bist ein Wein-Daten-Assistent. Erzeuge nur valides JSON ohne Markdown und ohne Zusatztext.
 
+Suche nach diesem Wein:
+"${target}"
+
+Liefere exakt dieses Schema:
+{
+  "name": string,
+  "producer": string|null,
+  "vintage": number|null,
+  "country": string|null,
+  "region": string|null,
+  "appellation": string|null,
+  "vineyard": string|null,
+  "wine_type": string|null,
+  "format": string|null,
+  "quantity": number,
+  "purchase_price": number,
+  "market_price": number|null,
+  "drink_start": number|null,
+  "peak_year": number|null,
+  "drink_end": number|null,
+  "alcohol_percent": number|null,
+  "closure_type": string|null,
+  "grapes": [{"name": string, "percentage": number|null}],
+  "aromas": [{"tag": string, "intensity": number|null}],
+  "structure": {"acidity": number|null, "tannin": number|null, "body": number|null, "sweetness": number|null, "oak": number|null},
+  "pairings": [{"item": string, "category": string|null, "note": string|null}],
+  "scores": [{"critic": string, "score": number|string, "year": number|null}],
+  "short_description_de": string|null,
+  "sources": [{"title": string, "url": string}],
+  "confidence": "high"|"medium"|"low",
+  "missing_fields": string[]
+}
+
+Regeln:
+- Keine Felder außerhalb des Schemas.
+- Fehlende Werte als null setzen.
+- "quantity" standardmäßig 1.
+- Zahlen als JSON-Zahl ausgeben (nicht als String).
+- Antwortsprache für Texte: Deutsch.
+`;
+  };
+
+  const handleGeneratePrompt = () => {
+    const query = aiInput.trim();
+    if (!query) return;
+    setGeneratedPrompt(buildPromptForWine(query));
+    setPromptCopied(false);
+  };
+
+  const handleCopyPrompt = async () => {
+    if (!generatedPrompt) return;
     try {
-      const currentYear = new Date().getFullYear();
-      const parsedVintage = extractVintageFromQuery(aiInput);
-      const result = await aiService.generateWineInfo(aiInput, '', parsedVintage ?? 0);
-
-      if (!result.success) {
-        throw new Error(result.error || 'KI-Anfrage fehlgeschlagen');
-      }
-
-      const data = result.data;
-      const details = (data.details && typeof data.details === 'object') ? data.details : {};
-      const detailsIdentification = (details.identification && typeof details.identification === 'object') ? details.identification : {};
-      const detailsVinification = (details.vinification && typeof details.vinification === 'object') ? details.vinification : {};
-      const detailsRatings = (details.ratings && typeof details.ratings === 'object') ? details.ratings : {};
-
-      const normalizedVintage = toNumberOr(data.vintage, parsedVintage ?? currentYear);
-      const normalizedDrinkStart = toNumberOr(data.drink_start, currentYear);
-      const normalizedDrinkEnd = toNumberOr(data.drink_end, normalizedDrinkStart + 10);
-      const normalizedMarketPrice = toNumberOr(data.market_price, 0);
-      const shortDescription = toText(data.short_description_de);
-      const normalizedWineType = normalizeWineType(data.wine_type) || normalizeWineType((detailsIdentification as any).wine_type);
-      const normalizedFormat = normalizeFormat(data.format) || normalizeFormat((detailsIdentification as any).bottle_size) || '0.75L';
-      const normalizedCategory = normalizeCategory(data.category, wishlistOnly ? 'Rarität' : 'Genuss');
-      const normalizedSources = Array.isArray(data.sources)
-        ? data.sources
-            .map((entry: any) => ({
-              title: toText(entry?.title) || 'Quelle',
-              url: toText(entry?.url)
-            }))
-            .filter((entry: any) => entry.url)
-        : [];
-
-      const normalizedGrapes = Array.isArray(data.grapes)
-        ? data.grapes
-            .map((entry: any) => ({
-              name: toText(entry?.name),
-              percentage: toOptionalNumber(entry?.percentage)
-            }))
-            .filter((entry: any) => entry.name)
-        : [];
-
-      const normalizedAromas = Array.isArray(data.aromas)
-        ? data.aromas
-            .map((entry: any) => ({
-              tag: toText(entry?.tag),
-              intensity: toOptionalNumber(entry?.intensity)
-            }))
-            .filter((entry: any) => entry.tag)
-        : [];
-
-      const structureRaw = data.structure && typeof data.structure === 'object' ? data.structure : {};
-      const normalizedStructure = {
-        acidity: toOptionalNumber((structureRaw as any).acidity),
-        tannin: toOptionalNumber((structureRaw as any).tannin),
-        body: toOptionalNumber((structureRaw as any).body),
-        sweetness: toOptionalNumber((structureRaw as any).sweetness),
-        oak: toOptionalNumber((structureRaw as any).oak)
-      };
-
-      const normalizedPairings = Array.isArray(data.pairings)
-        ? data.pairings
-            .map((entry: any) => ({
-              item: toText(entry?.item),
-              category: toText(entry?.category) || undefined,
-              note: toText(entry?.note) || undefined
-            }))
-            .filter((entry: any) => entry.item)
-        : [];
-
-      const normalizedScores = Array.isArray(data.scores)
-        ? data.scores
-            .map((entry: any) => ({
-              critic: toText(entry?.critic || entry?.source),
-              score: toOptionalNumber(entry?.score ?? entry?.value) ?? 0,
-              year: toOptionalNumber(entry?.year ?? entry?.vintage)
-            }))
-            .filter((entry: any) => entry.critic && entry.score > 0)
-        : [];
-      const normalizedDetailCriticScores = Array.isArray((detailsRatings as any).critics)
-        ? (detailsRatings as any).critics
-            .map((entry: any) => ({
-              critic: toText(entry?.source || entry?.critic),
-              score: toOptionalNumber(entry?.value ?? entry?.score) ?? 0,
-              year: toOptionalNumber(entry?.vintage ?? entry?.year)
-            }))
-            .filter((entry: any) => entry.critic && entry.score > 0)
-        : [];
-      const mergedScores = [...normalizedScores, ...normalizedDetailCriticScores].filter((entry, idx, arr) => {
-        const key = `${entry.critic.toLowerCase()}::${entry.year || 'na'}`;
-        return arr.findIndex((item) => `${item.critic.toLowerCase()}::${item.year || 'na'}` === key) === idx;
-      });
-
-      setSources(normalizedSources.map((entry: any) => ({ title: entry.title, uri: entry.url })));
-
-      setAiPreview({
-        name: data.name || aiInput,
-        vintage: normalizedVintage,
-        producer: toText(data.producer) || undefined,
-        region: toText(data.region) || toText((detailsIdentification as any).region) || 'Unbekannt',
-        country: toText(data.country) || toText((detailsIdentification as any).country) || undefined,
-        appellation: toText(data.appellation) || toText((detailsIdentification as any).appellation) || undefined,
-        vineyard: toText(data.vineyard) || toText((detailsIdentification as any).vineyard) || undefined,
-        wine_type: normalizedWineType,
-        category: normalizedCategory,
-        format: normalizedFormat,
-        market_price: normalizedMarketPrice,
-        drink_start: normalizedDrinkStart,
-        drink_end: normalizedDrinkEnd,
-        peak_year: toOptionalNumber(data.peak_year),
-        alcohol_percent: toOptionalNumber(data.alcohol_percent),
-        closure_type: toText(data.closure_type) || toText((detailsIdentification as any).closure_type) || undefined,
-        fermentation: toText((data.vinification && data.vinification.fermentation_vessel) || (detailsVinification as any).fermentation_vessel) || undefined,
-        aging_process: toText((data.vinification && data.vinification.aging_vessel) || (detailsVinification as any).aging_vessel) || undefined,
-        grapes: normalizedGrapes,
-        aromas: normalizedAromas,
-        structure: normalizedStructure,
-        pairings: normalizedPairings,
-        scores: mergedScores,
-        confidence: normalizeConfidence(data.confidence),
-        missing_fields: data.missing_fields || [],
-        ai_details: {
-          ...details,
-          extensions: {
-            ...((details as any).extensions || {}),
-            ...(shortDescription ? { short_description_de: shortDescription } : {})
-          }
-        },
-        ai_sources: normalizedSources,
-        quantity: 1,
-        purchase_price: normalizedMarketPrice,
-        wishlist: wishlistOnly,
-      });
-    } catch (error) {
-      handleAiOperationError(error);
-    } finally {
-      setIsAiLoading(false);
+      await navigator.clipboard.writeText(generatedPrompt);
+      setPromptCopied(true);
+      setTimeout(() => setPromptCopied(false), 1600);
+    } catch {
+      alert('Prompt konnte nicht kopiert werden.');
     }
   };
 
@@ -706,20 +716,6 @@ export const Inventory: React.FC<InventoryProps> = ({
     });
     onWineUpdate();
     setIsAiModalOpen(false);
-  };
-
-  const confirmAiAddition = async () => {
-    if (aiPreview) {
-      const normalizedTargetSubcellar = normalizeSubcellar(targetSubcellar);
-      await storageService.saveWine({
-        ...aiPreview,
-        subcellar: normalizeSubcellar(aiPreview.subcellar) || normalizedTargetSubcellar || undefined
-      });
-      onWineUpdate();
-      setIsAiModalOpen(false);
-      setAiPreview(null);
-      setAiInput('');
-    }
   };
 
   const createPocket = async () => {
@@ -970,18 +966,66 @@ export const Inventory: React.FC<InventoryProps> = ({
             <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-burgundy text-white rounded-2xl shadow-burgundy-glow"><Wand2 className="w-6 h-6" /></div>
-                <h3 className="font-serif text-2xl font-bold text-charcoal">Smart Assistant</h3>
+                <h3 className="font-serif text-2xl font-bold text-charcoal">Prompt für Weinrecherche</h3>
               </div>
               <button onClick={() => setIsAiModalOpen(false)} className="p-2"><X /></button>
             </div>
             <div className="p-10 space-y-10 overflow-y-auto">
               <div className="space-y-4">
-                <div className="flex gap-4">
-                  <input type="text" placeholder="Weinname & Jahrgang..." value={aiInput} onChange={(e) => setAiInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAiSearch()} className="flex-1 px-6 py-4 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-serif" />
-                  <button onClick={handleAiSearch} disabled={isAiLoading || !aiInput.trim()} className="px-8 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]">
-                    {isAiLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'RECHERCHIEREN'}
-                  </button>
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
+                    1) Wein eingeben
+                  </p>
+                  <div className="flex gap-4">
+                    <input
+                      type="text"
+                      placeholder="Weinname & Jahrgang..."
+                      value={aiInput}
+                      onChange={(e) => setAiInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleGeneratePrompt()}
+                      className="flex-1 px-6 py-4 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-serif"
+                    />
+                    <button
+                      onClick={handleGeneratePrompt}
+                      disabled={!aiInput.trim()}
+                      className="px-8 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]"
+                    >
+                      PROMPT ERSTELLEN
+                    </button>
+                  </div>
                 </div>
+
+                {generatedPrompt ? (
+                  <div className="space-y-3 rounded-2xl border border-burgundy/10 bg-alabaster/40 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
+                        2) Prompt kopieren
+                      </p>
+                      <button
+                        onClick={handleCopyPrompt}
+                        className="inline-flex items-center gap-2 rounded-xl border border-burgundy/25 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-burgundy hover:bg-burgundy/5"
+                      >
+                        {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {promptCopied ? 'Kopiert' : 'Kopieren'}
+                      </button>
+                    </div>
+                    <textarea
+                      readOnly
+                      value={generatedPrompt}
+                      rows={12}
+                      className="w-full px-4 py-3 bg-white border-2 border-burgundy/10 rounded-2xl font-mono text-xs text-charcoal"
+                    />
+                    <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-600">
+                      <p className="font-semibold text-stone-700">So gehst du vor:</p>
+                      <ol className="mt-2 list-decimal pl-4 space-y-1">
+                        <li>Prompt in ChatGPT oder ein anderes Tool einfügen.</li>
+                        <li>Nur JSON als Antwort erzeugen lassen.</li>
+                        <li>JSON unten einfügen und mit „JSON-Code importieren“ übernehmen.</li>
+                      </ol>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="flex items-center justify-center gap-4">
                   <button onClick={manualAdd} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest">Manuell anlegen</button>
                   <button onClick={openJsonImportPicker} disabled={isJsonImporting} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest disabled:opacity-50">
@@ -1026,33 +1070,6 @@ export const Inventory: React.FC<InventoryProps> = ({
                   </button>
                 </div>
               </div>
-              {aiPreview && (
-                <div className="animate-in slide-in-from-bottom-8 duration-700 space-y-8">
-                  <div className="p-8 bg-white rounded-[2.5rem] border-2 border-burgundy/10 shadow-premium">
-                    <div className="flex justify-between items-start mb-4">
-                      <Badge variant="gold">Confidence: {aiPreview.confidence}</Badge>
-                    </div>
-                    <h4 className="font-serif text-3xl font-bold text-charcoal">{aiPreview.name}</h4>
-                    <p className="text-gold font-serif text-2xl">{aiPreview.vintage}</p>
-
-                    {sources.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-alabaster">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-stone-gray mb-2 flex items-center gap-1">
-                          <Globe className="w-3 h-3" /> Recherche-Quellen
-                        </p>
-                        <div className="flex wrap gap-2">
-                          {sources.map((src, i) => (
-                            <a key={i} href={src.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-burgundy hover:underline font-bold">
-                              {src.title} <ExternalLink className="w-2.5 h-2.5" />
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={confirmAiAddition} className="w-full py-5 bg-burgundy text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-xs">Kellerübernahme</button>
-                </div>
-              )}
             </div>
           </div>
         </div>

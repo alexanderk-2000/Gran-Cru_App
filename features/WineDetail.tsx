@@ -5,11 +5,9 @@ import {
   ArrowLeft,
   Edit3,
   GlassWater,
-  Loader2,
   MapPin,
   Minus,
   Plus,
-  RefreshCw,
   Star,
   Trash2,
   Utensils,
@@ -18,7 +16,6 @@ import {
 } from 'lucide-react';
 import { Badge } from '../components/Badge.tsx';
 import { storageService } from '../services/storage.ts';
-import { aiService } from '../services/ai.ts';
 import { evaluateWineDrinkability, formatCurrency } from '../utils.ts';
 import { BottleFormat, Category, CriticScore, Tasting, Wine, WineDetails, WineType } from '../types.ts';
 
@@ -158,8 +155,6 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
   return null;
 };
 
-const toArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-
 const toNullableString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -193,25 +188,6 @@ const mapIntensity = (value: unknown): number | null => {
   if (text === 'medium' || text === 'mittel') return 3;
   if (text === 'low' || text === 'niedrig') return 2;
   return null;
-};
-
-const nonEmptyFieldCount = (record: Record<string, unknown>): number =>
-  Object.values(record).reduce<number>((acc, value) => {
-    if (value === null || value === undefined) return acc;
-    if (typeof value === 'string') return acc + (value.trim().length > 0 ? 1 : 0);
-    if (Array.isArray(value)) return acc + (value.length > 0 ? 1 : 0);
-    if (typeof value === 'object') return acc + (Object.keys(value as Record<string, unknown>).length > 0 ? 1 : 0);
-    return acc + 1;
-  }, 0);
-
-const pickBestAiPayload = (input: unknown): Record<string, unknown> => {
-  const root = asRecord(input);
-  if (!root) return {};
-
-  const nested = asRecord(root['0']);
-  if (!nested) return root;
-
-  return nonEmptyFieldCount(nested) > nonEmptyFieldCount(root) ? nested : root;
 };
 
 const sanitizeHttpUrl = (url: string | null): string | null => {
@@ -388,186 +364,6 @@ const parseConfidenceValue = (value: string): Wine['confidence'] | undefined => 
   return undefined;
 };
 
-const toConfidence = (value: unknown): Wine['confidence'] | undefined => {
-  const text = toNullableString(value)?.toLowerCase();
-  if (!text) return undefined;
-  if (text === 'high' || text === 'hoch') return 'high';
-  if (text === 'medium' || text === 'mittel') return 'medium';
-  if (text === 'low' || text === 'niedrig') return 'low';
-  return undefined;
-};
-
-const mapSources = (value: unknown): { title?: string; url?: string }[] => {
-  const result: { title?: string; url?: string }[] = [];
-  for (const entry of toArray(value)) {
-    const record = asRecord(entry);
-    if (!record) continue;
-    const url = sanitizeHttpUrl(toNullableString(record.url));
-    if (!url) continue;
-    const title = toNullableString(record.title) ?? undefined;
-    result.push({ title, url });
-  }
-  return result;
-};
-
-const mapScores = (value: unknown): CriticScore[] => {
-  const result: CriticScore[] = [];
-  for (const entry of toArray(value)) {
-    const record = asRecord(entry);
-    if (!record) continue;
-    const critic = toNullableString(record.source) ?? toNullableString(record.critic);
-    const scoreValue = toNullableNumber(record.value) ?? toNullableNumber(record.score);
-    if (!critic || scoreValue === null) continue;
-    const vintage = toNullableInt(record.vintage) ?? undefined;
-    result.push({ critic, score: scoreValue, year: vintage });
-  }
-  return result;
-};
-
-const mapGrapes = (value: unknown, fallback: Wine['grapes']): Wine['grapes'] => {
-  const mapped: { name: string; percentage?: number }[] = [];
-  for (const entry of toArray(value)) {
-    if (typeof entry === 'string') {
-      const name = toNullableString(entry);
-      if (name) mapped.push({ name });
-      continue;
-    }
-    const record = asRecord(entry);
-    if (!record) continue;
-    const name = toNullableString(record.name);
-    if (!name) continue;
-    const percentage = toNullableNumber(record.percentage) ?? undefined;
-    mapped.push({ name, percentage });
-  }
-
-  return mapped.length > 0 ? mapped : fallback;
-};
-
-const mapAromas = (value: unknown, fallback: Wine['aromas']): Wine['aromas'] => {
-  const mapped: { tag: string; intensity?: number }[] = [];
-  for (const entry of toArray(value)) {
-    const record = asRecord(entry);
-    if (!record) continue;
-    const tag = toNullableString(record.tag);
-    if (!tag) continue;
-    const intensity = mapIntensity(record.intensity) ?? undefined;
-    mapped.push({ tag, intensity });
-  }
-
-  return mapped.length > 0 ? mapped : fallback;
-};
-
-const mapPairings = (value: unknown, fallback: Wine['pairings']): Wine['pairings'] => {
-  const mapped: { item: string; category?: string; note?: string }[] = [];
-  for (const entry of toArray(value)) {
-    const record = asRecord(entry);
-    if (!record) continue;
-    const item = toNullableString(record.item);
-    if (!item) continue;
-    mapped.push({
-      item,
-      category: toNullableString(record.category) ?? undefined,
-      note: toNullableString(record.note) ?? undefined
-    });
-  }
-
-  return mapped.length > 0 ? mapped : fallback;
-};
-
-const mapStructure = (value: unknown, fallback: Wine['structure']): Wine['structure'] => {
-  const record = asRecord(value);
-  if (!record) return fallback;
-
-  const acidity = mapIntensity(record.acidity);
-  const tannin = mapIntensity(record.tannin);
-  const body = mapIntensity(record.body);
-  const sweetness = mapIntensity(record.sweetness);
-  const oak = mapIntensity(record.oak);
-
-  if ([acidity, tannin, body, sweetness, oak].every((entry) => entry === null)) {
-    return fallback;
-  }
-
-  return {
-    acidity: acidity ?? fallback?.acidity,
-    tannin: tannin ?? fallback?.tannin,
-    body: body ?? fallback?.body,
-    sweetness: sweetness ?? fallback?.sweetness,
-    oak: oak ?? fallback?.oak
-  };
-};
-
-const mapAiToWinePatch = (data: unknown, wine: Wine): Partial<Wine> => {
-  const payload = pickBestAiPayload(data);
-  const detailsRecord = asRecord(payload.details);
-  const vinificationRecord = asRecord(payload.vinification);
-  const identificationRecord = asRecord(detailsRecord?.identification);
-  const detailsGrapeStyle = asRecord(detailsRecord?.grapes_style);
-  const detailsMaturity = asRecord(detailsRecord?.maturity);
-  const detailsVinification = asRecord(detailsRecord?.vinification);
-  const suggestedType =
-    parseWineType(toNullableString(payload.wine_type) ?? '') ??
-    parseWineType(toNullableString(identificationRecord?.wine_type) ?? '');
-  const suggestedFormat =
-    parseFormat(toNullableString(payload.format) ?? '') ??
-    parseFormat(toNullableString(identificationRecord?.bottle_size) ?? '');
-  const incomingShortDescription = toNullableString(payload.short_description_de);
-  const baseDetails = ((detailsRecord as WineDetails | null) ?? wine.ai_details ?? {}) as WineDetails;
-  const mergedDetails: WineDetails = incomingShortDescription
-    ? {
-        ...baseDetails,
-        extensions: {
-          ...(baseDetails.extensions ?? {}),
-          short_description_de: incomingShortDescription
-        }
-      }
-    : baseDetails;
-
-  return {
-    name: toNullableString(payload.name) ?? wine.name,
-    producer: toNullableString(payload.producer) ?? wine.producer,
-    vintage: toNullableInt(payload.vintage) ?? wine.vintage,
-    region: toNullableString(payload.region) ?? toNullableString(identificationRecord?.region) ?? wine.region,
-    country: toNullableString(payload.country) ?? toNullableString(identificationRecord?.country) ?? wine.country,
-    appellation: toNullableString(payload.appellation) ?? toNullableString(identificationRecord?.appellation) ?? wine.appellation,
-    vineyard: toNullableString(payload.vineyard) ?? toNullableString(identificationRecord?.vineyard) ?? wine.vineyard,
-    subregion: toNullableString(identificationRecord?.subregion) ?? wine.subregion,
-    wine_type: suggestedType ?? wine.wine_type,
-    format: suggestedFormat ?? wine.format,
-    grapes: mapGrapes(payload.grapes ?? detailsGrapeStyle?.varieties, wine.grapes),
-    alcohol_percent: toNullableNumber(payload.alcohol_percent) ?? toNullableNumber(detailsGrapeStyle?.alcohol_percent) ?? wine.alcohol_percent,
-    drink_start: toNullableInt(payload.drink_start) ?? toNullableInt(detailsMaturity?.drink_start) ?? wine.drink_start,
-    drink_end: toNullableInt(payload.drink_end) ?? toNullableInt(detailsMaturity?.drink_end) ?? wine.drink_end,
-    peak_year: toNullableInt(payload.peak_year) ?? toNullableInt(detailsMaturity?.peak_year) ?? wine.peak_year,
-    closure_type: toNullableString(payload.closure_type) ?? toNullableString(identificationRecord?.closure_type) ?? wine.closure_type,
-    fermentation: toNullableString(vinificationRecord?.fermentation_vessel) ?? toNullableString(detailsVinification?.fermentation_vessel) ?? wine.fermentation,
-    aging_process: toNullableString(vinificationRecord?.aging_vessel) ?? toNullableString(detailsVinification?.aging_vessel) ?? wine.aging_process,
-    aromas: mapAromas(payload.aromas, wine.aromas),
-    structure: mapStructure(payload.structure, wine.structure),
-    pairings: mapPairings(payload.pairings, wine.pairings),
-    scores: (() => {
-      const mapped = mapScores(payload.scores);
-      const mappedDetailCritics = mapScores(detailsRecord?.ratings?.critics);
-      const merged = [...mapped, ...mappedDetailCritics].filter((entry, index, array) => {
-        const key = `${entry.critic.toLowerCase()}::${entry.year ?? 'na'}`;
-        return array.findIndex((item) => `${item.critic.toLowerCase()}::${item.year ?? 'na'}` === key) === index;
-      });
-      return merged.length > 0 ? merged : wine.scores;
-    })(),
-    ai_details: mergedDetails,
-    ai_sources: (() => {
-      const mapped = mapSources(payload.sources);
-      return mapped.length > 0 ? mapped : wine.ai_sources;
-    })(),
-    confidence: toConfidence(payload.confidence) ?? wine.confidence,
-    missing_fields: toArray(payload.missing_fields).flatMap((entry) => {
-      const field = toNullableString(entry);
-      return field ? [field] : [];
-    }),
-    updated_at: new Date().toISOString()
-  };
-};
-
 const computeWindowMetrics = (wine: Wine): WindowMetrics => {
   const currentYear = new Date().getFullYear();
   const start = toNullableInt(wine.drink_start);
@@ -628,24 +424,26 @@ const computeWindowMetrics = (wine: Wine): WindowMetrics => {
     unknown: 'unknown'
   } as const;
 
+  const safeStart = start ?? currentYear;
+  const safeEnd = end ?? safeStart + 1;
   const currentPosition = knownWindow
-    ? clamp((currentYear - start) / Math.max(1, end - start), 0, 1)
+    ? clamp((currentYear - safeStart) / Math.max(1, safeEnd - safeStart), 0, 1)
     : (typeof evaluation.window_used === 'number' ? evaluation.window_used : null);
 
   const peakPosition =
-    knownWindow && peak !== null && peak >= start && peak <= end
-      ? clamp((peak - start) / Math.max(1, end - start), 0, 1)
+    knownWindow && peak !== null && peak >= safeStart && peak <= safeEnd
+      ? clamp((peak - safeStart) / Math.max(1, safeEnd - safeStart), 0, 1)
       : null;
 
-  const windowLengthYears = knownWindow ? Math.max(1, end - start) : null;
+  const windowLengthYears = knownWindow ? Math.max(1, safeEnd - safeStart) : null;
   const windowProgressPercent = knownWindow && currentPosition !== null ? Math.round(currentPosition * 100) : null;
   const yearsToPeak = peak !== null ? peak - currentYear : null;
-  const yearsToEnd = knownWindow ? end - currentYear : null;
+  const yearsToEnd = knownWindow ? safeEnd - currentYear : null;
   const nextAction = (() => {
     switch (evaluation.status) {
       case 'too_early':
-        return start > currentYear
-          ? `Weiter lagern, Fensterstart in ${formatYearDelta(start - currentYear)}.`
+        return safeStart > currentYear
+          ? `Weiter lagern, Fensterstart in ${formatYearDelta(safeStart - currentYear)}.`
           : 'Weiter lagern und Entwicklung beobachten.';
       case 'approaching':
         return yearsToPeak !== null && yearsToPeak > 0
@@ -1073,9 +871,7 @@ const StickyTabNav = memo(function StickyTabNav({
 const HeaderCard = memo(function HeaderCard({
   wine,
   isSaving,
-  isAiLoading,
   onBack,
-  onLookup,
   onOpenEdit,
   onOpenPurchase,
   onDelete,
@@ -1084,16 +880,14 @@ const HeaderCard = memo(function HeaderCard({
 }: {
   wine: Wine;
   isSaving: boolean;
-  isAiLoading: boolean;
   onBack: () => void;
-  onLookup: () => void;
   onOpenEdit: () => void;
   onOpenPurchase: () => void;
   onDelete: () => void;
   onDrink: () => void;
   onAdjust: (delta: number) => void;
 }) {
-  const disabled = isSaving || isAiLoading;
+  const disabled = isSaving;
 
   return (
     <header className="px-6 pt-7">
@@ -1112,15 +906,6 @@ const HeaderCard = memo(function HeaderCard({
           </button>
 
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-stone-200 bg-white/90 p-2">
-            <button
-              type="button"
-              onClick={onLookup}
-              disabled={disabled}
-              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-50"
-            >
-              {isAiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              KI Sync
-            </button>
             <button
               type="button"
               onClick={onOpenEdit}
@@ -1792,7 +1577,6 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
   const [activeTab, setActiveTab] = useState<TabId>('overview');
 
   const [isSaving, setIsSaving] = useState(false);
-  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [purchaseQty, setPurchaseQty] = useState(1);
@@ -1914,7 +1698,7 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
     }
   }, []);
 
-  const canMutate = !isSaving && !isAiLoading;
+  const canMutate = !isSaving;
   const updateEditField = useCallback((field: keyof EditFormState, value: string) => {
     setEditForm((prev) => ({ ...prev, [field]: value }));
   }, []);
@@ -2022,27 +1806,6 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
       setIsSaving(false);
     }
   }, [wine, canMutate, navigate, showToast]);
-
-  const handleAiLookup = useCallback(async () => {
-    if (!wine || isSaving || isAiLoading) return;
-
-    setIsAiLoading(true);
-    try {
-      const result = await aiService.generateWineInfo(wine.name, wine.producer ?? '', wine.vintage);
-      if (!result.success || !result.data) {
-        throw new Error(result.error ?? 'KI-Suche fehlgeschlagen.');
-      }
-
-      const patch = mapAiToWinePatch(result.data, wine);
-      const updated = await storageService.saveWine({ ...wine, ...patch });
-      setWine(updated);
-      showToast('KI-Daten aktualisiert.', 'success');
-    } catch (error) {
-      showToast(normalizeError(error, 'KI-Daten konnten nicht geladen werden.'), 'error');
-    } finally {
-      setIsAiLoading(false);
-    }
-  }, [wine, isSaving, isAiLoading, showToast]);
 
   const handleSaveEdit = useCallback(async () => {
     if (!wine || !canMutate) return;
@@ -2185,9 +1948,7 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
       <HeaderCard
         wine={wine}
         isSaving={isSaving}
-        isAiLoading={isAiLoading}
         onBack={() => navigate(-1)}
-        onLookup={handleAiLookup}
         onOpenEdit={openEditModal}
         onOpenPurchase={() => setIsPurchaseModalOpen(true)}
         onDelete={handleDelete}
