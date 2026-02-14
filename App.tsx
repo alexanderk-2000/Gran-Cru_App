@@ -3,9 +3,10 @@ import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout.tsx';
 import { Auth } from './components/Auth.tsx';
+import { AlertCircle } from 'lucide-react';
 import { Wine, UserProfile } from './types.ts';
 import { storageService } from './services/storage.ts';
-import { supabase } from './services/supabase.ts';
+import { supabase, isConfigured } from './services/supabase.ts';
 import { runSyncCycle } from './services/pwa/syncEngine.ts';
 
 const Dashboard = lazy(() => import('./features/Dashboard.tsx').then((m) => ({ default: m.Dashboard })));
@@ -25,6 +26,32 @@ const OfflineLockScreen: React.FC = () => (
         Ohne aktive Session ist der Offline-Zugriff gesperrt. Verbinde dich kurz mit dem Internet
         und melde dich an, um den lokalen Datenbestand wieder freizuschalten.
       </p>
+    </div>
+  </div>
+);
+
+const MissingConfigScreen: React.FC = () => (
+  <div className="min-h-screen bg-alabaster flex items-center justify-center px-6">
+    <div className="max-w-xl w-full bg-white rounded-[2rem] border-2 border-red-100 p-8 shadow-premium text-center">
+      <div className="inline-flex items-center justify-center p-4 bg-red-50 rounded-2xl mb-6">
+        <AlertCircle className="w-8 h-8 text-red-600" />
+      </div>
+      <h1 className="font-serif text-3xl text-burgundy mb-3">Konfiguration fehlt</h1>
+      <p className="text-stone-gray leading-relaxed mb-6">
+        Die Verbindung zu Supabase konnte nicht hergestellt werden. Bitte stellen Sie sicher, dass die Umgebungsvariablen
+        <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_URL</code>
+        und
+        <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_ANON_KEY</code>
+        korrekt gesetzt sind.
+      </p>
+      <div className="p-4 bg-red-50/50 rounded-xl text-left border border-red-100">
+        <p className="text-[10px] font-black uppercase tracking-widest text-red-700 mb-2">Checkliste:</p>
+        <ul className="text-xs text-red-800 space-y-1">
+          <li>• Vercel Dashboard → Project Settings → Environment Variables</li>
+          <li>• Lokale Entwicklung: <code className="text-red-900 font-mono">.env.local</code> erstellt?</li>
+          <li>• Wurde die App nach dem Ändern neu deployed?</li>
+        </ul>
+      </div>
     </div>
   </div>
 );
@@ -120,6 +147,10 @@ const App: React.FC = () => {
     );
   }
 
+  if (!isConfigured) {
+    return <MissingConfigScreen />;
+  }
+
   if (!user) {
     if (!online) {
       return <OfflineLockScreen />;
@@ -145,7 +176,7 @@ const App: React.FC = () => {
                 <Inventory
                   wines={wines}
                   onWineUpdate={fetchWines}
-                  onAddBottle={() => {}}
+                  onAddBottle={() => { }}
                   onDrink={handleDrink}
                 />
               }
@@ -159,8 +190,8 @@ const App: React.FC = () => {
                   wines={wines}
                   wishlistOnly
                   onWineUpdate={fetchWines}
-                  onAddBottle={() => {}}
-                  onDrink={() => {}}
+                  onAddBottle={() => { }}
+                  onDrink={() => { }}
                 />
               }
             />

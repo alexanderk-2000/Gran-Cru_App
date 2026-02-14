@@ -40,6 +40,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Create client with fallback values if missing to avoid immediate crash
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co', 
+  supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-key'
 );
+
+export const isConfigured = Boolean(supabaseUrl && supabaseAnonKey && !supabaseUrl.includes('placeholder'));

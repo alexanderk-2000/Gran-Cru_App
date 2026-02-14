@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Wine, Mail, Lock, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+import { isConfigured } from '../services/supabase.ts';
 
 interface AuthProps {
   onLogin: (user: any) => void;
@@ -55,12 +56,16 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   };
 
   const handleDemoMode = async () => {
+    if (!isConfigured) {
+      setError("Demo-Modus nicht verfügbar: Supabase ist nicht konfiguriert. Bitte prüfe deine Umgebungsvariablen.");
+      return;
+    }
     setIsDemoLoading(true);
     try {
       const user = await storageService.signInAnonymously();
       if (user) onLogin(user);
-    } catch {
-      setError("Demo-Modus fehlgeschlagen.");
+    } catch (err: any) {
+      setError(err.message || "Demo-Modus fehlgeschlagen.");
     } finally {
       setIsDemoLoading(false);
     }
@@ -96,7 +101,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-1">E-Mail Adresse</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
-                <input 
+                <input
                   type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@domain.com"
                   className="w-full pl-12 pr-4 py-4 bg-alabaster border-2 border-transparent focus:border-burgundy/20 rounded-2xl focus:outline-none font-medium"
                 />
@@ -107,7 +112,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-1">Passwort</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
-                <input 
+                <input
                   type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••"
                   className="w-full pl-12 pr-4 py-4 bg-alabaster border-2 border-transparent focus:border-burgundy/20 rounded-2xl focus:outline-none font-medium"
                 />
@@ -124,7 +129,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           </form>
 
           <div className="mt-10 pt-8 border-t border-alabaster text-center">
-            <button 
+            <button
               onClick={() => setIsSignUp(!isSignUp)}
               className="text-xs font-bold text-stone-gray hover:text-burgundy transition-colors uppercase tracking-widest"
             >
