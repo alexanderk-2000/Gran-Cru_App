@@ -31,14 +31,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   if (!supabaseUrl) missing.push('VITE_SUPABASE_URL');
   if (!supabaseAnonKey) missing.push('VITE_SUPABASE_ANON_KEY');
 
-  throw new Error(
+  console.error(
     `❌ Missing required Supabase configuration!\n\n` +
     `Missing variables: ${missing.join(', ')}\n\n` +
-    `Please create a .env.local file in the project root with:\n` +
-    `VITE_SUPABASE_URL=your-supabase-url\n` +
-    `VITE_SUPABASE_ANON_KEY=your-supabase-anon-key\n\n` +
-    `See .env.example for reference.`
+    `Please set these variables in your deployment environment (e.g. Vercel Dashboard).`
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create client with fallback values if missing to avoid immediate crash
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co', 
+  supabaseAnonKey || 'placeholder-key'
+);
