@@ -1,5 +1,15 @@
 # Quality Gates
 
+## Gate 0: CI Pipeline
+1. `npm run ci:check` muss grün laufen.
+2. Pipeline-Inhalt:
+   - `npm run typecheck`
+   - `npm run lint`
+   - `npm run test:unit`
+   - `npm run build`
+   - `npm run test:ui -- --list`
+   - `npm run test:ui:pwa -- --list`
+
 ## Gate 1: Build & Typing
 1. `npm run build` muss erfolgreich sein.
 2. `npm run typecheck` darf keine neuen Fehler gegenüber Baseline einführen.
@@ -34,3 +44,26 @@
    - Inventory
    - Wine Detail
 2. Keine Überlappungen/abgeschnittene Überschriften in Wine Cards.
+
+## Gate 6: Bugfix-Regression
+1. `settingsService.getModel()` muss die persistierte Modellwahl des Users zurückgeben.
+2. Scanner-Vision-Aufrufe müssen über relativen API-Pfad laufen (`/api/ai/vision`).
+3. Beide Fixes sind durch Unit-Tests abzudecken.
+
+## Gate 7: PWA-Grundfunktion
+1. Manifest und Service Worker werden im Build erzeugt.
+2. Offline Lock Screen greift ohne Session bei Verbindungsabbruch.
+3. PWA-Smokes:
+   - `tests/pwa.offline.spec.ts`
+   - `tests/pwa.sync.spec.ts`
+
+## Baseline Snapshot (2026-02-13)
+1. `any`/`as any` Vorkommen (App-Code): 103.
+2. Größte Dateien:
+   - `features/WineDetail.tsx`: 2293 Zeilen
+   - `features/EnjoymentPlan.tsx`: 1301 Zeilen
+   - `features/Inventory.tsx`: 1178 Zeilen
+   - `server/index.js`: 1035 Zeilen
+   - `services/storage.ts`: 946 Zeilen
+3. Bundle-Baseline:
+   - `dist/assets/index-*.js`: ~521 kB (Warnung > 500 kB aktiv)

@@ -2,10 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
-  ArrowRight,
   CalendarClock,
   CheckCircle2,
-  Clock3,
   Layers3,
   ListChecks,
   Plus,

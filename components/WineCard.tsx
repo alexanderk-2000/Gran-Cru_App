@@ -100,15 +100,29 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
     }
   };
 
+  const wineImage = (wine as any).ai_details?.app?.images?.bottle
+    || (wine as any).ai_details?.app?.images?.label
+    || (wine as any).ai_details?.app?.images?.case
+    || null;
+
   return (
     <div className={`
       relative group h-full overflow-hidden rounded-3xl border transition-all duration-500 bg-white shadow-premium
       ${isReady ? 'border-gold/30 ring-1 ring-gold/10' : 'border-burgundy/5'}
       ${isEmpty ? 'opacity-60 grayscale' : 'hover:scale-[1.01] hover:shadow-xl'}
     `}>
-      <div className={`absolute inset-x-0 top-0 h-1 ${getTopBarClass()}`} />
+      {/* Thumbnail hero or color accent bar */}
+      {wineImage ? (
+        <div className="relative h-28 w-full overflow-hidden">
+          <img src={wineImage} alt="" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-white via-white/20 to-transparent" />
+          <div className={`absolute inset-x-0 top-0 h-1 ${getTopBarClass()}`} />
+        </div>
+      ) : (
+        <div className={`absolute inset-x-0 top-0 h-1 ${getTopBarClass()}`} />
+      )}
       <div className="flex h-full flex-col p-5">
-        <div className="mb-3 flex min-h-[124px] justify-between items-start gap-4">
+        <div className={`mb-3 flex ${wineImage ? 'min-h-[80px]' : 'min-h-[124px]'} justify-between items-start gap-4`}>
           <Link to={`/wine/${wine.id}`} className="flex-1 min-w-0 flex flex-col group/title">
             <span className="text-xs font-medium text-stone-gray uppercase tracking-widest mb-1">{wine.region}</span>
             {wine.subcellar ? (
@@ -139,7 +153,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
               <span className="text-[10px] font-black uppercase tracking-widest">Stock</span>
             </div>
             <div className="flex items-center gap-3">
-              <button 
+              <button
                 onClick={(e) => handleAdjust(e, -1)}
                 disabled={wine.quantity === 0 || isAdjusting}
                 className="p-1 rounded bg-alabaster border border-burgundy/5 hover:border-burgundy/20 text-burgundy disabled:opacity-30 transition-all"
@@ -147,7 +161,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
                 <Minus className="w-3 h-3" />
               </button>
               <span className="text-sm font-bold text-charcoal">{wine.quantity} <span className="text-[10px] text-stone-gray font-normal">Fl.</span></span>
-              <button 
+              <button
                 onClick={(e) => handleAdjust(e, 1)}
                 disabled={isAdjusting}
                 className="p-1 rounded bg-alabaster border border-burgundy/5 hover:border-burgundy/20 text-burgundy disabled:opacity-30 transition-all"

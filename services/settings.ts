@@ -147,10 +147,12 @@ export const settingsService = {
     // Get selected model based on provider (enforced)
     getModel: async (): Promise<string> => {
         const settings = await settingsService.getUserSettings();
-        if (!settings) return DEFAULT_SETTINGS.gemini_model;
+        if (!settings) return DEFAULT_SETTINGS.openai_model;
 
-        if (settings.ai_provider === 'openai') return DEFAULT_SETTINGS.openai_model;
-        return DEFAULT_SETTINGS.gemini_model;
+        if (settings.ai_provider === 'openai') {
+            return settings.openai_model || DEFAULT_SETTINGS.openai_model;
+        }
+        return settings.gemini_model || DEFAULT_SETTINGS.gemini_model;
     },
 
     // Get AI provider

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Wine, Mail, Lock, ShieldCheck, ArrowRight, Star, AlertCircle, CheckCircle2, UserPlus, LogIn, Sparkles } from 'lucide-react';
+import { Wine, Mail, Lock, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
 
 interface AuthProps {
@@ -59,7 +59,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     try {
       const user = await storageService.signInAnonymously();
       if (user) onLogin(user);
-    } catch (err: any) {
+    } catch {
       setError("Demo-Modus fehlgeschlagen.");
     } finally {
       setIsDemoLoading(false);

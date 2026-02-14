@@ -2,11 +2,16 @@
 import { settingsService } from './settings.ts';
 import { runOfflineRuleEngine, type OfflineRuleEngineOutput } from './offlineRuleEngine.ts';
 import { storageService } from './storage.ts';
+import { enqueueAiQueueItem } from './pwa/aiQueue.ts';
+import { isOnline } from './pwa/networkState.ts';
 
 export interface AIResponse {
     success: boolean;
     data?: any;
     error?: string;
+    queued?: boolean;
+    queue_id?: string;
+    sync_state?: 'queued' | 'syncing' | 'synced' | 'failed';
 }
 
 export interface AssignmentAIRequest {
@@ -53,6 +58,37 @@ const validateWineInput = (wineName: string, _producer: string, vintage: number)
 };
 
 export const aiService = {
+    enqueueWhenOffline: async (
+        operation: 'search' | 'assignment' | 'vision',
+        endpoint: '/api/ai/search' | '/api/ai/assignment' | '/api/ai/vision',
+        payload: Record<string, unknown>
+    ): Promise<AIResponse> => {
+        const currentUser = await storageService.getCurrentUser?.();
+        if (!currentUser?.id) {
+            return {
+                success: false,
+                error: 'Offline-Queue benötigt eine aktive Session.'
+            };
+        }
+
+        const queued = await enqueueAiQueueItem({
+            userId: currentUser.id,
+            operation,
+            endpoint,
+            payload
+        });
+
+        return {
+            success: true,
+            queued: true,
+            queue_id: queued.id,
+            sync_state: 'queued',
+            data: {
+                message: 'AI-Anfrage wurde offline gespeichert und wird bei Reconnect gesendet.'
+            }
+        };
+    },
+
     normalizeInputOffline: (
         raw_input: string,
         producer_hint?: string | null,
@@ -123,21 +159,26 @@ Offline-Normalisierung:
 
             // Call the backend search (DB first, then AI)
             const endpoint = '/api/ai/search';
+            const requestPayload = {
+                prompt,
+                model,
+                provider,
+                wineName,
+                producer,
+                vintage,
+                search_mode: 'adaptive'
+            };
+
+            if (!isOnline()) {
+                return aiService.enqueueWhenOffline('search', endpoint, requestPayload);
+            }
 
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    prompt,
-                    model,
-                    provider,
-                    wineName,
-                    producer,
-                    vintage,
-                    search_mode: 'adaptive'
-                })
+                body: JSON.stringify(requestPayload)
             });
 
             if (!response.ok) {
@@ -187,7 +228,17 @@ Offline-Normalisierung:
             } else if (/timeout/i.test(rawMessage)) {
                 errorMessage += 'Request timed out. Please try again.';
             } else if (/fetch/i.test(rawMessage)) {
-                errorMessage += 'Could not connect to AI server. Is the server running on port 3001?';
+                const provider = await settingsService.getProvider();
+                const model = await settingsService.getModel();
+                return aiService.enqueueWhenOffline('search', '/api/ai/search', {
+                    prompt: `Recherchiere den Wein: "${[vintage ? String(vintage) : '', producer || '', wineName].filter(Boolean).join(' ').trim()}".`,
+                    provider,
+                    model,
+                    wineName,
+                    producer,
+                    vintage,
+                    search_mode: 'adaptive'
+                });
             } else if (rawMessage.includes('API')) {
                 errorMessage += rawMessage;
             } else {
@@ -205,12 +256,18 @@ Offline-Normalisierung:
     planAssignments: async (payload: AssignmentAIRequest): Promise<AIResponse> => {
         try {
             const provider = payload.provider || await settingsService.getProvider();
+            const requestPayload = { ...payload, provider };
+
+            if (!isOnline()) {
+                return aiService.enqueueWhenOffline('assignment', '/api/ai/assignment', requestPayload as Record<string, unknown>);
+            }
+
             const response = await fetch('/api/ai/assignment', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ ...payload, provider })
+                body: JSON.stringify(requestPayload)
             });
 
             const result = await response.json().catch(() => ({}));
@@ -227,6 +284,13 @@ Offline-Normalisierung:
                 data: result.data
             };
         } catch (error: any) {
+            if (/fetch|network/i.test(error?.message || '')) {
+                const provider = payload.provider || await settingsService.getProvider();
+                return aiService.enqueueWhenOffline('assignment', '/api/ai/assignment', {
+                    ...payload,
+                    provider
+                } as Record<string, unknown>);
+            }
             return {
                 success: false,
                 error: error?.message || 'KI-Zuordnung fehlgeschlagen.'

@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f9f7f2;
+  color: #282325;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f9f7f2;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #6d071a;
+  border-radius: 10px;
+}
+
+.custom-blur {
+  backdrop-filter: blur(8px);
+}

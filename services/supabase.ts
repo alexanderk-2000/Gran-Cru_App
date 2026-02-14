@@ -12,12 +12,11 @@ const getEnv = (key: string): string => {
     }
 
     // Fallback for Vite-like meta env if it exists
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-      // @ts-ignore
-      return import.meta.env[key];
+    const metaEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+    if (metaEnv && metaEnv[key]) {
+      return metaEnv[key] || '';
     }
-  } catch (e) {
+  } catch {
     // Ignore errors
   }
   return '';
