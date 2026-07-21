@@ -177,7 +177,14 @@ export const storageService = {
   },
 
   seedIfNewUser: async (userId: string) => {
-    const { count } = await supabase.from('wines').select('*', { count: 'exact', head: true }).eq('user_id', userId);
+    const { count, error: countError } = await supabase
+      .from('wines')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    if (countError) {
+      console.error('Failed to check existing wines before seeding demo user:', countError);
+      return;
+    }
     if (count === 0) {
       const seeded = PRE_SEED_WINES.map(w => ({
         ...w,
@@ -185,7 +192,10 @@ export const storageService = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }));
-      await supabase.from('wines').insert(seeded);
+      const { error: insertError } = await supabase.from('wines').insert(seeded);
+      if (insertError) {
+        console.error('Failed to seed demo wines:', insertError);
+      }
     }
   },
 
