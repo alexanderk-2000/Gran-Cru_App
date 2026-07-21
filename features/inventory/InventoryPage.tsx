@@ -15,6 +15,8 @@ import {
   normalizeImportedWine,
   normalizeSubcellar,
 } from '../../domain/wine/normalization.ts';
+import { validateWineInput } from '../../domain/wine/validation.ts';
+import { findLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
 
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
@@ -192,15 +194,30 @@ export const Inventory: React.FC<InventoryProps> = ({
 
       let saved = 0;
       let failed = 0;
+      let invalid = 0;
+      let duplicateSkipped = 0;
       let catalogFailed = 0;
       const normalizedTargetSubcellar = normalizeSubcellar(targetSubcellar);
+      const knownWines = [...wines];
       for (const wine of mapped) {
+        const wineWithTarget = {
+          ...wine,
+          subcellar: normalizeSubcellar(wine.subcellar) || normalizedTargetSubcellar || undefined
+        };
+
+        if (validateWineInput(wineWithTarget).length > 0) {
+          invalid += 1;
+          continue;
+        }
+
+        if (findLikelyDuplicates(wineWithTarget, knownWines).length > 0) {
+          duplicateSkipped += 1;
+          continue;
+        }
+
         try {
-          const wineWithTarget = {
-            ...wine,
-            subcellar: normalizeSubcellar(wine.subcellar) || normalizedTargetSubcellar || undefined
-          };
           const savedWine = await storageService.saveWine(wineWithTarget);
+          knownWines.push(savedWine);
           try {
             await storageService.upsertWineCatalog(savedWine);
           } catch (catalogError) {
@@ -220,8 +237,10 @@ export const Inventory: React.FC<InventoryProps> = ({
       setGeneratedPrompt('');
       setPromptCopied(false);
 
-      if (failed > 0 || catalogFailed > 0) {
+      if (failed > 0 || invalid > 0 || duplicateSkipped > 0 || catalogFailed > 0) {
         const parts = [`${saved} Wein(e) importiert`];
+        if (invalid > 0) parts.push(`${invalid} Eintrag/Einträge waren ungültig`);
+        if (duplicateSkipped > 0) parts.push(`${duplicateSkipped} Eintrag/Einträge übersprungen (bereits im Keller)`);
         if (failed > 0) parts.push(`${failed} Eintrag/Einträge konnten nicht gespeichert werden`);
         if (catalogFailed > 0) parts.push(`${catalogFailed} Eintrag/Einträge konnten nicht in den globalen Katalog geschrieben werden`);
         alert(`${parts.join(', ')}.`);
@@ -825,6 +844,7 @@ Regeln:
         onSaved={() => { setIsScanResultOpen(false); setScanResult(null); onWineUpdate(); }}
         wishlist={wishlistOnly}
         targetSubcellar={subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter}
+        existingWines={wines}
       />
     </div>
   );
