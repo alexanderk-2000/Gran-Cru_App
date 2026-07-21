@@ -275,7 +275,14 @@ export const storageService = {
     const { data: { user } } = await supabase.auth.getUser();
     const payload = { ...wine, user_id: user?.id, updated_at: new Date().toISOString() };
 
+    let previousQuantity: number | null = null;
+    if (wine.id) {
+      const { data: existing } = await supabase.from('wines').select('quantity').eq('id', wine.id).maybeSingle();
+      previousQuantity = typeof existing?.quantity === 'number' ? existing.quantity : null;
+    }
+
     const attemptPayload: Record<string, any> = { ...payload };
+    let savedWine: Wine | null = null;
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const { data, error } = wine.id
         ? await supabase.from('wines').update(attemptPayload).eq('id', wine.id).select().single()
@@ -286,7 +293,8 @@ export const storageService = {
             .single();
 
       if (!error) {
-        return data as Wine;
+        savedWine = data as Wine;
+        break;
       }
 
       const missingColumn = extractMissingColumnName(error);
@@ -297,7 +305,26 @@ export const storageService = {
       delete attemptPayload[missingColumn];
     }
 
-    throw new Error('Speichern fehlgeschlagen: wiederholter Schema-Konflikt.');
+    if (!savedWine) {
+      throw new Error('Speichern fehlgeschlagen: wiederholter Schema-Konflikt.');
+    }
+
+    // Keep the event log the single source of truth for stock changes,
+    // regardless of which UI path (capture, edit form, import) touched quantity.
+    if (user && typeof savedWine.quantity === 'number') {
+      const delta = previousQuantity === null ? savedWine.quantity : savedWine.quantity - previousQuantity;
+      if (delta !== 0) {
+        await supabase.from('inventory_events').insert([{
+          wine_id: savedWine.id,
+          user_id: user.id,
+          type: previousQuantity === null ? 'purchase' : 'adjustment',
+          delta,
+          source: previousQuantity === null ? 'capture' : 'edit'
+        }]);
+      }
+    }
+
+    return savedWine;
   },
 
   findWineInCatalog: async (query: { name: string; producer?: string; vintage?: number | null }): Promise<Record<string, any> | null> => {
@@ -353,7 +380,8 @@ export const storageService = {
     return null;
   },
 
-  adjustStock: async (id: string, delta: number, _context?: string) => {
+  adjustStock: async (id: string, delta: number, context?: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
     const { data: wine } = await supabase
       .from('wines')
       .select('quantity')
@@ -361,14 +389,30 @@ export const storageService = {
       .is('deleted_at', null)
       .single();
     if (!wine) return null;
-    const { data } = await supabase.from('wines').update({
+    const { data, error } = await supabase.from('wines').update({
       quantity: Math.max(0, wine.quantity + delta),
       updated_at: new Date().toISOString()
     }).eq('id', id).select().single();
+    if (error) throw error;
+
+    if (user && delta !== 0) {
+      const { error: eventError } = await supabase.from('inventory_events').insert([{
+        wine_id: id,
+        user_id: user.id,
+        type: 'adjustment',
+        delta,
+        source: context || 'manual'
+      }]);
+      if (eventError) {
+        await supabase.from('wines').update({ quantity: wine.quantity, updated_at: new Date().toISOString() }).eq('id', id);
+        throw eventError;
+      }
+    }
     return data;
   },
 
   recordPurchase: async (purchase: { wine_id: string; quantity: number; price_per_bottle: number; date: string }) => {
+    const { data: { user } } = await supabase.auth.getUser();
     const { data: wine } = await supabase
       .from('wines')
       .select('*')
@@ -384,6 +428,100 @@ export const storageService = {
       updated_at: new Date().toISOString()
     }).eq('id', purchase.wine_id).select().single();
     if (error) throw error;
+
+    if (user) {
+      const { error: eventError } = await supabase.from('inventory_events').insert([{
+        wine_id: purchase.wine_id,
+        user_id: user.id,
+        type: 'purchase',
+        delta: purchase.quantity,
+        source: 'purchase',
+        note: purchase.date
+      }]);
+      if (eventError) {
+        await supabase.from('wines').update({
+          quantity: wine.quantity,
+          purchase_price: wine.purchase_price,
+          updated_at: new Date().toISOString()
+        }).eq('id', purchase.wine_id);
+        throw eventError;
+      }
+    }
+    return data as Wine;
+  },
+
+  recordLoss: async (wineId: string, quantity: number, reason?: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Nicht eingeloggt.');
+
+    const { data: wine, error: wineError } = await supabase
+      .from('wines')
+      .select('*')
+      .eq('id', wineId)
+      .is('deleted_at', null)
+      .single();
+    if (wineError) throw wineError;
+    if (!wine) throw new Error('Wein nicht gefunden.');
+
+    const lostQuantity = Math.min(quantity, wine.quantity);
+    if (lostQuantity <= 0) return wine as Wine;
+    const nextQuantity = Math.max(0, wine.quantity - lostQuantity);
+
+    const { data: updatedWine, error: updateError } = await supabase
+      .from('wines')
+      .update({ quantity: nextQuantity, updated_at: new Date().toISOString() })
+      .eq('id', wineId)
+      .select()
+      .single();
+    if (updateError) throw updateError;
+
+    const { error: eventError } = await supabase.from('inventory_events').insert([{
+      wine_id: wineId,
+      user_id: user.id,
+      type: 'loss',
+      delta: -lostQuantity,
+      source: 'detail',
+      note: reason
+    }]);
+    if (eventError) {
+      await supabase.from('wines').update({ quantity: wine.quantity, updated_at: new Date().toISOString() }).eq('id', wineId);
+      throw eventError;
+    }
+    return updatedWine as Wine;
+  },
+
+  transferWine: async (wineId: string, targetSubcellar: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: wine, error: wineError } = await supabase
+      .from('wines')
+      .select('subcellar')
+      .eq('id', wineId)
+      .is('deleted_at', null)
+      .single();
+    if (wineError) throw wineError;
+    if (!wine) return null;
+
+    const previousSubcellar = wine.subcellar || '';
+    const { data, error } = await supabase.from('wines').update({
+      subcellar: targetSubcellar || null,
+      updated_at: new Date().toISOString()
+    }).eq('id', wineId).select().single();
+    if (error) throw error;
+
+    if (user) {
+      const { error: eventError } = await supabase.from('inventory_events').insert([{
+        wine_id: wineId,
+        user_id: user.id,
+        type: 'transfer',
+        delta: 0,
+        source: 'pocket',
+        note: `${previousSubcellar || 'Hauptkeller'} -> ${targetSubcellar || 'Hauptkeller'}`
+      }]);
+      if (eventError) {
+        await supabase.from('wines').update({ subcellar: wine.subcellar, updated_at: new Date().toISOString() }).eq('id', wineId);
+        throw eventError;
+      }
+    }
     return data as Wine;
   },
 
@@ -477,6 +615,17 @@ export const storageService = {
       updated_at: new Date().toISOString()
     }).eq('id', id);
     if (error) throw error;
+
+    if (user) {
+      await supabase.from('inventory_events').insert([{
+        wine_id: id,
+        user_id: user.id,
+        type: 'soft_delete',
+        delta: 0,
+        source: 'trash',
+        note: reason
+      }]);
+    }
   },
 
   getDeletedWines: async (): Promise<Wine[]> => {
@@ -490,6 +639,7 @@ export const storageService = {
   },
 
   restoreWine: async (id: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase.from('wines').update({
       deleted_at: null,
       deleted_by: null,
@@ -497,6 +647,16 @@ export const storageService = {
       updated_at: new Date().toISOString()
     }).eq('id', id);
     if (error) throw error;
+
+    if (user) {
+      await supabase.from('inventory_events').insert([{
+        wine_id: id,
+        user_id: user.id,
+        type: 'restore',
+        delta: 0,
+        source: 'trash'
+      }]);
+    }
   },
 
   permanentlyDeleteWine: async (id: string) => {

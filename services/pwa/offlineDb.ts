@@ -43,6 +43,9 @@ export class PwaOfflineDb extends Dexie {
       conflicts: 'id, user_id, entity, entity_id, created_at',
       meta: 'key, updated_at'
     });
+    this.version(2).stores({
+      wines: 'id, user_id, updated_at, deleted_at, barcode'
+    });
   }
 }
 
@@ -135,6 +138,16 @@ export const persistFullDataset = async (snapshot: FullDatasetSnapshot): Promise
     deleted_wine_count: snapshot.deleted_wines.length,
     tasting_count: snapshot.tastings.length
   });
+};
+
+export const findWinesByBarcodeLocal = async (userId: string, barcode: string): Promise<Wine[]> => {
+  const normalized = barcode.trim();
+  if (!normalized) return [];
+  return offlineDb.wines
+    .where('barcode')
+    .equals(normalized)
+    .filter((wine) => wine.user_id === userId && !wine.deleted_at)
+    .toArray();
 };
 
 export const getSyncStateSnapshot = async (): Promise<SyncStateSnapshot> => {

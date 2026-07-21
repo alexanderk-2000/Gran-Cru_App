@@ -246,6 +246,7 @@ export const normalizeImportedWine = (
   return {
     name: normalizedName,
     vintage: normalizedVintage,
+    barcode: toText((data as any).barcode) || undefined,
     producer: toText((data as any).producer) || undefined,
     region: toText((data as any).region) || toText((detailsIdentification as any).region) || 'Unbekannt',
     country: toText((data as any).country) || toText((detailsIdentification as any).country) || undefined,

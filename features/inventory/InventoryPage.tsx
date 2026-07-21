@@ -15,6 +15,8 @@ import {
   normalizeImportedWine,
   normalizeSubcellar,
 } from '../../domain/wine/normalization.ts';
+import { validateWineInput } from '../../domain/wine/validation.ts';
+import { findLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
 
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
@@ -192,14 +194,29 @@ export const Inventory: React.FC<InventoryProps> = ({
 
       let saved = 0;
       let failed = 0;
+      let invalid = 0;
+      let duplicateSkipped = 0;
       const normalizedTargetSubcellar = normalizeSubcellar(targetSubcellar);
+      const knownWines = [...wines];
       for (const wine of mapped) {
+        const wineWithTarget = {
+          ...wine,
+          subcellar: normalizeSubcellar(wine.subcellar) || normalizedTargetSubcellar || undefined
+        };
+
+        if (validateWineInput(wineWithTarget).length > 0) {
+          invalid += 1;
+          continue;
+        }
+
+        if (findLikelyDuplicates(wineWithTarget, knownWines).length > 0) {
+          duplicateSkipped += 1;
+          continue;
+        }
+
         try {
-          const wineWithTarget = {
-            ...wine,
-            subcellar: normalizeSubcellar(wine.subcellar) || normalizedTargetSubcellar || undefined
-          };
-          await storageService.saveWine(wineWithTarget);
+          const savedWine = await storageService.saveWine(wineWithTarget);
+          knownWines.push(savedWine);
           saved += 1;
         } catch {
           failed += 1;
@@ -213,9 +230,11 @@ export const Inventory: React.FC<InventoryProps> = ({
       setGeneratedPrompt('');
       setPromptCopied(false);
 
-      if (failed > 0) {
+      if (failed > 0 || invalid > 0 || duplicateSkipped > 0) {
         const parts = [`${saved} Wein(e) importiert`];
-        parts.push(`${failed} Eintrag/Einträge konnten nicht gespeichert werden`);
+        if (invalid > 0) parts.push(`${invalid} Eintrag/Einträge waren ungültig`);
+        if (duplicateSkipped > 0) parts.push(`${duplicateSkipped} Eintrag/Einträge übersprungen (bereits im Keller)`);
+        if (failed > 0) parts.push(`${failed} Eintrag/Einträge konnten nicht gespeichert werden`);
         alert(`${parts.join(', ')}.`);
       } else {
         alert(`${saved} Wein(e) erfolgreich importiert und global verfügbar.`);
@@ -410,10 +429,10 @@ Regeln:
 
     setIsMovingWine(true);
     try {
-      await storageService.saveWine({
-        id: wine.id,
-        subcellar: targetPocketId === MAIN_CELLAR_FILTER ? '' : targetPocketId
-      });
+      await storageService.transferWine(
+        wine.id,
+        targetPocketId === MAIN_CELLAR_FILTER ? '' : targetPocketId
+      );
       await onWineUpdate();
     } catch (error: any) {
       alert(error?.message || 'Verschieben in Pocket fehlgeschlagen.');
@@ -817,6 +836,7 @@ Regeln:
         onSaved={() => { setIsScanResultOpen(false); setScanResult(null); onWineUpdate(); }}
         wishlist={wishlistOnly}
         targetSubcellar={subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter}
+        existingWines={wines}
       />
     </div>
   );

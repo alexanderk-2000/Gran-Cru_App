@@ -15,6 +15,7 @@ const Timeline = lazy(() => import('./features/Timeline.tsx').then((m) => ({ def
 const WineDetail = lazy(() => import('./features/WineDetail.tsx').then((m) => ({ default: m.WineDetail })));
 const EnjoymentPlan = lazy(() => import('./features/EnjoymentPlan.tsx').then((m) => ({ default: m.EnjoymentPlan })));
 const Trash = lazy(() => import('./features/Trash.tsx').then((m) => ({ default: m.Trash })));
+const Stocktake = lazy(() => import('./features/Stocktake.tsx').then((m) => ({ default: m.Stocktake })));
 const Settings = lazy(() => import('./features/Settings.tsx').then((m) => ({ default: m.Settings })));
 const DrinkHistory = lazy(() => import('./features/DrinkHistory.tsx').then((m) => ({ default: m.DrinkHistory })));
 
@@ -216,6 +217,7 @@ const App: React.FC = () => {
             />
             <Route path="/wine/:id" element={<WineDetail onDrink={handleDrink} />} />
             <Route path="/trash" element={<Trash onUpdate={fetchWines} />} />
+            <Route path="/stocktake" element={<Stocktake wines={wines} onUpdate={fetchWines} />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/drink-history" element={<DrinkHistory />} />
             <Route path="*" element={<Navigate to="/" replace />} />
