@@ -1,8 +1,11 @@
-import React, { useCallback, useState } from 'react';
-import { Check, Loader2, Wand2, X } from 'lucide-react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { AlertTriangle, Check, Loader2, Wand2, X } from 'lucide-react';
 import { aiService } from '../services/ai.ts';
 import { storageService } from '../services/storage.ts';
 import type { ScanResult } from '../services/scanner.ts';
+import type { Wine } from '../types.ts';
+import { findLikelyDuplicates } from '../domain/wine/duplicateDetection.ts';
+import { validateWineInput } from '../domain/wine/validation.ts';
 
 interface ScanResultDialogProps {
     open: boolean;
@@ -11,6 +14,7 @@ interface ScanResultDialogProps {
     onSaved: () => void;
     wishlist?: boolean;
     targetSubcellar?: string;
+    existingWines?: Wine[];
 }
 
 export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
@@ -20,15 +24,18 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
     onSaved,
     wishlist = false,
     targetSubcellar = '',
+    existingWines = [],
 }) => {
     const [name, setName] = useState('');
     const [producer, setProducer] = useState('');
     const [vintage, setVintage] = useState('');
+    const [barcode, setBarcode] = useState('');
     const [isEnriching, setIsEnriching] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [enriched, setEnriched] = useState(false);
     const [enrichedData, setEnrichedData] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
+    const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
     // Populate fields when result changes
     React.useEffect(() => {
@@ -36,10 +43,28 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
         setName(result.name || result.raw || '');
         setProducer(result.producer || '');
         setVintage(result.vintage ? String(result.vintage) : String(new Date().getFullYear()));
+        setBarcode(result.type === 'barcode' ? result.raw || '' : '');
         setEnriched(false);
         setEnrichedData(null);
         setError(null);
+        setValidationErrors([]);
     }, [result]);
+
+    const parsedVintageForDuplicateCheck = parseInt(vintage, 10) || undefined;
+    const duplicates = useMemo(
+        () =>
+            findLikelyDuplicates(
+                {
+                    barcode: barcode.trim() || undefined,
+                    name: name.trim(),
+                    producer: producer.trim() || undefined,
+                    vintage: parsedVintageForDuplicateCheck,
+                    format: enrichedData?.format || '0.75L',
+                },
+                existingWines
+            ),
+        [barcode, name, producer, parsedVintageForDuplicateCheck, enrichedData, existingWines]
+    );
 
     const handleEnrich = useCallback(async () => {
         if (!name.trim()) return;
@@ -72,44 +97,52 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
 
     const handleSave = useCallback(async () => {
         if (!name.trim()) return;
-        setIsSaving(true);
         setError(null);
 
+        const currentYear = new Date().getFullYear();
+        const parsedVintage = parseInt(vintage, 10) || currentYear;
+
+        const wineData: Record<string, any> = {
+            name: name.trim(),
+            producer: producer.trim() || undefined,
+            vintage: parsedVintage,
+            barcode: barcode.trim() || undefined,
+            region: enrichedData?.region || 'Unbekannt',
+            country: enrichedData?.country || undefined,
+            appellation: enrichedData?.appellation || undefined,
+            vineyard: enrichedData?.vineyard || undefined,
+            wine_type: enrichedData?.wine_type || undefined,
+            category: wishlist ? 'Rarität' : 'Genuss',
+            format: enrichedData?.format || '0.75L',
+            quantity: 1,
+            purchase_price: enrichedData?.purchase_price || 0,
+            market_price: enrichedData?.market_price || undefined,
+            drink_start: enrichedData?.drink_start || parsedVintage + 2,
+            drink_end: enrichedData?.drink_end || parsedVintage + 12,
+            peak_year: enrichedData?.peak_year || undefined,
+            alcohol_percent: enrichedData?.alcohol_percent || undefined,
+            grapes: enrichedData?.grapes || [],
+            aromas: enrichedData?.aromas || [],
+            structure: enrichedData?.structure || {},
+            pairings: enrichedData?.pairings || [],
+            scores: enrichedData?.scores || [],
+            confidence: enrichedData?.confidence || 'medium',
+            missing_fields: enrichedData?.missing_fields || [],
+            ai_details: enrichedData?.details || enrichedData?.ai_details || {},
+            ai_sources: enrichedData?.sources || enrichedData?.ai_sources || [],
+            subcellar: targetSubcellar || undefined,
+            wishlist,
+        };
+
+        const errors = validateWineInput(wineData);
+        if (errors.length > 0) {
+            setValidationErrors(errors.map((e) => e.message));
+            return;
+        }
+        setValidationErrors([]);
+        setIsSaving(true);
+
         try {
-            const currentYear = new Date().getFullYear();
-            const parsedVintage = parseInt(vintage, 10) || currentYear;
-
-            const wineData: Record<string, any> = {
-                name: name.trim(),
-                producer: producer.trim() || undefined,
-                vintage: parsedVintage,
-                region: enrichedData?.region || 'Unbekannt',
-                country: enrichedData?.country || undefined,
-                appellation: enrichedData?.appellation || undefined,
-                vineyard: enrichedData?.vineyard || undefined,
-                wine_type: enrichedData?.wine_type || undefined,
-                category: wishlist ? 'Rarität' : 'Genuss',
-                format: enrichedData?.format || '0.75L',
-                quantity: 1,
-                purchase_price: enrichedData?.purchase_price || 0,
-                market_price: enrichedData?.market_price || undefined,
-                drink_start: enrichedData?.drink_start || parsedVintage + 2,
-                drink_end: enrichedData?.drink_end || parsedVintage + 12,
-                peak_year: enrichedData?.peak_year || undefined,
-                alcohol_percent: enrichedData?.alcohol_percent || undefined,
-                grapes: enrichedData?.grapes || [],
-                aromas: enrichedData?.aromas || [],
-                structure: enrichedData?.structure || {},
-                pairings: enrichedData?.pairings || [],
-                scores: enrichedData?.scores || [],
-                confidence: enrichedData?.confidence || 'medium',
-                missing_fields: enrichedData?.missing_fields || [],
-                ai_details: enrichedData?.details || enrichedData?.ai_details || {},
-                ai_sources: enrichedData?.sources || enrichedData?.ai_sources || [],
-                subcellar: targetSubcellar || undefined,
-                wishlist,
-            };
-
             const savedWine = await storageService.saveWine(wineData);
 
             // Also upsert to catalog
@@ -125,7 +158,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
         } finally {
             setIsSaving(false);
         }
-    }, [name, producer, vintage, enrichedData, wishlist, targetSubcellar, onSaved]);
+    }, [name, producer, vintage, barcode, enrichedData, wishlist, targetSubcellar, onSaved]);
 
     if (!open || !result) return null;
 
@@ -192,7 +225,36 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                             />
                         </div>
                     </div>
+                    <div>
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-stone-500">Barcode</label>
+                        <input
+                            value={barcode}
+                            onChange={(e) => setBarcode(e.target.value)}
+                            disabled={busy}
+                            className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-mono focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
+                            placeholder="Optional"
+                        />
+                    </div>
                 </div>
+
+                {/* Duplicate warning */}
+                {duplicates.length > 0 && (
+                    <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+                        <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                        <span>
+                            Möglicherweise bereits im Keller: {duplicates.map((d) => `${d.name}${d.vintage ? ` (${d.vintage})` : ''}`).join(', ')}
+                        </span>
+                    </div>
+                )}
+
+                {/* Validation errors */}
+                {validationErrors.length > 0 && (
+                    <div className="mt-3 rounded-xl bg-red-50 px-3 py-2.5 text-xs text-red-600 space-y-1">
+                        {validationErrors.map((message) => (
+                            <p key={message}>{message}</p>
+                        ))}
+                    </div>
+                )}
 
                 {/* AI enrichment */}
                 <button

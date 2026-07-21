@@ -57,6 +57,7 @@ const normalizeWine = (wine: Partial<Wine>, userId: string): Wine => {
     vintage: typeof wine.vintage === 'number' ? wine.vintage : new Date().getFullYear(),
     region: wine.region || 'Unbekannt',
     subcellar: wine.subcellar,
+    barcode: wine.barcode || undefined,
     category: wine.category || 'Genuss',
     wine_type: wine.wine_type,
     quantity: typeof wine.quantity === 'number' ? wine.quantity : 0,

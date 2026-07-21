@@ -237,6 +237,7 @@ export interface Wine {
   vintage: number;
   region: string;
   subcellar?: string;
+  barcode?: string;
   category: Category;
   wine_type?: WineType;
   quantity: number;
