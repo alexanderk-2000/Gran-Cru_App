@@ -104,17 +104,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.wines where id = 'a0000000-0000-0000-0000-000000000001'), 0, 'wines: other user cannot select the wine');
 
 savepoint sp_wines_update;
-select is(
-  (with upd as (update public.wines set quantity = 999 where id = 'a0000000-0000-0000-0000-000000000001' returning id) select count(*)::int from upd),
-  0, 'wines: other user cannot update the wine'
-);
+with upd as (
+  update public.wines set quantity = 999 where id = 'a0000000-0000-0000-0000-000000000001' returning id
+)
+select is((select count(*)::int from upd), 0, 'wines: other user cannot update the wine');
 rollback to savepoint sp_wines_update;
 
 savepoint sp_wines_delete;
-select is(
-  (with del as (delete from public.wines where id = 'a0000000-0000-0000-0000-000000000001' returning id) select count(*)::int from del),
-  0, 'wines: other user cannot delete the wine'
-);
+with del as (
+  delete from public.wines where id = 'a0000000-0000-0000-0000-000000000001' returning id
+)
+select is((select count(*)::int from del), 0, 'wines: other user cannot delete the wine');
 rollback to savepoint sp_wines_delete;
 
 select throws_ok(
@@ -132,17 +132,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.occasions where id = 'a0000000-0000-0000-0000-000000000002'), 0, 'occasions: other user cannot select the occasion');
 
 savepoint sp_occasions_update;
-select is(
-  (with upd as (update public.occasions set title = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000002' returning id) select count(*)::int from upd),
-  0, 'occasions: other user cannot update the occasion'
-);
+with upd as (
+  update public.occasions set title = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000002' returning id
+)
+select is((select count(*)::int from upd), 0, 'occasions: other user cannot update the occasion');
 rollback to savepoint sp_occasions_update;
 
 savepoint sp_occasions_delete;
-select is(
-  (with del as (delete from public.occasions where id = 'a0000000-0000-0000-0000-000000000002' returning id) select count(*)::int from del),
-  0, 'occasions: other user cannot delete the occasion'
-);
+with del as (
+  delete from public.occasions where id = 'a0000000-0000-0000-0000-000000000002' returning id
+)
+select is((select count(*)::int from del), 0, 'occasions: other user cannot delete the occasion');
 rollback to savepoint sp_occasions_delete;
 
 select throws_ok(
@@ -160,17 +160,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.occasion_instances where id = 'a0000000-0000-0000-0000-000000000003'), 0, 'occasion_instances: other user cannot select the instance');
 
 savepoint sp_instances_update;
-select is(
-  (with upd as (update public.occasion_instances set status = 'cancelled' where id = 'a0000000-0000-0000-0000-000000000003' returning id) select count(*)::int from upd),
-  0, 'occasion_instances: other user cannot update the instance'
-);
+with upd as (
+  update public.occasion_instances set status = 'cancelled' where id = 'a0000000-0000-0000-0000-000000000003' returning id
+)
+select is((select count(*)::int from upd), 0, 'occasion_instances: other user cannot update the instance');
 rollback to savepoint sp_instances_update;
 
 savepoint sp_instances_delete;
-select is(
-  (with del as (delete from public.occasion_instances where id = 'a0000000-0000-0000-0000-000000000003' returning id) select count(*)::int from del),
-  0, 'occasion_instances: other user cannot delete the instance'
-);
+with del as (
+  delete from public.occasion_instances where id = 'a0000000-0000-0000-0000-000000000003' returning id
+)
+select is((select count(*)::int from del), 0, 'occasion_instances: other user cannot delete the instance');
 rollback to savepoint sp_instances_delete;
 
 select throws_ok(
@@ -188,17 +188,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.occasion_wine_pool where id = 'a0000000-0000-0000-0000-000000000004'), 0, 'occasion_wine_pool: other user cannot select the pool entry');
 
 savepoint sp_pool_update;
-select is(
-  (with upd as (update public.occasion_wine_pool set priority = 'high' where id = 'a0000000-0000-0000-0000-000000000004' returning id) select count(*)::int from upd),
-  0, 'occasion_wine_pool: other user cannot update the pool entry'
-);
+with upd as (
+  update public.occasion_wine_pool set priority = 'high' where id = 'a0000000-0000-0000-0000-000000000004' returning id
+)
+select is((select count(*)::int from upd), 0, 'occasion_wine_pool: other user cannot update the pool entry');
 rollback to savepoint sp_pool_update;
 
 savepoint sp_pool_delete;
-select is(
-  (with del as (delete from public.occasion_wine_pool where id = 'a0000000-0000-0000-0000-000000000004' returning id) select count(*)::int from del),
-  0, 'occasion_wine_pool: other user cannot delete the pool entry'
-);
+with del as (
+  delete from public.occasion_wine_pool where id = 'a0000000-0000-0000-0000-000000000004' returning id
+)
+select is((select count(*)::int from del), 0, 'occasion_wine_pool: other user cannot delete the pool entry');
 rollback to savepoint sp_pool_delete;
 
 select throws_ok(
@@ -216,17 +216,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.inventory_events where id = 'a0000000-0000-0000-0000-000000000005'), 0, 'inventory_events: other user cannot select the event');
 
 savepoint sp_events_update;
-select is(
-  (with upd as (update public.inventory_events set note = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000005' returning id) select count(*)::int from upd),
-  0, 'inventory_events: other user cannot update the event'
-);
+with upd as (
+  update public.inventory_events set note = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000005' returning id
+)
+select is((select count(*)::int from upd), 0, 'inventory_events: other user cannot update the event');
 rollback to savepoint sp_events_update;
 
 savepoint sp_events_delete;
-select is(
-  (with del as (delete from public.inventory_events where id = 'a0000000-0000-0000-0000-000000000005' returning id) select count(*)::int from del),
-  0, 'inventory_events: other user cannot delete the event'
-);
+with del as (
+  delete from public.inventory_events where id = 'a0000000-0000-0000-0000-000000000005' returning id
+)
+select is((select count(*)::int from del), 0, 'inventory_events: other user cannot delete the event');
 rollback to savepoint sp_events_delete;
 
 select throws_ok(
@@ -244,17 +244,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.tastings where id = 'a0000000-0000-0000-0000-000000000006'), 0, 'tastings: other user cannot select the tasting');
 
 savepoint sp_tastings_update;
-select is(
-  (with upd as (update public.tastings set note = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000006' returning id) select count(*)::int from upd),
-  0, 'tastings: other user cannot update the tasting'
-);
+with upd as (
+  update public.tastings set note = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000006' returning id
+)
+select is((select count(*)::int from upd), 0, 'tastings: other user cannot update the tasting');
 rollback to savepoint sp_tastings_update;
 
 savepoint sp_tastings_delete;
-select is(
-  (with del as (delete from public.tastings where id = 'a0000000-0000-0000-0000-000000000006' returning id) select count(*)::int from del),
-  0, 'tastings: other user cannot delete the tasting'
-);
+with del as (
+  delete from public.tastings where id = 'a0000000-0000-0000-0000-000000000006' returning id
+)
+select is((select count(*)::int from del), 0, 'tastings: other user cannot delete the tasting');
 rollback to savepoint sp_tastings_delete;
 
 select throws_ok(
@@ -272,17 +272,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.cellar_pockets where id = 'a0000000-0000-0000-0000-000000000007'), 0, 'cellar_pockets: other user cannot select the pocket');
 
 savepoint sp_pockets_update;
-select is(
-  (with upd as (update public.cellar_pockets set name = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000007' returning id) select count(*)::int from upd),
-  0, 'cellar_pockets: other user cannot update the pocket'
-);
+with upd as (
+  update public.cellar_pockets set name = 'hijacked' where id = 'a0000000-0000-0000-0000-000000000007' returning id
+)
+select is((select count(*)::int from upd), 0, 'cellar_pockets: other user cannot update the pocket');
 rollback to savepoint sp_pockets_update;
 
 savepoint sp_pockets_delete;
-select is(
-  (with del as (delete from public.cellar_pockets where id = 'a0000000-0000-0000-0000-000000000007' returning id) select count(*)::int from del),
-  0, 'cellar_pockets: other user cannot delete the pocket'
-);
+with del as (
+  delete from public.cellar_pockets where id = 'a0000000-0000-0000-0000-000000000007' returning id
+)
+select is((select count(*)::int from del), 0, 'cellar_pockets: other user cannot delete the pocket');
 rollback to savepoint sp_pockets_delete;
 
 select throws_ok(
@@ -300,17 +300,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.ai_cache where id = 'a0000000-0000-0000-0000-000000000008'), 0, 'ai_cache: other user cannot select the cache entry');
 
 savepoint sp_cache_update;
-select is(
-  (with upd as (update public.ai_cache set response = '{"hijacked":true}'::jsonb where id = 'a0000000-0000-0000-0000-000000000008' returning id) select count(*)::int from upd),
-  0, 'ai_cache: other user cannot update the cache entry'
-);
+with upd as (
+  update public.ai_cache set response = '{"hijacked":true}'::jsonb where id = 'a0000000-0000-0000-0000-000000000008' returning id
+)
+select is((select count(*)::int from upd), 0, 'ai_cache: other user cannot update the cache entry');
 rollback to savepoint sp_cache_update;
 
 savepoint sp_cache_delete;
-select is(
-  (with del as (delete from public.ai_cache where id = 'a0000000-0000-0000-0000-000000000008' returning id) select count(*)::int from del),
-  0, 'ai_cache: other user cannot delete the cache entry'
-);
+with del as (
+  delete from public.ai_cache where id = 'a0000000-0000-0000-0000-000000000008' returning id
+)
+select is((select count(*)::int from del), 0, 'ai_cache: other user cannot delete the cache entry');
 rollback to savepoint sp_cache_delete;
 
 select throws_ok(
@@ -328,17 +328,17 @@ select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 select is((select count(*)::int from public.user_settings where user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), 0, 'user_settings: other user cannot select the settings');
 
 savepoint sp_settings_update;
-select is(
-  (with upd as (update public.user_settings set currency = 'USD' where user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' returning user_id) select count(*)::int from upd),
-  0, 'user_settings: other user cannot update the settings'
-);
+with upd as (
+  update public.user_settings set currency = 'USD' where user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' returning user_id
+)
+select is((select count(*)::int from upd), 0, 'user_settings: other user cannot update the settings');
 rollback to savepoint sp_settings_update;
 
 savepoint sp_settings_delete;
-select is(
-  (with del as (delete from public.user_settings where user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' returning user_id) select count(*)::int from del),
-  0, 'user_settings: other user cannot delete the settings'
-);
+with del as (
+  delete from public.user_settings where user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' returning user_id
+)
+select is((select count(*)::int from del), 0, 'user_settings: other user cannot delete the settings');
 rollback to savepoint sp_settings_delete;
 
 -- ============================================================
@@ -359,12 +359,10 @@ select throws_ok(
 );
 
 savepoint sp_catalog_update;
-select is(
-  (with upd as (
-     update public.wine_catalog set name = 'hijacked' where name = 'RLS Test Wine A' returning id
-   ) select count(*)::int from upd),
-  0, 'wine_catalog: authenticated user cannot directly update a catalog entry'
-);
+with upd as (
+  update public.wine_catalog set name = 'hijacked' where name = 'RLS Test Wine A' returning id
+)
+select is((select count(*)::int from upd), 0, 'wine_catalog: authenticated user cannot directly update a catalog entry');
 rollback to savepoint sp_catalog_update;
 
 select * from finish();
