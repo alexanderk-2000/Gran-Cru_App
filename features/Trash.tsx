@@ -4,6 +4,7 @@ import { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
 import { Trash2, RotateCcw, Wine as WineIcon, ArrowLeft, Search, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { TRASH_RETENTION_DAYS, getDaysRemaining, isExpired } from '../domain/wine/trashRetention.ts';
 
 export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
   const [deletedWines, setDeletedWines] = useState<Wine[]>([]);
@@ -12,13 +13,26 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoPurgedCount, setAutoPurgedCount] = useState(0);
   const navigate = useNavigate();
 
   const fetchDeleted = async () => {
     setLoading(true);
     try {
       const data = await storageService.getDeletedWines();
-      setDeletedWines(data);
+
+      // Enforce the retention period: anything past its expiry gets purged
+      // for good, traceably (permanentlyDeleteWine's own event trail records
+      // when a wine was soft-deleted before this happens).
+      const expired = data.filter((wine) => wine.deleted_at && isExpired(wine.deleted_at));
+      const active = data.filter((wine) => !wine.deleted_at || !isExpired(wine.deleted_at));
+
+      if (expired.length > 0) {
+        await Promise.all(expired.map((wine) => storageService.permanentlyDeleteWine(wine.id).catch(() => {})));
+        setAutoPurgedCount(expired.length);
+      }
+
+      setDeletedWines(active);
       setError(null);
     } catch (err) {
       console.error(err);
@@ -123,6 +137,12 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
         </div>
       )}
 
+      {autoPurgedCount > 0 && (
+        <div className="bg-alabaster border border-burgundy/10 text-stone-gray px-4 py-3 rounded-xl text-sm">
+          {autoPurgedCount} Eintrag/Einträge wurden nach Ablauf der {TRASH_RETENTION_DAYS}-tägigen Aufbewahrungsfrist endgültig gelöscht.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {loading ? (
           <div className="col-span-full py-24 flex flex-col items-center gap-4">
@@ -145,6 +165,11 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
                     )}
                   </div>
                 </div>
+                {wine.deleted_at && (
+                  <span className="shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 whitespace-nowrap">
+                    Läuft ab in {Math.max(0, getDaysRemaining(wine.deleted_at))} Tag(en)
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-6 border-t border-alabaster">

@@ -6,6 +6,8 @@ export const wineRepository = {
   saveWine: legacy.saveWine,
   adjustStock: legacy.adjustStock,
   recordPurchase: legacy.recordPurchase,
+  recordLoss: legacy.recordLoss,
+  transferWine: legacy.transferWine,
   consumeBottle: legacy.consumeBottle,
   softDeleteWine: legacy.softDeleteWine,
   getDeletedWines: legacy.getDeletedWines,
