@@ -110,14 +110,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                 wishlist,
             };
 
-            const savedWine = await storageService.saveWine(wineData);
-
-            // Also upsert to catalog
-            try {
-                await storageService.upsertWineCatalog(savedWine);
-            } catch {
-                // Non-critical
-            }
+            await storageService.saveWine(wineData);
 
             onSaved();
         } catch (err: any) {

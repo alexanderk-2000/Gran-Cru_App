@@ -20,8 +20,7 @@ const MAIN_WRITE_OPERATIONS = new Set([
   'updateInstanceStatus',
   'applyAutoAssignments',
   'clearAutoAssignmentsForOccasion',
-  'addTasting',
-  'upsertWineCatalog'
+  'addTasting'
 ]);
 
 const MAIN_READ_OPERATIONS = new Set([
@@ -103,50 +102,56 @@ const upsertWineLocal = async (wine: Partial<Wine>, userId: string): Promise<Win
   return normalized;
 };
 
-const readLocalArray = async <T>(operation: string, args: unknown[]): Promise<T[]> => {
+const readLocalArray = async <T>(operation: string, args: unknown[], userId: string): Promise<T[]> => {
   switch (operation) {
     case 'getWines': {
       return (await offlineDb.wines
+        .where('user_id').equals(userId)
         .filter((wine) => !wine.deleted_at)
         .toArray()) as T[];
     }
     case 'getDeletedWines': {
       return (await offlineDb.wines
+        .where('user_id').equals(userId)
         .filter((wine) => Boolean(wine.deleted_at))
         .toArray()) as T[];
     }
     case 'getCellarPockets':
-      return (await offlineDb.cellar_pockets.toArray()) as T[];
+      return (await offlineDb.cellar_pockets.where('user_id').equals(userId).toArray()) as T[];
     case 'getOccasions':
-      return (await offlineDb.occasions.toArray()) as T[];
+      return (await offlineDb.occasions.where('user_id').equals(userId).toArray()) as T[];
     case 'getOccasionInstances':
-      return (await offlineDb.occasion_instances.toArray()) as T[];
+      return (await offlineDb.occasion_instances.where('user_id').equals(userId).toArray()) as T[];
     case 'getOccasionInstancesByOccasion':
       return (await offlineDb.occasion_instances
         .where('occasion_id')
         .equals(String(args[0] || ''))
+        .filter((row) => row.user_id === userId)
         .toArray()) as T[];
     case 'getOccasionWinePool':
       return (await offlineDb.occasion_wine_pool
         .where('occasion_id')
         .equals(String(args[0] || ''))
+        .filter((row) => row.user_id === userId)
         .toArray()) as T[];
     case 'getTastings':
       return (await offlineDb.tastings
         .where('wine_id')
         .equals(String(args[0] || ''))
+        .filter((row) => row.user_id === userId)
         .toArray()) as T[];
     case 'getConsumptionHistory':
-      return (await offlineDb.inventory_events.toArray()) as T[];
+      return (await offlineDb.inventory_events.where('user_id').equals(userId).toArray()) as T[];
     default:
       return [];
   }
 };
 
-const readLocalSingle = async <T>(operation: string, args: unknown[]): Promise<T | null> => {
+const readLocalSingle = async <T>(operation: string, args: unknown[], userId: string): Promise<T | null> => {
   if (operation === 'getWineById') {
     const row = await offlineDb.wines.get(String(args[0] || ''));
-    return (row as T | undefined) || null;
+    if (!row || row.user_id !== userId) return null;
+    return row as T;
   }
   return null;
 };
@@ -398,8 +403,10 @@ export const createStorageOfflineAdapter = <T extends Record<string, unknown>>(b
 
       if (MAIN_READ_OPERATIONS.has(property)) {
         return async (...args: unknown[]) => {
+          const userId = await tryCurrentUser(target);
+
           if (property === 'getWineById') {
-            const localSingle = await readLocalSingle<any>(property, args);
+            const localSingle = userId ? await readLocalSingle<any>(property, args, userId) : null;
             if (!isOnline() || localSingle) {
               return localSingle;
             }
@@ -407,7 +414,7 @@ export const createStorageOfflineAdapter = <T extends Record<string, unknown>>(b
           }
 
           if (!isOnline()) {
-            return readLocalArray<any>(property, args);
+            return userId ? readLocalArray<any>(property, args, userId) : [];
           }
 
           try {
@@ -443,7 +450,7 @@ export const createStorageOfflineAdapter = <T extends Record<string, unknown>>(b
 
             return response;
           } catch {
-            return readLocalArray<any>(property, args);
+            return userId ? readLocalArray<any>(property, args, userId) : [];
           }
         };
       }
