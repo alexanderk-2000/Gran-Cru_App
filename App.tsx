@@ -64,9 +64,14 @@ const App: React.FC = () => {
   const activeUserIdRef = useRef<string | null>(null);
 
   const fetchWines = useCallback(async () => {
-    const data = await storageService.getWines();
-    setWines(data);
-    setLoading(false);
+    try {
+      const data = await storageService.getWines();
+      setWines(data);
+    } catch (err) {
+      console.error('Failed to fetch wines:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
