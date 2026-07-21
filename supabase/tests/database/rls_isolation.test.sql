@@ -120,6 +120,7 @@ rollback to savepoint sp_wines_delete;
 select throws_ok(
   $$insert into public.wines (id, user_id, name) values ('a0000000-0000-0000-0000-000000000099', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Impersonated wine')$$,
   '42501',
+  'new row violates row-level security policy for table "wines"',
   'wines: other user cannot insert a wine impersonating the owner'
 );
 
@@ -149,6 +150,7 @@ rollback to savepoint sp_occasions_delete;
 select throws_ok(
   $$insert into public.occasions (id, user_id, title, start_date, end_date) values ('a0000000-0000-0000-0000-000000000098', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Impersonated occasion', current_date, current_date)$$,
   '42501',
+  'new row violates row-level security policy for table "occasions"',
   'occasions: other user cannot insert an occasion impersonating the owner'
 );
 
@@ -178,6 +180,7 @@ rollback to savepoint sp_instances_delete;
 select throws_ok(
   $$insert into public.occasion_instances (id, occasion_id, user_id, instance_date) values ('a0000000-0000-0000-0000-000000000097', 'a0000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', current_date + 1)$$,
   '42501',
+  'new row violates row-level security policy for table "occasion_instances"',
   'occasion_instances: other user cannot insert an instance impersonating the owner'
 );
 
@@ -207,6 +210,7 @@ rollback to savepoint sp_pool_delete;
 select throws_ok(
   $$insert into public.occasion_wine_pool (id, occasion_id, user_id, wine_id) values ('a0000000-0000-0000-0000-000000000096', 'a0000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'a0000000-0000-0000-0000-000000000001')$$,
   '42501',
+  'new row violates row-level security policy for table "occasion_wine_pool"',
   'occasion_wine_pool: other user cannot insert a pool entry impersonating the owner'
 );
 
@@ -236,6 +240,7 @@ rollback to savepoint sp_events_delete;
 select throws_ok(
   $$insert into public.inventory_events (id, wine_id, user_id, type, delta) values ('a0000000-0000-0000-0000-000000000095', 'a0000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'adjustment', 1)$$,
   '42501',
+  'new row violates row-level security policy for table "inventory_events"',
   'inventory_events: other user cannot insert an event impersonating the owner'
 );
 
@@ -265,6 +270,7 @@ rollback to savepoint sp_tastings_delete;
 select throws_ok(
   $$insert into public.tastings (id, wine_id, user_id, rating, note) values ('a0000000-0000-0000-0000-000000000094', 'a0000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 4, 'impersonated')$$,
   '42501',
+  'new row violates row-level security policy for table "tastings"',
   'tastings: other user cannot insert a tasting impersonating the owner'
 );
 
@@ -294,6 +300,7 @@ rollback to savepoint sp_pockets_delete;
 select throws_ok(
   $$insert into public.cellar_pockets (id, user_id, name) values ('a0000000-0000-0000-0000-000000000093', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Impersonated pocket')$$,
   '42501',
+  'new row violates row-level security policy for table "cellar_pockets"',
   'cellar_pockets: other user cannot insert a pocket impersonating the owner'
 );
 
@@ -323,6 +330,7 @@ rollback to savepoint sp_cache_delete;
 select throws_ok(
   $$insert into public.ai_cache (id, user_id, provider, model, cache_key, response) values ('a0000000-0000-0000-0000-000000000092', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'test', 'test-model', 'impersonated-key', '{}'::jsonb)$$,
   '42501',
+  'new row violates row-level security policy for table "ai_cache"',
   'ai_cache: other user cannot insert a cache entry impersonating the owner'
 );
 
@@ -364,6 +372,7 @@ select ok(
 select throws_ok(
   $$insert into public.wine_catalog (canonical_key, name) values ('rls-test-impersonated-catalog-entry', 'Impersonated catalog entry')$$,
   '42501',
+  'new row violates row-level security policy for table "wine_catalog"',
   'wine_catalog: authenticated user cannot directly insert a catalog entry'
 );
 
