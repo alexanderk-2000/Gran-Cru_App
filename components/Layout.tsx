@@ -15,7 +15,8 @@ import {
   Sparkles,
   Trash2,
   Settings as SettingsIcon,
-  History
+  History,
+  ClipboardList
 } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
 import { UserProfile } from '../types.ts';
@@ -27,6 +28,7 @@ const navGroups = [
       { path: '/', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/inventory', label: 'Keller', icon: WineIcon },
       { path: '/wishlist', label: 'Wunschliste', icon: Heart },
+      { path: '/stocktake', label: 'Inventur', icon: ClipboardList },
       { path: '/trash', label: 'Papierkorb', icon: Trash2 }
     ]
   },
