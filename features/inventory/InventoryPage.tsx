@@ -17,6 +17,7 @@ import {
 } from '../../domain/wine/normalization.ts';
 import { validateWineInput } from '../../domain/wine/validation.ts';
 import { findLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
+import { loadInventoryViewPreferences, saveInventoryViewPreferences, type InventorySort } from '../../services/inventoryViewPreferences.ts';
 
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
@@ -40,6 +41,9 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<Category | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<WineStatus | 'All'>('All');
   const [subcellarFilter, setSubcellarFilter] = useState<string>('All');
+  const [sort, setSort] = useState<InventorySort>('name-asc');
+  const [preferenceUserId, setPreferenceUserId] = useState<string | null>(null);
+  const [preferencesHydrated, setPreferencesHydrated] = useState(false);
 
   // Add wine modal states
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
@@ -111,6 +115,31 @@ export const Inventory: React.FC<InventoryProps> = ({
   useEffect(() => {
     void refreshStoredPockets();
   }, [refreshStoredPockets]);
+
+  useEffect(() => {
+    let active = true;
+    setPreferencesHydrated(false);
+    void storageService.getCurrentUser().then((user) => {
+      if (!active) return;
+      const userId = user?.id ?? 'demo-user';
+      const saved = loadInventoryViewPreferences(userId, wishlistOnly ? 'wishlist' : 'inventory');
+      setSearch(saved.search);
+      setCategoryFilter(saved.category);
+      setStatusFilter(saved.status);
+      setSubcellarFilter(saved.subcellar);
+      setSort(saved.sort);
+      setPreferenceUserId(userId);
+      setPreferencesHydrated(true);
+    });
+    return () => { active = false; };
+  }, [wishlistOnly]);
+
+  useEffect(() => {
+    if (!preferencesHydrated || !preferenceUserId) return;
+    saveInventoryViewPreferences(preferenceUserId, wishlistOnly ? 'wishlist' : 'inventory', {
+      search, category: categoryFilter, status: statusFilter, subcellar: subcellarFilter, sort
+    });
+  }, [categoryFilter, preferenceUserId, preferencesHydrated, search, sort, statusFilter, subcellarFilter, wishlistOnly]);
 
   const availableSubcellars = useMemo(() => {
     const set = new Set<string>();
@@ -283,8 +312,13 @@ export const Inventory: React.FC<InventoryProps> = ({
           ? normalizedWineSubcellar.length === 0
           : normalizedWineSubcellar === subcellarFilter);
       return matchesSearch && matchesCategory && matchesStatus && matchesSubcellar;
+    }).sort((a, b) => {
+      if (sort === 'vintage-desc') return b.vintage - a.vintage || a.name.localeCompare(b.name, 'de');
+      if (sort === 'value-desc') return (b.market_price ?? b.purchase_price) - (a.market_price ?? a.purchase_price) || a.name.localeCompare(b.name, 'de');
+      if (sort === 'quantity-desc') return b.quantity - a.quantity || a.name.localeCompare(b.name, 'de');
+      return a.name.localeCompare(b.name, 'de');
     });
-  }, [wines, search, categoryFilter, statusFilter, subcellarFilter, wishlistOnly, presetView]);
+  }, [wines, search, categoryFilter, statusFilter, subcellarFilter, wishlistOnly, presetView, sort]);
 
   const groupedWines = useMemo(() => {
     const groups = new Map<string, Wine[]>();
@@ -527,9 +561,10 @@ Regeln:
             className="w-full pl-12 pr-4 py-3.5 bg-alabaster border-2 border-transparent rounded-[1.25rem] text-sm focus:outline-none focus:border-burgundy/20 transition-all font-medium"
           />
         </div>
-        <div className="flex gap-2">
-          <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={[{ label: 'Alle Kategorien', value: 'All' }, { label: 'Genuss', value: 'Genuss' }, { label: 'Investment', value: 'Investment' }, { label: 'Rarität', value: 'Rarität' }]} />
-          <FilterSelect value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }]} />
+        <div className="flex flex-wrap gap-2">
+          <FilterSelect label="Kategorie" value={categoryFilter} onChange={setCategoryFilter} options={[{ label: 'Alle Kategorien', value: 'All' }, { label: 'Genuss', value: 'Genuss' }, { label: 'Investment', value: 'Investment' }, { label: 'Rarität', value: 'Rarität' }]} />
+          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }]} />
+          <FilterSelect label="Sortierung" value={sort} onChange={setSort} options={[{ label: 'Name A–Z', value: 'name-asc' }, { label: 'Neuester Jahrgang', value: 'vintage-desc' }, { label: 'Höchster Wert', value: 'value-desc' }, { label: 'Meiste Flaschen', value: 'quantity-desc' }]} />
         </div>
       </div>
 
@@ -842,8 +877,15 @@ Regeln:
   );
 };
 
-const FilterSelect = ({ value, onChange, options }: any) => (
-  <select value={value} onChange={(e) => onChange(e.target.value as any)} className="px-6 py-3.5 bg-alabaster border-2 border-transparent rounded-[1.25rem] text-xs font-black text-charcoal focus:outline-none appearance-none hover:border-burgundy/10">
-    {options.map((opt: any) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
+interface FilterSelectProps<T extends string> {
+  label: string;
+  value: T;
+  onChange: (value: T) => void;
+  options: Array<{ label: string; value: T }>;
+}
+
+const FilterSelect = <T extends string>({ label, value, onChange, options }: FilterSelectProps<T>) => (
+  <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)} className="min-w-0 flex-1 px-4 sm:px-6 py-3.5 bg-alabaster border-2 border-transparent rounded-[1.25rem] text-xs font-black text-charcoal focus:outline-none appearance-none hover:border-burgundy/10">
+    {options.map((opt) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
   </select>
 );
