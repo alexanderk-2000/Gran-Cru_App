@@ -418,10 +418,10 @@ Regeln:
 
     setIsMovingWine(true);
     try {
-      await storageService.saveWine({
-        id: wine.id,
-        subcellar: targetPocketId === MAIN_CELLAR_FILTER ? '' : targetPocketId
-      });
+      await storageService.transferWine(
+        wine.id,
+        targetPocketId === MAIN_CELLAR_FILTER ? '' : targetPocketId
+      );
       await onWineUpdate();
     } catch (error: any) {
       alert(error?.message || 'Verschieben in Pocket fehlgeschlagen.');

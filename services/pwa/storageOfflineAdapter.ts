@@ -8,6 +8,8 @@ const MAIN_WRITE_OPERATIONS = new Set([
   'createCellarPocket',
   'adjustStock',
   'recordPurchase',
+  'recordLoss',
+  'transferWine',
   'consumeBottle',
   'softDeleteWine',
   'restoreWine',
@@ -173,6 +175,7 @@ const updateLocalForWrite = async (operation: string, args: unknown[], userId: s
     case 'adjustStock': {
       const wineId = String(args[0] || '');
       const delta = Number(args[1] || 0);
+      const context = args[2] ? String(args[2]) : 'manual';
       const wine = await offlineDb.wines.get(wineId);
       if (!wine) return null;
       const updated: Wine = {
@@ -181,6 +184,93 @@ const updateLocalForWrite = async (operation: string, args: unknown[], userId: s
         updated_at: nowIso()
       };
       await offlineDb.wines.put(updated);
+      if (delta !== 0) {
+        await offlineDb.inventory_events.put({
+          id: createLocalId('evt'),
+          user_id: userId,
+          wine_id: wineId,
+          type: 'adjustment',
+          delta,
+          source: context,
+          timestamp: nowIso()
+        });
+      }
+      return updated;
+    }
+    case 'recordPurchase': {
+      const purchase = (args[0] || {}) as { wine_id: string; quantity: number; price_per_bottle: number; date: string };
+      const wineId = String(purchase.wine_id || '');
+      const wine = await offlineDb.wines.get(wineId);
+      if (!wine) return null;
+      const newQuantity = (wine.quantity || 0) + purchase.quantity;
+      const newPrice = ((wine.purchase_price || 0) * (wine.quantity || 0) + purchase.price_per_bottle * purchase.quantity) / (newQuantity || 1);
+      const updated: Wine = {
+        ...wine,
+        quantity: newQuantity,
+        purchase_price: newPrice,
+        updated_at: nowIso()
+      };
+      await offlineDb.wines.put(updated);
+      await offlineDb.inventory_events.put({
+        id: createLocalId('evt'),
+        user_id: userId,
+        wine_id: wineId,
+        type: 'purchase',
+        delta: purchase.quantity,
+        source: 'purchase',
+        note: purchase.date,
+        timestamp: nowIso()
+      });
+      return updated;
+    }
+    case 'recordLoss': {
+      const wineId = String(args[0] || '');
+      const quantity = Number(args[1] || 0);
+      const reason = args[2] ? String(args[2]) : undefined;
+      const wine = await offlineDb.wines.get(wineId);
+      if (!wine) return null;
+      const lostQuantity = Math.min(quantity, wine.quantity || 0);
+      if (lostQuantity <= 0) return wine;
+      const updated: Wine = {
+        ...wine,
+        quantity: Math.max(0, (wine.quantity || 0) - lostQuantity),
+        updated_at: nowIso()
+      };
+      await offlineDb.wines.put(updated);
+      await offlineDb.inventory_events.put({
+        id: createLocalId('evt'),
+        user_id: userId,
+        wine_id: wineId,
+        type: 'loss',
+        delta: -lostQuantity,
+        source: 'detail',
+        note: reason,
+        timestamp: nowIso()
+      });
+      return updated;
+    }
+    case 'transferWine': {
+      const wineId = String(args[0] || '');
+      const targetSubcellar = String(args[1] || '');
+      const wine = await offlineDb.wines.get(wineId);
+      if (!wine) return null;
+      const previousSubcellar = wine.subcellar || '';
+      const updated: Wine = {
+        ...wine,
+        subcellar: targetSubcellar || undefined,
+        updated_at: nowIso()
+      };
+      await offlineDb.wines.put(updated);
+      await offlineDb.inventory_events.put({
+        id: createLocalId('evt'),
+        user_id: userId,
+        wine_id: wineId,
+        type: 'transfer',
+        delta: 0,
+        source: 'pocket',
+        note: `${previousSubcellar || 'Hauptkeller'} -> ${targetSubcellar || 'Hauptkeller'}`,
+        timestamp: nowIso()
+      });
       return updated;
     }
     case 'consumeBottle': {
@@ -216,6 +306,16 @@ const updateLocalForWrite = async (operation: string, args: unknown[], userId: s
         updated_at: nowIso()
       };
       await offlineDb.wines.put(updated);
+      await offlineDb.inventory_events.put({
+        id: createLocalId('evt'),
+        user_id: userId,
+        wine_id: wineId,
+        type: 'soft_delete',
+        delta: 0,
+        source: 'trash',
+        note: reason,
+        timestamp: nowIso()
+      });
       return updated;
     }
     case 'restoreWine': {
@@ -229,6 +329,15 @@ const updateLocalForWrite = async (operation: string, args: unknown[], userId: s
         updated_at: nowIso()
       };
       await offlineDb.wines.put(updated);
+      await offlineDb.inventory_events.put({
+        id: createLocalId('evt'),
+        user_id: userId,
+        wine_id: wineId,
+        type: 'restore',
+        delta: 0,
+        source: 'trash',
+        timestamp: nowIso()
+      });
       return updated;
     }
     case 'permanentlyDeleteWine': {
