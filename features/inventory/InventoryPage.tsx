@@ -196,7 +196,6 @@ export const Inventory: React.FC<InventoryProps> = ({
       let failed = 0;
       let invalid = 0;
       let duplicateSkipped = 0;
-      let catalogFailed = 0;
       const normalizedTargetSubcellar = normalizeSubcellar(targetSubcellar);
       const knownWines = [...wines];
       for (const wine of mapped) {
@@ -218,12 +217,6 @@ export const Inventory: React.FC<InventoryProps> = ({
         try {
           const savedWine = await storageService.saveWine(wineWithTarget);
           knownWines.push(savedWine);
-          try {
-            await storageService.upsertWineCatalog(savedWine);
-          } catch (catalogError) {
-            console.warn('Catalog upsert failed for imported wine:', catalogError);
-            catalogFailed += 1;
-          }
           saved += 1;
         } catch {
           failed += 1;
@@ -237,12 +230,11 @@ export const Inventory: React.FC<InventoryProps> = ({
       setGeneratedPrompt('');
       setPromptCopied(false);
 
-      if (failed > 0 || invalid > 0 || duplicateSkipped > 0 || catalogFailed > 0) {
+      if (failed > 0 || invalid > 0 || duplicateSkipped > 0) {
         const parts = [`${saved} Wein(e) importiert`];
         if (invalid > 0) parts.push(`${invalid} Eintrag/Einträge waren ungültig`);
         if (duplicateSkipped > 0) parts.push(`${duplicateSkipped} Eintrag/Einträge übersprungen (bereits im Keller)`);
         if (failed > 0) parts.push(`${failed} Eintrag/Einträge konnten nicht gespeichert werden`);
-        if (catalogFailed > 0) parts.push(`${catalogFailed} Eintrag/Einträge konnten nicht in den globalen Katalog geschrieben werden`);
         alert(`${parts.join(', ')}.`);
       } else {
         alert(`${saved} Wein(e) erfolgreich importiert und global verfügbar.`);

@@ -63,12 +63,6 @@ const buildCatalogCanonicalKey = (name: string, producer?: string | null, vintag
   return [normalizedVintage, normalizedProducer, normalizedName].filter(Boolean).join('::');
 };
 
-const confidenceToInt = (value: Wine['confidence'] | undefined): number => {
-  if (value === 'high') return 90;
-  if (value === 'low') return 40;
-  return 65;
-};
-
 const confidenceFromInt = (value: unknown): Wine['confidence'] => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'medium';
   if (value >= 80) return 'high';
@@ -145,7 +139,10 @@ const mapCatalogRowToAiPayload = (row: any): Record<string, any> => {
 export const storageService = {
   // --- AUTHENTIFIZIERUNG ---
   getCurrentUser: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    // getSession() reads the cached session from local storage and works offline;
+    // getUser() would revalidate against the Auth server and fail without network.
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) return null;
     return {
       id: user.id,
@@ -180,7 +177,14 @@ export const storageService = {
   },
 
   seedIfNewUser: async (userId: string) => {
-    const { count } = await supabase.from('wines').select('*', { count: 'exact', head: true }).eq('user_id', userId);
+    const { count, error: countError } = await supabase
+      .from('wines')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    if (countError) {
+      console.error('Failed to check existing wines before seeding demo user:', countError);
+      return;
+    }
     if (count === 0) {
       const seeded = PRE_SEED_WINES.map(w => ({
         ...w,
@@ -188,7 +192,10 @@ export const storageService = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }));
-      await supabase.from('wines').insert(seeded);
+      const { error: insertError } = await supabase.from('wines').insert(seeded);
+      if (insertError) {
+        console.error('Failed to seed demo wines:', insertError);
+      }
     }
   },
 
@@ -318,80 +325,6 @@ export const storageService = {
     }
 
     return savedWine;
-  },
-
-  upsertWineCatalog: async (wine: Partial<Wine>): Promise<void> => {
-    const name = (wine.name || '').trim();
-    if (!name) return;
-
-    const producer = (wine.producer || '').trim() || null;
-    const vintage = typeof wine.vintage === 'number' && Number.isFinite(wine.vintage) ? wine.vintage : null;
-    const canonicalKey = buildCatalogCanonicalKey(name, producer, vintage);
-
-    const details = wine.ai_details && typeof wine.ai_details === 'object' ? wine.ai_details : {};
-    const vinificationFromDetails = (details as any).vinification && typeof (details as any).vinification === 'object'
-      ? (details as any).vinification
-      : {};
-    const baseVinification = {
-      ...vinificationFromDetails,
-      ...(wine.fermentation ? { fermentation_vessel: wine.fermentation } : {}),
-      ...(wine.aging_process ? { aging_vessel: wine.aging_process } : {})
-    };
-
-    const sources = Array.isArray(wine.ai_sources) ? wine.ai_sources : [];
-    const missingFields = Array.isArray(wine.missing_fields) ? wine.missing_fields : [];
-
-    const nameNorm = normalizeCatalogToken(name);
-    const producerNorm = normalizeCatalogToken(producer || '');
-    const searchNorm = [nameNorm, producerNorm, vintage ? String(vintage) : ''].filter(Boolean).join(' ').trim();
-
-    const payload = {
-      canonical_key: canonicalKey,
-      name,
-      producer,
-      vintage,
-      region: wine.region || null,
-      country: wine.country || null,
-      appellation: wine.appellation || null,
-      vineyard: wine.vineyard || null,
-      wine_type: wine.wine_type || null,
-      grapes: Array.isArray(wine.grapes) ? wine.grapes : [],
-      alcohol_percent: typeof wine.alcohol_percent === 'number' ? wine.alcohol_percent : null,
-      drink_start: typeof wine.drink_start === 'number' ? wine.drink_start : null,
-      peak_year: typeof wine.peak_year === 'number' ? wine.peak_year : null,
-      drink_end: typeof wine.drink_end === 'number' ? wine.drink_end : null,
-      aromas: Array.isArray(wine.aromas) ? wine.aromas : [],
-      structure: wine.structure && typeof wine.structure === 'object' ? wine.structure : {},
-      pairings: Array.isArray(wine.pairings) ? wine.pairings : [],
-      vinification: baseVinification,
-      scores: Array.isArray(wine.scores) ? wine.scores : [],
-      details,
-      sources,
-      confidence: confidenceToInt(wine.confidence),
-      missing_fields: missingFields,
-      inferred_fields: [],
-      name_norm: nameNorm,
-      producer_norm: producerNorm,
-      search_norm: searchNorm,
-      updated_at: new Date().toISOString()
-    };
-
-    const attemptPayload: Record<string, any> = { ...payload };
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const { error } = await supabase
-        .from('wine_catalog')
-        .upsert(attemptPayload, { onConflict: 'canonical_key' });
-      if (!error) return;
-
-      const missingColumn = extractMissingColumnName(error);
-      if (!missingColumn || !(missingColumn in attemptPayload)) {
-        throw error;
-      }
-
-      // Schema cache / migration drift fallback: retry without unknown column.
-      delete attemptPayload[missingColumn];
-    }
-    throw new Error('wine_catalog upsert failed after fallback attempts');
   },
 
   findWineInCatalog: async (query: { name: string; producer?: string; vintage?: number | null }): Promise<Record<string, any> | null> => {

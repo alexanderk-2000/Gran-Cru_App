@@ -1,5 +1,5 @@
 
-import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout.tsx';
 import { Auth } from './components/Auth.tsx';
@@ -7,7 +7,7 @@ import { AlertCircle } from 'lucide-react';
 import { Wine, UserProfile } from './types.ts';
 import { storageService } from './services/storage.ts';
 import { supabase, isConfigured } from './services/supabase.ts';
-import { runSyncCycle } from './services/pwa/syncEngine.ts';
+import { runSyncCycle, clearOfflineUserAndQueues } from './services/pwa/syncEngine.ts';
 
 const Dashboard = lazy(() => import('./features/Dashboard.tsx').then((m) => ({ default: m.Dashboard })));
 const Inventory = lazy(() => import('./features/Inventory.tsx').then((m) => ({ default: m.Inventory })));
@@ -62,11 +62,17 @@ const App: React.FC = () => {
   const [wines, setWines] = useState<Wine[]>([]);
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
+  const activeUserIdRef = useRef<string | null>(null);
 
   const fetchWines = useCallback(async () => {
-    const data = await storageService.getWines();
-    setWines(data);
-    setLoading(false);
+    try {
+      const data = await storageService.getWines();
+      setWines(data);
+    } catch (err) {
+      console.error('Failed to fetch wines:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -80,6 +86,7 @@ const App: React.FC = () => {
     const initAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
+        activeUserIdRef.current = session.user.id;
         setUser({
           id: session.user.id,
           email: session.user.email || '',
@@ -97,7 +104,14 @@ const App: React.FC = () => {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const previousUserId = activeUserIdRef.current;
+
       if (session?.user) {
+        // Account switch without an explicit logout: purge the outgoing user's local data first.
+        if (previousUserId && previousUserId !== session.user.id) {
+          void clearOfflineUserAndQueues(previousUserId);
+        }
+        activeUserIdRef.current = session.user.id;
         setUser({
           id: session.user.id,
           email: session.user.email || '',
@@ -107,6 +121,11 @@ const App: React.FC = () => {
         void fetchWines();
         void runSyncCycle(storageService);
       } else {
+        // Session expired, was revoked, or auto-signed-out: lock/clear the previous user's local data.
+        if (previousUserId) {
+          void clearOfflineUserAndQueues(previousUserId);
+        }
+        activeUserIdRef.current = null;
         setUser(null);
         setWines([]);
       }

@@ -1,4 +1,4 @@
-import { offlineDb, createLocalId, getMeta, persistFullDataset, setMeta } from './offlineDb.ts';
+import { offlineDb, clearUserData, createLocalId, getMeta, persistFullDataset, setMeta } from './offlineDb.ts';
 import type { FullDatasetSnapshot, OfflineQueueItem, QueueOperationInput, SyncStateSnapshot } from './types.ts';
 import { isOnline } from './networkState.ts';
 import { resolveLastWriteWins } from './conflictResolver.ts';
@@ -265,15 +265,7 @@ export const getLastSyncedUserId = (): string | null => {
 };
 
 export const clearOfflineUserAndQueues = async (userId: string): Promise<void> => {
-  await offlineDb.write_queue.where('user_id').equals(userId).delete();
-  await offlineDb.ai_queue.where('user_id').equals(userId).delete();
-  await offlineDb.wines.where('user_id').equals(userId).delete();
-  await offlineDb.tastings.where('user_id').equals(userId).delete();
-  await offlineDb.occasions.where('user_id').equals(userId).delete();
-  await offlineDb.occasion_instances.where('user_id').equals(userId).delete();
-  await offlineDb.occasion_wine_pool.where('user_id').equals(userId).delete();
-  await offlineDb.cellar_pockets.where('user_id').equals(userId).delete();
-  await offlineDb.conflicts.where('user_id').equals(userId).delete();
+  await clearUserData(userId);
   localStorage.removeItem('pwa_last_synced_user');
 
   await saveSyncState({
