@@ -2,6 +2,8 @@ import { storageService as legacy } from '../storage.legacy.ts';
 
 export const wineRepository = {
   getWines: legacy.getWines,
+  getWinesUpdatedSince: legacy.getWinesUpdatedSince,
+  getSyncReconciliationIds: legacy.getSyncReconciliationIds,
   getWineById: legacy.getWineById,
   saveWine: legacy.saveWine,
   adjustStock: legacy.adjustStock,

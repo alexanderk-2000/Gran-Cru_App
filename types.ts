@@ -31,6 +31,7 @@ export interface OccasionWinePoolEntry {
   bottles_reserved: number;
   priority: OccasionWinePriority;
   created_at: string;
+  updated_at?: string;
   wine?: Wine;
 }
 
@@ -290,6 +291,7 @@ export interface Tasting {
   date: string;
   rating: number;
   note: string;
+  created_at?: string;
 }
 
 export interface PortfolioStats {
