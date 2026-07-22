@@ -66,9 +66,13 @@ Aus den "schnell umsetzbaren" Punkten unten wurde direkt umgesetzt, plus die vom
 - **RLS-Lücke geschlossen**: `wine_catalog_aliases` bekommt RLS (deny-all, da bisher ungenutzt); `test1234`/`manual_test_table` sowie die tote `ai_cache`-Tabelle entfernt (Security-Fund #2, KI-Strategie-Fund #2).
 - **`ai_provider`-Spaltenbug behoben**: Die Spalte existierte trotz Client-Referenz nie in der DB - Speichern der Provider-Wahl schlug für eingeloggte Nutzer bislang fehl.
 
-Bewusst **nicht** in diesem Durchlauf umgesetzt (siehe Begründung oben, "Mittelfristig"/"Größere Investition"): Sync-Engine-Delta/Cursor-Umbau, Feature-Page-Zerlegung, CI-Parallelisierung, Signed URLs für den Wine-Images-Bucket, Confidence-Anzeige im Lesemodus. Diese bleiben als nächste Schritte offen.
+In einer zweiten Runde zusätzlich umgesetzt:
+- **Confidence-Anzeige im Lesemodus** (`ConfidenceBadge` in `features/wine-detail/WineDetailPage.tsx`): `confidence`/`missing_fields` waren nur im Edit-Formular sichtbar, ein Eintrag mit `confidence: "low"` sah im Lesemodus identisch aus wie ein geprüfter (Produkt-Fund #4/KI-Strategie-Fund #4).
+- **Signed URLs statt public Bucket für Wine-Images** (Security-Fund #3): Bucket auf `public = false`, öffentliche SELECT-Policy durch eigentümer-beschränkte ersetzt, `imageStorageService` nutzt `createSignedUrl` (1 Jahr Gültigkeit, passend zum bestehenden Upload-Cache-Control) statt `getPublicUrl`. Betrifft nur `services/imageStorage.ts` - WineCard/WineDetailPage/ImageUploader lesen weiterhin einen fertigen URL-String aus `ai_details`, keine Änderung dort nötig.
 
-Nachträglich korrigiert: Die pgTAP-RLS-Suite (`supabase/tests/database/rls_isolation.test.sql`) referenzierte die inzwischen gedroppte `ai_cache`-Tabelle noch fest (Fixture-Insert + 5 Assertions) - das ließ den ersten echten CI-Lauf dieser Änderung mit "relation does not exist" scheitern. Der ai_cache-Testblock wurde entfernt und `plan(47)` auf `plan(42)` korrigiert.
+Weiterhin **nicht** umgesetzt (bewusst zurückgestellt - größerer Umbau, höheres Risiko ohne Live-Verifikation): Sync-Engine-Delta/Cursor-Umbau, Feature-Page-Zerlegung, echtes Erfassungsformular mit Struktur-Slidern, CI-Pipeline-Parallelisierung.
+
+Nachträglich korrigiert: Die pgTAP-RLS-Suite (`supabase/tests/database/rls_isolation.test.sql`) referenzierte die inzwischen gedroppte `ai_cache`-Tabelle noch fest (Fixture-Insert + 5 Assertions) - das ließ den ersten echten CI-Lauf dieser Änderung mit "relation does not exist" scheitern. Der ai_cache-Testblock wurde entfernt und `plan(47)` auf `plan(42)` korrigiert. Außerdem crashte der erste Lauf danach erneut: die Auth-Middleware konstruierte einen vollen `@supabase/supabase-js`-Client nur zur Token-Prüfung, dessen Realtime-Unterbau auf Node 20 (CI) ohne natives `WebSocket` sofort wirft - behoben durch einen einfachen `fetch` gegen den GoTrue-REST-Endpunkt statt des SDK.
 
 ## Priorisierte Gesamtempfehlung
 

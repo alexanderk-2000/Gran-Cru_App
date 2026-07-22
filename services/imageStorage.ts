@@ -7,6 +7,12 @@ const BUCKET = 'wine-images';
 const MAX_WIDTH = 1200;
 const QUALITY = 0.82;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB before compression
+// The bucket is private (see 20260722000032_private_wine_images_bucket.sql) -
+// every image URL is a signed link, not a bare public URL. 1 year matches
+// the existing upload cacheControl below; a fresh signed URL is minted on
+// every new upload, so this only matters for images left untouched longer
+// than that (known follow-up: proactively refresh near expiry).
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 /**
  * Compress an image file using Canvas API.
@@ -88,7 +94,7 @@ async function requireUserId(): Promise<string> {
 export const imageStorageService = {
   /**
    * Upload a wine image. Compresses before upload.
-   * Returns the public URL of the uploaded image.
+   * Returns a signed URL for the uploaded image.
    */
   async upload(wineId: string, slot: ImageSlot, file: File): Promise<string> {
     if (file.size > MAX_FILE_SIZE) {
@@ -116,9 +122,7 @@ export const imageStorageService = {
       throw new Error(`Upload fehlgeschlagen: ${error.message}`);
     }
 
-    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    // Add cache-busting timestamp
-    return `${urlData.publicUrl}?t=${Date.now()}`;
+    return imageStorageService.getSignedUrl(wineId, userId, slot);
   },
 
   /**
@@ -146,13 +150,18 @@ export const imageStorageService = {
   },
 
   /**
-   * Get the public URL for a wine image slot.
-   * Returns null if no URL is stored in ai_details.
+   * Mint a signed URL for a wine image slot. The bucket is private, so this
+   * requires the caller's own session to have SELECT rights on the path
+   * (owner-scoped RLS policy) - only the uploading user can ever create a
+   * working link in the first place.
    */
-  getPublicUrl(wineId: string, userId: string, slot: ImageSlot): string {
+  async getSignedUrl(wineId: string, userId: string, slot: ImageSlot): Promise<string> {
     const path = buildPath(userId, wineId, slot);
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    return data.publicUrl;
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) {
+      throw new Error(`Signierte URL konnte nicht erstellt werden: ${error?.message ?? 'unbekannter Fehler'}`);
+    }
+    return data.signedUrl;
   },
 
   /**
