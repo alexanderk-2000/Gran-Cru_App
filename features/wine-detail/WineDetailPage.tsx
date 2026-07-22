@@ -42,6 +42,33 @@ interface ToastMessage {
   text: string;
 }
 
+interface GrapeFormEntry {
+  name: string;
+  percentage: string;
+}
+
+interface ScoreFormEntry {
+  critic: string;
+  score: string;
+  year: string;
+}
+
+interface StructureFormState {
+  acidity: number | null;
+  tannin: number | null;
+  body: number | null;
+  sweetness: number | null;
+  oak: number | null;
+}
+
+const EMPTY_STRUCTURE_FORM: StructureFormState = {
+  acidity: null,
+  tannin: null,
+  body: null,
+  sweetness: null,
+  oak: null
+};
+
 interface EditFormState {
   name: string;
   producer: string;
@@ -69,11 +96,11 @@ interface EditFormState {
   confidence: string;
   wishlist: string;
   is_favorite: string;
-  grapes_json: string;
+  grapes: GrapeFormEntry[];
+  structure: StructureFormState;
+  scores: ScoreFormEntry[];
   aromas_json: string;
-  structure_json: string;
   pairings_json: string;
-  scores_json: string;
   ai_details_json: string;
   ai_sources_json: string;
   missing_fields_json: string;
@@ -275,16 +302,6 @@ const parseJsonField = <T,>(raw: string, label: string, validate: (value: unknow
 
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 
-const isGrapeArray = (value: unknown): value is NonNullable<Wine['grapes']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      typeof (entry as { name?: unknown }).name === 'string' &&
-      ((entry as { percentage?: unknown }).percentage === undefined || typeof (entry as { percentage?: unknown }).percentage === 'number')
-  );
-
 const isAromaArray = (value: unknown): value is NonNullable<Wine['aromas']> =>
   Array.isArray(value) &&
   value.every(
@@ -306,24 +323,59 @@ const isPairingsArray = (value: unknown): value is NonNullable<Wine['pairings']>
       ((entry as { note?: unknown }).note === undefined || typeof (entry as { note?: unknown }).note === 'string')
   );
 
-const isScoresArray = (value: unknown): value is NonNullable<Wine['scores']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      typeof (entry as { critic?: unknown }).critic === 'string' &&
-      (typeof (entry as { score?: unknown }).score === 'number' || typeof (entry as { score?: unknown }).score === 'string')
-  );
+const isWineDetails = (value: unknown): value is WineDetails => asRecord(value) !== null;
 
-const isStructure = (value: unknown): value is NonNullable<Wine['structure']> => {
-  const record = asRecord(value);
-  if (!record) return false;
-  const keys = ['acidity', 'tannin', 'body', 'sweetness', 'oak'] as const;
-  return keys.every((key) => record[key] === undefined || typeof record[key] === 'number');
+const grapesToFormState = (grapes: Wine['grapes']): GrapeFormEntry[] =>
+  (grapes ?? []).map((entry) => ({
+    name: entry.name,
+    percentage: entry.percentage !== undefined && entry.percentage !== null ? String(entry.percentage) : ''
+  }));
+
+const grapesFromFormState = (entries: GrapeFormEntry[]): Wine['grapes'] =>
+  entries
+    .map((entry) => ({ name: entry.name.trim(), percentage: entry.percentage.trim() }))
+    .filter((entry) => entry.name.length > 0)
+    .map((entry) => {
+      const percentage = Number.parseFloat(entry.percentage.replace(',', '.'));
+      return { name: entry.name, percentage: Number.isFinite(percentage) ? percentage : undefined };
+    });
+
+const pickStructureValue = (value: number | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const structureToFormState = (structure: Wine['structure']): StructureFormState => ({
+  acidity: pickStructureValue(structure?.acidity),
+  tannin: pickStructureValue(structure?.tannin),
+  body: pickStructureValue(structure?.body),
+  sweetness: pickStructureValue(structure?.sweetness),
+  oak: pickStructureValue(structure?.oak)
+});
+
+const structureFromFormState = (state: StructureFormState): Wine['structure'] => {
+  const structure: Wine['structure'] = {};
+  if (state.acidity !== null) structure.acidity = state.acidity;
+  if (state.tannin !== null) structure.tannin = state.tannin;
+  if (state.body !== null) structure.body = state.body;
+  if (state.sweetness !== null) structure.sweetness = state.sweetness;
+  if (state.oak !== null) structure.oak = state.oak;
+  return structure;
 };
 
-const isWineDetails = (value: unknown): value is WineDetails => asRecord(value) !== null;
+const scoresToFormState = (scores: Wine['scores']): ScoreFormEntry[] =>
+  (scores ?? []).map((entry) => ({
+    critic: entry.critic,
+    score: String(entry.score ?? ''),
+    year: entry.year !== undefined && entry.year !== null ? String(entry.year) : ''
+  }));
+
+const scoresFromFormState = (entries: ScoreFormEntry[]): Wine['scores'] =>
+  entries
+    .map((entry) => ({ critic: entry.critic.trim(), score: entry.score.trim(), year: entry.year.trim() }))
+    .filter((entry) => entry.critic.length > 0 && entry.score.length > 0)
+    .map((entry) => {
+      const year = Number.parseInt(entry.year, 10);
+      return { critic: entry.critic, score: entry.score, year: Number.isFinite(year) ? year : undefined };
+    });
 
 const isAiSources = (value: unknown): value is NonNullable<Wine['ai_sources']> =>
   Array.isArray(value) &&
@@ -1646,11 +1698,11 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
     confidence: '',
     wishlist: 'false',
     is_favorite: 'false',
-    grapes_json: '[]',
+    grapes: [],
+    structure: EMPTY_STRUCTURE_FORM,
+    scores: [],
     aromas_json: '[]',
-    structure_json: '{}',
     pairings_json: '[]',
-    scores_json: '[]',
     ai_details_json: '{}',
     ai_sources_json: '[]',
     missing_fields_json: '[]'
@@ -1769,11 +1821,11 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
       confidence: wine.confidence ?? '',
       wishlist: wine.wishlist ? 'true' : 'false',
       is_favorite: wine.is_favorite ? 'true' : 'false',
-      grapes_json: toJsonText(wine.grapes ?? [], '[]'),
+      grapes: grapesToFormState(wine.grapes),
+      structure: structureToFormState(wine.structure),
+      scores: scoresToFormState(wine.scores),
       aromas_json: toJsonText(wine.aromas ?? [], '[]'),
-      structure_json: toJsonText(wine.structure ?? {}, '{}'),
       pairings_json: toJsonText(wine.pairings ?? [], '[]'),
-      scores_json: toJsonText(wine.scores ?? [], '[]'),
       ai_details_json: toJsonText(wine.ai_details ?? {}, '{}'),
       ai_sources_json: toJsonText(wine.ai_sources ?? [], '[]'),
       missing_fields_json: toJsonText(wine.missing_fields ?? [], '[]')
@@ -1875,21 +1927,18 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
       return;
     }
 
-    let grapes: Wine['grapes'] = wine.grapes;
+    const grapes: Wine['grapes'] = grapesFromFormState(editForm.grapes);
+    const structure: Wine['structure'] = structureFromFormState(editForm.structure);
+    const scores: Wine['scores'] = scoresFromFormState(editForm.scores);
     let aromas: Wine['aromas'] = wine.aromas;
-    let structure: Wine['structure'] = wine.structure;
     let pairings: Wine['pairings'] = wine.pairings;
-    let scores: Wine['scores'] = wine.scores;
     let aiDetailsValue: WineDetails | undefined = wine.ai_details;
     let aiSourcesValue: Wine['ai_sources'] = wine.ai_sources;
     let missingFieldsValue: string[] | undefined = wine.missing_fields;
 
     try {
-      grapes = parseJsonField(editForm.grapes_json, 'Rebsorten', isGrapeArray, wine.grapes ?? []);
       aromas = parseJsonField(editForm.aromas_json, 'Aromen', isAromaArray, wine.aromas ?? []);
-      structure = parseJsonField(editForm.structure_json, 'Struktur', isStructure, wine.structure ?? {});
       pairings = parseJsonField(editForm.pairings_json, 'Pairings', isPairingsArray, wine.pairings ?? []);
-      scores = parseJsonField(editForm.scores_json, 'Scores', isScoresArray, wine.scores ?? []);
       aiDetailsValue = parseJsonField(editForm.ai_details_json, 'AI Details', isWineDetails, wine.ai_details ?? {});
       aiSourcesValue = parseJsonField(editForm.ai_sources_json, 'AI Quellen', isAiSources, wine.ai_sources ?? []);
       missingFieldsValue = parseJsonField(editForm.missing_fields_json, 'Fehlende Felder', isStringArray, wine.missing_fields ?? []);
@@ -2244,6 +2293,30 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
               />
             </section>
 
+            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Rebsorten</h4>
+              <GrapesField
+                value={editForm.grapes}
+                onChange={(next) => setEditForm((prev) => ({ ...prev, grapes: next }))}
+              />
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Struktur</h4>
+              <StructureSlidersField
+                value={editForm.structure}
+                onChange={(next) => setEditForm((prev) => ({ ...prev, structure: next }))}
+              />
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Kritiker-Scores</h4>
+              <ScoresField
+                value={editForm.scores}
+                onChange={(next) => setEditForm((prev) => ({ ...prev, scores: next }))}
+              />
+            </section>
+
           </div>
 
           <button
@@ -2323,5 +2396,182 @@ const SelectField = memo(function SelectField({
         ))}
       </select>
     </label>
+  );
+});
+
+const GrapesField = memo(function GrapesField({
+  value,
+  onChange
+}: {
+  value: GrapeFormEntry[];
+  onChange: (next: GrapeFormEntry[]) => void;
+}) {
+  const updateRow = (index: number, patch: Partial<GrapeFormEntry>) => {
+    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+  const removeRow = (index: number) => {
+    onChange(value.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-2">
+      {value.map((row, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Rebsorte, z. B. Cabernet Sauvignon"
+            value={row.name}
+            onChange={(event) => updateRow(index, { name: event.target.value })}
+            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <input
+            type="number"
+            placeholder="%"
+            min={0}
+            max={100}
+            value={row.percentage}
+            onChange={(event) => updateRow(index, { percentage: event.target.value })}
+            className="w-20 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <button
+            type="button"
+            onClick={() => removeRow(index)}
+            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
+            aria-label="Rebsorte entfernen"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, { name: '', percentage: '' }])}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
+      >
+        <Plus className="h-3.5 w-3.5" /> Rebsorte hinzufügen
+      </button>
+    </div>
+  );
+});
+
+const STRUCTURE_SLIDER_FIELDS: {
+  key: keyof StructureFormState;
+  label: string;
+  lowLabel: string;
+  highLabel: string;
+}[] = [
+  { key: 'acidity', label: 'Säure', lowLabel: 'mild', highLabel: 'straff' },
+  { key: 'tannin', label: 'Tannin', lowLabel: 'weich', highLabel: 'kräftig' },
+  { key: 'body', label: 'Körper', lowLabel: 'leicht', highLabel: 'voll' },
+  { key: 'sweetness', label: 'Süße', lowLabel: 'trocken', highLabel: 'süß' },
+  { key: 'oak', label: 'Holzausbau', lowLabel: 'kein Holz', highLabel: 'stark geprägt' }
+];
+
+const StructureSlidersField = memo(function StructureSlidersField({
+  value,
+  onChange
+}: {
+  value: StructureFormState;
+  onChange: (next: StructureFormState) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {STRUCTURE_SLIDER_FIELDS.map(({ key, label, lowLabel, highLabel }) => {
+        const current = value[key];
+        const isSet = current !== null;
+        return (
+          <div key={key} className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-stone-700">{label}</span>
+              <label className="flex items-center gap-2 text-xs text-stone-500">
+                <input
+                  type="checkbox"
+                  checked={isSet}
+                  onChange={(event) =>
+                    onChange({ ...value, [key]: event.target.checked ? current ?? 3 : null })
+                  }
+                />
+                erfasst
+              </label>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={5}
+              step={1}
+              value={current ?? 3}
+              disabled={!isSet}
+              onChange={(event) => onChange({ ...value, [key]: Number(event.target.value) })}
+              className="w-full accent-[#5B1E2D] disabled:opacity-40"
+            />
+            <div className="flex justify-between text-[10px] uppercase tracking-[0.1em] text-stone-400">
+              <span>{lowLabel}</span>
+              <span>{isSet ? current : '—'}</span>
+              <span>{highLabel}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+const ScoresField = memo(function ScoresField({
+  value,
+  onChange
+}: {
+  value: ScoreFormEntry[];
+  onChange: (next: ScoreFormEntry[]) => void;
+}) {
+  const updateRow = (index: number, patch: Partial<ScoreFormEntry>) => {
+    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+  const removeRow = (index: number) => {
+    onChange(value.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-2">
+      {value.map((row, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Kritiker, z. B. Parker"
+            value={row.critic}
+            onChange={(event) => updateRow(index, { critic: event.target.value })}
+            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <input
+            type="text"
+            placeholder="Score"
+            value={row.score}
+            onChange={(event) => updateRow(index, { score: event.target.value })}
+            className="w-20 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <input
+            type="number"
+            placeholder="Jahr"
+            value={row.year}
+            onChange={(event) => updateRow(index, { year: event.target.value })}
+            className="w-24 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <button
+            type="button"
+            onClick={() => removeRow(index)}
+            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
+            aria-label="Score entfernen"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, { critic: '', score: '', year: '' }])}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
+      >
+        <Plus className="h-3.5 w-3.5" /> Score hinzufügen
+      </button>
+    </div>
   );
 });
