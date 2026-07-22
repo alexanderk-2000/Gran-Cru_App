@@ -57,6 +57,17 @@ Positiv bestätigt: `npm audit` 0 Findings (Root + `server/`), keine echten Secr
 
 Positiv bestätigt: DB-Indizierung ist größtenteils durchdacht (Barcode-Index, GIN-Trigram für Katalogsuche, Composite-Index auf `inventory_events`).
 
+## Umsetzungsstatus (Stand 22.07.2026, gleicher Tag)
+
+Aus den "schnell umsetzbaren" Punkten unten wurde direkt umgesetzt, plus die vom Nutzer explizit gewünschte Erweiterung um einen dritten KI-Provider:
+
+- **Nemotron via OpenRouter als dritter KI-Provider** (`server/src/ai/providers/openrouter.js`, Wiring in `server/src/ai/runtime.js`, UI in `features/Settings.tsx`). Nutzt OpenRouters `:online`-Web-Search-Plugin, damit dieser Pfad (anders als Gemini) echte Recherche statt reinen Prompt-Zwang bekommt.
+- **KI-Endpunkte abgesichert**: `requireAuth`-Middleware (Supabase-JWT-Pflicht) + In-Memory-Rate-Limiter vor `/api/ai/*` (Security-Fund #1).
+- **RLS-Lücke geschlossen**: `wine_catalog_aliases` bekommt RLS (deny-all, da bisher ungenutzt); `test1234`/`manual_test_table` sowie die tote `ai_cache`-Tabelle entfernt (Security-Fund #2, KI-Strategie-Fund #2).
+- **`ai_provider`-Spaltenbug behoben**: Die Spalte existierte trotz Client-Referenz nie in der DB - Speichern der Provider-Wahl schlug für eingeloggte Nutzer bislang fehl.
+
+Bewusst **nicht** in diesem Durchlauf umgesetzt (siehe Begründung oben, "Mittelfristig"/"Größere Investition"): Sync-Engine-Delta/Cursor-Umbau, Feature-Page-Zerlegung, CI-Parallelisierung, Signed URLs für den Wine-Images-Bucket, Confidence-Anzeige im Lesemodus. Diese bleiben als nächste Schritte offen.
+
 ## Priorisierte Gesamtempfehlung
 
 **Schnell umsetzbar (klein, hohe Wirkung):**
