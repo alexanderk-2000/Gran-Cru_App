@@ -7,7 +7,7 @@ import { ScanResultDialog } from '../../components/ScanResultDialog.tsx';
 import { WineCaptureForm } from '../wine-capture/WineCaptureForm.tsx';
 import { FilterSelect } from '../../components/FilterSelect.tsx';
 import type { ScanResult } from '../../services/scanner.ts';
-import { Plus, ScanBarcode, Search, Upload } from 'lucide-react';
+import { FileSpreadsheet, Plus, ScanBarcode, Search, Upload } from 'lucide-react';
 import { MAIN_CELLAR_FILTER } from './constants.ts';
 import { filterAndSortWines, groupWinesBySubcellar, PRESET_VIEWS, type PresetView } from './inventorySelectors.ts';
 import { useInventoryViewPreferences } from './hooks/useInventoryViewPreferences.ts';
@@ -16,6 +16,7 @@ import { PocketBar } from './components/PocketBar.tsx';
 import { CreatePocketModal } from './components/CreatePocketModal.tsx';
 import { PocketDashboard } from './components/PocketDashboard.tsx';
 import { JsonImportModal } from './components/JsonImportModal.tsx';
+import { CsvImportModal } from './components/CsvImportModal.tsx';
 
 interface InventoryProps {
   wines: Wine[];
@@ -32,6 +33,7 @@ export const Inventory: React.FC<InventoryProps> = ({ wines, wishlistOnly = fals
   const pockets = usePockets(wines, wishlistOnly, onWineUpdate);
 
   const [isJsonImportModalOpen, setIsJsonImportModalOpen] = useState(false);
+  const [isCsvImportModalOpen, setIsCsvImportModalOpen] = useState(false);
   const [isCaptureFormOpen, setIsCaptureFormOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -91,6 +93,12 @@ export const Inventory: React.FC<InventoryProps> = ({ wines, wishlistOnly = fals
             className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 uppercase tracking-wider text-[10px]"
           >
             <Upload className="w-4 h-4" /> JSON IMPORT
+          </button>
+          <button
+            onClick={() => setIsCsvImportModalOpen(true)}
+            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 uppercase tracking-wider text-[10px]"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> CSV IMPORT
           </button>
           <button
             onClick={() => setIsScannerOpen(true)}
@@ -190,6 +198,17 @@ export const Inventory: React.FC<InventoryProps> = ({ wines, wishlistOnly = fals
       <JsonImportModal
         open={isJsonImportModalOpen}
         onClose={() => setIsJsonImportModalOpen(false)}
+        wines={wines}
+        wishlistOnly={wishlistOnly}
+        onImported={onWineUpdate}
+        targetSubcellar={pockets.targetSubcellar}
+        onTargetSubcellarChange={pockets.setTargetSubcellar}
+        availableSubcellars={pockets.availableSubcellars}
+      />
+
+      <CsvImportModal
+        open={isCsvImportModalOpen}
+        onClose={() => setIsCsvImportModalOpen(false)}
         wines={wines}
         wishlistOnly={wishlistOnly}
         onImported={onWineUpdate}
