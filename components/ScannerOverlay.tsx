@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, ScanBarcode, X, Aperture, Loader2 } from 'lucide-react';
+import { ScanBarcode, X, Aperture, Loader2 } from 'lucide-react';
 import {
     startCamera,
     stopCamera,
     detectBarcode,
-    captureFrame,
-    analyzeLabel,
     isBarcodeSupported,
     parseBarcodeResult,
     type ScanResult,
@@ -17,14 +15,11 @@ interface ScannerOverlayProps {
     onResult: (result: ScanResult) => void;
 }
 
-type ScanMode = 'barcode' | 'label';
-
 export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, onResult }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const scanIntervalRef = useRef<number | null>(null);
 
-    const [mode, setMode] = useState<ScanMode>('barcode');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [cameraReady, setCameraReady] = useState(false);
@@ -72,7 +67,7 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
 
     // Barcode auto-detection loop
     useEffect(() => {
-        if (!cameraReady || mode !== 'barcode' || !isBarcodeSupported()) return;
+        if (!cameraReady || !isBarcodeSupported()) return;
 
         const interval = window.setInterval(async () => {
             if (!videoRef.current) return;
@@ -92,7 +87,7 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
             clearInterval(interval);
             scanIntervalRef.current = null;
         };
-    }, [cameraReady, mode, onResult]);
+    }, [cameraReady, onResult]);
 
     const handleCapture = useCallback(async () => {
         if (!videoRef.current || isLoading) return;
@@ -100,27 +95,18 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
         setError(null);
 
         try {
-            const blob = captureFrame(videoRef.current);
-            if (!blob) throw new Error('Frame konnte nicht erfasst werden.');
-
-            if (mode === 'label') {
-                const result = await analyzeLabel(blob);
-                onResult(result);
+            const value = await detectBarcode(videoRef.current);
+            if (value) {
+                onResult(parseBarcodeResult(value));
             } else {
-                // Manual barcode capture — try detection on the frozen frame
-                const value = await detectBarcode(videoRef.current);
-                if (value) {
-                    onResult(parseBarcodeResult(value));
-                } else {
-                    setError('Kein Barcode erkannt. Versuchen Sie es erneut oder wechseln Sie zum Etikett-Modus.');
-                }
+                setError('Kein Barcode erkannt. Versuchen Sie es erneut oder erfassen Sie den Wein manuell.');
             }
         } catch (err: any) {
             setError(err?.message || 'Scan fehlgeschlagen.');
         } finally {
             setIsLoading(false);
         }
-    }, [mode, isLoading, onResult]);
+    }, [isLoading, onResult]);
 
     if (!open) return null;
 
@@ -135,22 +121,8 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
                     <X className="h-4 w-4" /> Schließen
                 </button>
 
-                {/* Mode toggle */}
-                <div className="flex gap-1 rounded-xl bg-white/10 p-1 backdrop-blur-sm">
-                    <button
-                        onClick={() => setMode('barcode')}
-                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all ${mode === 'barcode' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'
-                            }`}
-                    >
-                        <ScanBarcode className="h-3.5 w-3.5" /> Barcode
-                    </button>
-                    <button
-                        onClick={() => setMode('label')}
-                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all ${mode === 'label' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'
-                            }`}
-                    >
-                        <Camera className="h-3.5 w-3.5" /> Etikett
-                    </button>
+                <div className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm">
+                    <ScanBarcode className="h-3.5 w-3.5" /> Lokaler Barcode-Scan
                 </div>
             </div>
 
@@ -168,10 +140,7 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
                     <div className="absolute inset-0 flex items-center justify-center">
                         {/* Semi-transparent border */}
                         <div
-                            className={`rounded-2xl border-2 transition-colors ${mode === 'barcode'
-                                    ? 'h-40 w-72 border-white/60'
-                                    : 'h-72 w-72 border-white/60'
-                                }`}
+                            className="h-40 w-72 rounded-2xl border-2 border-white/60"
                             style={{
                                 boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.45)',
                             }}
@@ -201,11 +170,9 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
 
                 {/* Instruction text */}
                 <p className="text-sm text-white/60">
-                    {mode === 'barcode'
-                        ? (isBarcodeSupported()
-                            ? 'Halten Sie den Barcode ins Feld — automatische Erkennung aktiv'
-                            : 'BarcodeDetector nicht verfügbar — tippen Sie auf den Auslöser')
-                        : 'Fotografieren Sie das Etikett für AI-Erkennung'}
+                    {isBarcodeSupported()
+                        ? 'Halten Sie den Barcode ins Feld — die Erkennung läuft vollständig lokal'
+                        : 'BarcodeDetector wird von diesem Browser nicht unterstützt'}
                 </p>
 
                 {/* Capture button */}

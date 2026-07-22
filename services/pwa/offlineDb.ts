@@ -1,12 +1,18 @@
 import Dexie, { type Table } from 'dexie';
-import type { CellarPocket, Occasion, OccasionInstance, OccasionWinePoolEntry, Tasting, Wine } from '../../types.ts';
 import type {
-  AiQueueItem,
+  CellarPocket,
+  Occasion,
+  OccasionInstance,
+  OccasionWinePoolEntry,
+  Tasting,
+  Wine,
+} from '../../types.ts';
+import type {
   FullDatasetSnapshot,
   OfflineMetaRecord,
   OfflineQueueItem,
   SyncConflictRecord,
-  SyncStateSnapshot
+  SyncStateSnapshot,
 } from './types.ts';
 
 interface InventoryEventRow {
@@ -24,7 +30,8 @@ export class PwaOfflineDb extends Dexie {
   inventory_events!: Table<InventoryEventRow, string>;
   cellar_pockets!: Table<CellarPocket, string>;
   write_queue!: Table<OfflineQueueItem, string>;
-  ai_queue!: Table<AiQueueItem, string>;
+  // Legacy table retained temporarily so old external-request entries can be removed.
+  ai_queue!: Table<Record<string, unknown> & { id: string; user_id: string }, string>;
   conflicts!: Table<SyncConflictRecord, string>;
   meta!: Table<OfflineMetaRecord, string>;
 
@@ -41,10 +48,10 @@ export class PwaOfflineDb extends Dexie {
       write_queue: 'id, user_id, status, client_ts, operation, dedupe_key, next_retry_at',
       ai_queue: 'id, user_id, status, client_ts, operation, dedupe_key, next_retry_at',
       conflicts: 'id, user_id, entity, entity_id, created_at',
-      meta: 'key, updated_at'
+      meta: 'key, updated_at',
     });
     this.version(2).stores({
-      wines: 'id, user_id, updated_at, deleted_at, barcode'
+      wines: 'id, user_id, updated_at, deleted_at, barcode',
     });
   }
 }
@@ -52,9 +59,10 @@ export class PwaOfflineDb extends Dexie {
 export const offlineDb = new PwaOfflineDb();
 
 export const createLocalId = (prefix: string): string => {
-  const id = typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const id =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}_${id}`;
 };
 
@@ -67,7 +75,7 @@ export const setMeta = async (key: string, value: unknown): Promise<void> => {
   await offlineDb.meta.put({
     key,
     value,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   });
 };
 
@@ -84,7 +92,7 @@ export const clearUserData = async (userId: string): Promise<void> => {
       offlineDb.cellar_pockets,
       offlineDb.write_queue,
       offlineDb.ai_queue,
-      offlineDb.conflicts
+      offlineDb.conflicts,
     ],
     async () => {
       await offlineDb.wines.where('user_id').equals(userId).delete();
@@ -113,7 +121,7 @@ export const persistFullDataset = async (snapshot: FullDatasetSnapshot): Promise
       offlineDb.occasion_instances,
       offlineDb.occasion_wine_pool,
       offlineDb.inventory_events,
-      offlineDb.cellar_pockets
+      offlineDb.cellar_pockets,
     ],
     async () => {
       await offlineDb.wines.bulkPut(allWines);
@@ -123,10 +131,12 @@ export const persistFullDataset = async (snapshot: FullDatasetSnapshot): Promise
       await offlineDb.occasion_wine_pool.bulkPut(snapshot.occasion_wine_pool);
       await offlineDb.cellar_pockets.bulkPut(snapshot.cellar_pockets);
       if (snapshot.inventory_events.length > 0) {
-        await offlineDb.inventory_events.bulkPut(snapshot.inventory_events.map((entry) => ({
-          id: String(entry.id || createLocalId('evt')),
-          ...entry
-        })));
+        await offlineDb.inventory_events.bulkPut(
+          snapshot.inventory_events.map((entry) => ({
+            id: String(entry.id || createLocalId('evt')),
+            ...entry,
+          }))
+        );
       }
     }
   );
@@ -136,7 +146,7 @@ export const persistFullDataset = async (snapshot: FullDatasetSnapshot): Promise
     pulled_at: snapshot.pulled_at,
     wine_count: snapshot.wines.length,
     deleted_wine_count: snapshot.deleted_wines.length,
-    tasting_count: snapshot.tastings.length
+    tasting_count: snapshot.tastings.length,
   });
 };
 
@@ -151,12 +161,10 @@ export const findWinesByBarcodeLocal = async (userId: string, barcode: string): 
 };
 
 export const getSyncStateSnapshot = async (): Promise<SyncStateSnapshot> => {
-  const [meta, writePending, writeFailed, aiPending, aiFailed] = await Promise.all([
+  const [meta, writePending, writeFailed] = await Promise.all([
     getMeta<Partial<SyncStateSnapshot>>('sync_state'),
     offlineDb.write_queue.where('status').equals('queued').count(),
     offlineDb.write_queue.where('status').equals('failed').count(),
-    offlineDb.ai_queue.where('status').equals('queued').count(),
-    offlineDb.ai_queue.where('status').equals('failed').count()
   ]);
 
   return {
@@ -167,7 +175,5 @@ export const getSyncStateSnapshot = async (): Promise<SyncStateSnapshot> => {
     syncing: Boolean(meta?.syncing),
     write_queue_pending: writePending,
     write_queue_failed: writeFailed,
-    ai_queue_pending: aiPending,
-    ai_queue_failed: aiFailed
   };
 };

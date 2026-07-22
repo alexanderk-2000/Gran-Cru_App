@@ -1,9 +1,20 @@
-import { offlineDb, clearUserData, createLocalId, getMeta, persistFullDataset, setMeta } from './offlineDb.ts';
-import type { FullDatasetSnapshot, OfflineQueueItem, QueueOperationInput, SyncStateSnapshot } from './types.ts';
+import {
+  offlineDb,
+  clearUserData,
+  createLocalId,
+  getMeta,
+  persistFullDataset,
+  setMeta,
+} from './offlineDb.ts';
+import type {
+  FullDatasetSnapshot,
+  OfflineQueueItem,
+  QueueOperationInput,
+  SyncStateSnapshot,
+} from './types.ts';
 import { isOnline } from './networkState.ts';
 import { resolveLastWriteWins } from './conflictResolver.ts';
-import { flushAiQueueForUser } from './aiQueueProcessor.ts';
-import { emitQueueSnapshot } from './aiQueue.ts';
+import { emitQueueSnapshot } from './queueSnapshot.ts';
 import type { Wine } from '../../types.ts';
 
 const WRITE_BACKOFF_MS = [2000, 5000, 15000, 60000, 300000];
@@ -11,7 +22,7 @@ let syncLoopBound = false;
 let syncInFlight = false;
 
 const toJsonSafe = (value: unknown): Record<string, unknown> => ({
-  payload: value
+  payload: value,
 });
 
 const hashDedupe = (value: string): string => {
@@ -54,14 +65,15 @@ export const enqueueWriteOperation = async (params: {
     entity: params.operation.entity,
     operation: params.operation.operation,
     payload: {
-      args: params.operation.args
+      args: params.operation.args,
     },
     client_ts: new Date().toISOString(),
     status: 'queued',
     retry_count: 0,
     next_retry_at: null,
-    dedupe_key: params.operation.dedupe_key || `${params.operation.operation}:${hashDedupe(serialized)}`,
-    last_error: null
+    dedupe_key:
+      params.operation.dedupe_key || `${params.operation.operation}:${hashDedupe(serialized)}`,
+    last_error: null,
   };
 
   await offlineDb.write_queue.put(item);
@@ -69,14 +81,17 @@ export const enqueueWriteOperation = async (params: {
   return item;
 };
 
-const buildFullDataset = async (backendService: any, userId: string): Promise<FullDatasetSnapshot> => {
+const buildFullDataset = async (
+  backendService: any,
+  userId: string
+): Promise<FullDatasetSnapshot> => {
   const [wines, deletedWines, occasions, instances, pockets, inventoryEvents] = await Promise.all([
     backendService.getWines?.() || [],
     backendService.getDeletedWines?.() || [],
     backendService.getOccasions?.() || [],
     backendService.getOccasionInstances?.() || [],
     backendService.getCellarPockets?.() || [],
-    backendService.getConsumptionHistory?.() || []
+    backendService.getConsumptionHistory?.() || [],
   ]);
 
   const tastingsChunks = await Promise.all(
@@ -111,11 +126,13 @@ const buildFullDataset = async (backendService: any, userId: string): Promise<Fu
     occasion_wine_pool: poolChunks.flat(),
     cellar_pockets: Array.isArray(pockets) ? pockets : [],
     inventory_events: Array.isArray(inventoryEvents) ? inventoryEvents : [],
-    pulled_at: new Date().toISOString()
+    pulled_at: new Date().toISOString(),
   };
 };
 
-const mergeWinesWithConflictResolution = async (snapshot: FullDatasetSnapshot): Promise<FullDatasetSnapshot> => {
+const mergeWinesWithConflictResolution = async (
+  snapshot: FullDatasetSnapshot
+): Promise<FullDatasetSnapshot> => {
   const mergedWines: Wine[] = [];
   for (const remoteWine of snapshot.wines) {
     const localWine = await offlineDb.wines.get(remoteWine.id);
@@ -123,7 +140,7 @@ const mergeWinesWithConflictResolution = async (snapshot: FullDatasetSnapshot): 
       userId: snapshot.user_id,
       entity: 'wines',
       local: localWine || null,
-      remote: remoteWine
+      remote: remoteWine,
     });
 
     mergedWines.push(resolution.resolved);
@@ -134,7 +151,7 @@ const mergeWinesWithConflictResolution = async (snapshot: FullDatasetSnapshot): 
 
   return {
     ...snapshot,
-    wines: mergedWines
+    wines: mergedWines,
   };
 };
 
@@ -144,7 +161,7 @@ const pullFullDataset = async (backendService: any, userId: string): Promise<voi
   await persistFullDataset(merged);
   await setMeta('last_synced_user', {
     user_id: userId,
-    synced_at: new Date().toISOString()
+    synced_at: new Date().toISOString(),
   });
   localStorage.setItem('pwa_last_synced_user', userId);
 };
@@ -168,7 +185,7 @@ const processWriteQueue = async (backendService: any, userId: string): Promise<v
     if (typeof fn !== 'function') {
       await offlineDb.write_queue.update(item.id, {
         status: 'dead_letter',
-        last_error: `Unknown operation: ${item.operation}`
+        last_error: `Unknown operation: ${item.operation}`,
       });
       continue;
     }
@@ -176,7 +193,7 @@ const processWriteQueue = async (backendService: any, userId: string): Promise<v
     try {
       await offlineDb.write_queue.update(item.id, {
         status: 'syncing',
-        last_error: null
+        last_error: null,
       });
 
       const args = Array.isArray((item.payload as any)?.args) ? (item.payload as any).args : [];
@@ -189,17 +206,19 @@ const processWriteQueue = async (backendService: any, userId: string): Promise<v
         status: deadLetter ? 'dead_letter' : 'failed',
         retry_count: retryCount,
         next_retry_at: deadLetter ? null : nextRetryAt(retryCount),
-        last_error: normalizeError(error)
+        last_error: normalizeError(error),
       });
     }
   }
 };
 
-const saveSyncState = async (patch: Partial<SyncStateSnapshot> & Record<string, unknown>): Promise<void> => {
+const saveSyncState = async (
+  patch: Partial<SyncStateSnapshot> & Record<string, unknown>
+): Promise<void> => {
   const previous = (await getMeta<Record<string, unknown>>('sync_state')) || {};
   await setMeta('sync_state', {
     ...previous,
-    ...patch
+    ...patch,
   });
   await emitQueueSnapshot();
 };
@@ -215,24 +234,26 @@ export const runSyncCycle = async (backendService: any): Promise<void> => {
     syncing: true,
     online: true,
     last_sync_started_at: new Date().toISOString(),
-    last_sync_error: null
+    last_sync_error: null,
   });
 
   try {
     await pullFullDataset(backendService, userId);
     await processWriteQueue(backendService, userId);
     await pullFullDataset(backendService, userId);
-    await flushAiQueueForUser(userId);
+    // External AI processing was removed. Discard legacy queued API requests so
+    // older installations do not retry endpoints that intentionally no longer exist.
+    await offlineDb.ai_queue.where('user_id').equals(userId).delete();
 
     await saveSyncState({
       syncing: false,
       last_sync_completed_at: new Date().toISOString(),
-      last_sync_error: null
+      last_sync_error: null,
     });
   } catch (error) {
     await saveSyncState({
       syncing: false,
-      last_sync_error: normalizeError(error)
+      last_sync_error: normalizeError(error),
     });
   } finally {
     syncInFlight = false;
@@ -270,7 +291,7 @@ export const clearOfflineUserAndQueues = async (userId: string): Promise<void> =
 
   await saveSyncState({
     syncing: false,
-    last_sync_error: null
+    last_sync_error: null,
   });
 };
 
@@ -283,6 +304,6 @@ export const queueFromNetworkFailure = async (params: {
   void toJsonSafe(params.originalError);
   return enqueueWriteOperation({
     userId: params.userId,
-    operation: params.operation
+    operation: params.operation,
   });
 };

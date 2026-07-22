@@ -8,18 +8,19 @@ describe('server routes', () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
-    expect(typeof res.body.gemini).toBe('boolean');
+    expect(res.body.mode).toBe('local-only');
+    expect(res.body.external_ai).toBe(false);
   });
 
-  it('validates missing prompt on ai search', async () => {
+  it('does not expose an external AI search endpoint', async () => {
     const res = await request(app).post('/api/ai/search').send({});
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
     expect(res.body.success).toBe(false);
   });
 
-  it('validates missing image on ai vision', async () => {
+  it('does not expose an external AI vision endpoint', async () => {
     const res = await request(app).post('/api/ai/vision').send({});
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
     expect(res.body.success).toBe(false);
   });
 });

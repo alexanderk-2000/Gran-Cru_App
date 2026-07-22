@@ -1,4 +1,11 @@
-import type { CellarPocket, Occasion, OccasionInstance, OccasionWinePoolEntry, Tasting, Wine } from '../../types.ts';
+import type {
+  CellarPocket,
+  Occasion,
+  OccasionInstance,
+  OccasionWinePoolEntry,
+  Tasting,
+  Wine,
+} from '../../types.ts';
 
 export type QueueState = 'queued' | 'syncing' | 'synced' | 'failed' | 'dead_letter';
 
@@ -8,21 +15,6 @@ export interface OfflineQueueItem {
   type: 'write';
   entity: string;
   operation: string;
-  payload: Record<string, unknown>;
-  client_ts: string;
-  status: QueueState;
-  retry_count: number;
-  next_retry_at: string | null;
-  dedupe_key: string;
-  last_error: string | null;
-}
-
-export interface AiQueueItem {
-  id: string;
-  user_id: string;
-  type: 'ai';
-  operation: 'search' | 'assignment' | 'vision';
-  endpoint: '/api/ai/search' | '/api/ai/assignment' | '/api/ai/vision';
   payload: Record<string, unknown>;
   client_ts: string;
   status: QueueState;
@@ -51,8 +43,6 @@ export interface SyncStateSnapshot {
   last_sync_error: string | null;
   write_queue_pending: number;
   write_queue_failed: number;
-  ai_queue_pending: number;
-  ai_queue_failed: number;
   syncing: boolean;
 }
 

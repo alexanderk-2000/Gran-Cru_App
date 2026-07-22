@@ -5,42 +5,33 @@
 ```mermaid
 flowchart LR
   UI["React UI (Feature Pages + Components)"]
-  Domain["domain/wine/* (Drinkability, Parsing, Normalization)"]
-  StorageFacade["services/storage.ts (Fassade)"]
-  StorageRepos["services/storage/*.ts (Auth/Wine/Catalog/Pocket/Occasion/Tasting/Events)"]
-  PwaLayer["services/pwa/* (SW, Dexie, Queue, Sync, Install/Update)"]
-  ServerBootstrap["server/index.js (Bootstrap)"]
-  ServerApp["server/src/app.js (Express Setup)"]
-  AiRuntime["server/src/ai/runtime.js (Provider-Execution + Search Flow)"]
-  AiModules["server/src/ai/providers + prompts + normalize"]
-  ApiRoutes["server/src/routes/*"]
-  Cache["server/src/cache/aiCache.js"]
+  Domain["domain/wine/* (Rules, Parsing, Normalization)"]
+  LocalResearch["services/ai.ts (Local Catalog + Rule Assignment)"]
+  Barcode["Native BarcodeDetector"]
+  StorageFacade["services/storage.ts (Facade)"]
+  PwaLayer["services/pwa/* (SW, Dexie, Write Queue, Sync)"]
+  Server["Express Health Server (local-only)"]
   DB["Supabase (RLS + Tables)"]
-  Providers["OpenAI / Gemini"]
 
   UI --> Domain
+  UI --> LocalResearch
+  UI --> Barcode
   UI --> StorageFacade
-  StorageFacade --> StorageRepos
   StorageFacade --> PwaLayer
-  StorageRepos --> DB
-
-  UI --> ServerBootstrap
-  ServerBootstrap --> ServerApp
-  ServerApp --> ApiRoutes
-  ApiRoutes --> AiRuntime
-  AiRuntime --> AiModules
-  AiRuntime --> Cache
-  AiRuntime --> Providers
+  StorageFacade --> DB
+  UI --> Server
 ```
 
 ## Umgesetzte Refactor-Bausteine
 
 1. Toolchain/Gates
+
 - Lokales Tailwind (`tailwind.config.cjs`, `postcss.config.cjs`, `index.css`)
 - ESLint + Prettier + Vitest konfiguriert
 - Einheitliches Gate: `npm run ci:check`
 
 2. Frontend-Struktur
+
 - Feature-Einstiegspunkte sind auf Ordnerstruktur umgestellt:
   - `features/inventory/InventoryPage.tsx`
   - `features/wine-detail/WineDetailPage.tsx`
@@ -48,26 +39,26 @@ flowchart LR
 - Legacy-Dateien bleiben als kompatible Thin-Wrapper (`features/Inventory.tsx`, `features/WineDetail.tsx`, `features/EnjoymentPlan.tsx`).
 
 3. Domain-Extraktion
+
 - Drinkability nach `domain/wine/drinkability.ts`
 - JSON-Parser nach `domain/wine/jsonParsers.ts`
 - Import/Normalisierung nach `domain/wine/normalization.ts`
 - `utils.ts` bietet Backward-Compat Re-Exports.
 
 4. Storage-Aufteilung
+
 - Fachliche Repositories unter `services/storage/*.ts`
 - Kompatible Fassade bleibt unverändert über `services/storage.ts`
 
-5. Backend-Modularisierung
-- `server/index.js` nur noch Bootstrap
-- `server/src/app.js` enthält nur Setup/Middleware/Route-Wiring
-- AI-Ausführung (Provider-Fallbacks, Prompt-Reparatur, Cache, JSON-Normalisierung) in `server/src/ai/runtime.js`
-- AI-Hilfsmodule in:
-  - `server/src/ai/providers/*`
-  - `server/src/ai/prompts/*`
-  - `server/src/ai/normalize/normalizeWineJson.js`
-  - `server/src/cache/aiCache.js`
+5. Lokaler Betrieb ohne externe KI-API
+
+- `services/ai.ts` beschränkt Recherche auf den lokalen Weinkatalog.
+- Anlasszuordnungen werden deterministisch aus lokal berechneten Kandidaten-Scores gewählt.
+- Der Scanner nutzt ausschließlich die native `BarcodeDetector`-API; Bilder werden nicht übertragen.
+- `server/src/app.js` stellt nur Health-/Basis-Middleware bereit und keine `/api/ai/*`-Routen.
 
 6. PWA/Offline-Layer
+
 - Vite PWA via `vite-plugin-pwa` (`injectManifest`) in `vite.config.ts`.
 - Service Worker: `services/pwa/sw.ts` (Precache + Runtime-Caching + Offline-Fallback).
 - Lokaler Persistenzlayer via Dexie:
@@ -79,8 +70,6 @@ flowchart LR
 - Sync-/Queue-Engine:
   - `services/pwa/syncEngine.ts`
   - `services/pwa/conflictResolver.ts`
-  - `services/pwa/aiQueue.ts`
-  - `services/pwa/aiQueueProcessor.ts`
 - Install-/Update-UX:
   - `services/pwa/installPrompt.ts`
   - `services/pwa/swRegistration.ts`
@@ -90,11 +79,12 @@ flowchart LR
 
 1. `npm run ci:check` ist grün.
 2. Build ohne `>500kB` Warnung (Lazy Routes + `manualChunks`).
-3. Unit-Tests decken Drinkability, JSON-Parser, Normalisierung und API-Grundpfade ab.
+3. Unit-Tests decken Drinkability, JSON-Parser, Normalisierung, lokale Recherche und Server-Grundpfade ab.
 4. Zusätzliche PWA-Unit-Tests decken Dexie, Queue, Konfliktauflösung und Install-Prompt ab.
 5. PWA-Smokes vorhanden in:
-  - `tests/pwa.offline.spec.ts`
-  - `tests/pwa.sync.spec.ts`
+
+- `tests/pwa.offline.spec.ts`
+- `tests/pwa.sync.spec.ts`
 
 ## Bekannte Restarbeit
 

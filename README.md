@@ -1,13 +1,12 @@
 # Grand Cru Vault
 
-Grand Cru Vault ist eine React/Vite-Anwendung zur Verwaltung eines Weinkellers mit KI-gestützter Datenerfassung, Trinkfenster-Analyse und Backend-Proxy für AI-Provider.
+Grand Cru Vault ist eine React/Vite-Anwendung zur Verwaltung eines Weinkellers mit lokaler Datenerfassung, regelbasierter Trinkfenster-Analyse und Offline-Unterstützung. Externe KI-APIs werden nicht verwendet.
 
 ## Voraussetzungen
 
 - Node.js 20+
 - npm 10+
 - Supabase CLI (optional für lokale DB-Workflows)
-- API Keys für Gemini/OpenAI (für AI-Endpunkte)
 
 ## Setup
 
@@ -30,7 +29,7 @@ cp server/.env.example server/.env
 npm run start
 ```
 
-Frontend läuft auf `http://localhost:3000`, das API-Backend auf `http://localhost:3001`.
+Frontend läuft auf `http://localhost:3000`, der lokale Health-/Sync-Server auf `http://localhost:3001`.
 
 ## Qualitätsgates
 
@@ -61,7 +60,7 @@ npm run ci:check
 
 - Manifest + Icons: `public/manifest.webmanifest`, `public/icons/*`
 - Service Worker: `services/pwa/sw.ts` (`injectManifest`)
-- Offline-Store/Queue: `services/pwa/offlineDb.ts`, `services/pwa/syncEngine.ts`, `services/pwa/aiQueue.ts`
+- Offline-Store/Queue: `services/pwa/offlineDb.ts`, `services/pwa/syncEngine.ts`
 - Install-/Update-UX: `services/pwa/installPrompt.ts`, `services/pwa/swRegistration.ts`, Settings-UI unter `/#/settings`
 - Offline ohne Session: Read-only Lock Screen
 
@@ -78,9 +77,9 @@ npm run ci:check
 - Storage-Fassade:
   - `services/storage.ts` (kompatibler Einstieg)
   - `services/storage/*.ts` (fachliche Repositories)
-- Backend modularisiert:
+- Lokaler Server:
   - `server/index.js` (Bootstrap)
-  - `server/src/app.js` (Express Setup)
-  - `server/src/ai/*`, `server/src/routes/*`, `server/src/cache/*`
+  - `server/src/app.js` (Health-Endpunkt und Basismiddleware)
+  - keine externen KI-Provider oder `/api/ai/*`-Endpunkte
 
 Details stehen in `docs/ARCHITECTURE_CURRENT.md` und `docs/QUALITY_GATES.md`.

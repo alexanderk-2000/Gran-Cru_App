@@ -86,10 +86,10 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                 setEnrichedData(data);
                 setEnriched(true);
             } else {
-                setError(response.error || 'AI-Anreicherung fehlgeschlagen.');
+                setError(response.error || 'Lokale Katalogsuche fehlgeschlagen.');
             }
         } catch (err: any) {
-            setError(err?.message || 'AI-Anreicherung fehlgeschlagen.');
+            setError(err?.message || 'Lokale Katalogsuche fehlgeschlagen.');
         } finally {
             setIsEnriching(false);
         }
@@ -249,7 +249,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                     </div>
                 )}
 
-                {/* AI enrichment */}
+                {/* Local catalog enrichment */}
                 <button
                     onClick={handleEnrich}
                     disabled={busy || !name.trim()}
@@ -259,11 +259,11 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                         } disabled:opacity-40`}
                 >
                     {isEnriching ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" /> AI lädt Daten…</>
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Katalog wird durchsucht…</>
                     ) : enriched ? (
-                        <><Check className="h-4 w-4" /> AI-Daten geladen</>
+                        <><Check className="h-4 w-4" /> Katalogdaten geladen</>
                     ) : (
-                        <><Wand2 className="h-4 w-4" /> AI-Daten laden</>
+                        <><Wand2 className="h-4 w-4" /> Lokale Katalogdaten suchen</>
                     )}
                 </button>
 
