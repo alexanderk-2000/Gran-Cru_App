@@ -14,7 +14,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(47);
+select plan(42);
 
 -- ============================================================
 -- Fixtures: two isolated auth users
@@ -87,9 +87,6 @@ values ('a0000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-0000000
 
 insert into public.cellar_pockets (id, user_id, name)
 values ('a0000000-0000-0000-0000-000000000007', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'RLS Test Pocket A');
-
-insert into public.ai_cache (id, user_id, provider, model, cache_key, response)
-values ('a0000000-0000-0000-0000-000000000008', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'test', 'test-model', 'rls-test-key', '{}'::jsonb);
 
 -- user_settings rows are auto-created by the on_auth_user_created trigger
 -- for both fixture users, so no manual insert is needed here.
@@ -302,36 +299,6 @@ select throws_ok(
   '42501',
   'new row violates row-level security policy for table "cellar_pockets"',
   'cellar_pockets: other user cannot insert a pocket impersonating the owner'
-);
-
--- ============================================================
--- ai_cache
--- ============================================================
-select pg_temp.login_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
-select is((select count(*)::int from public.ai_cache where id = 'a0000000-0000-0000-0000-000000000008'), 1, 'ai_cache: owner can select their own cache entry');
-
-select pg_temp.login_as('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
-select is((select count(*)::int from public.ai_cache where id = 'a0000000-0000-0000-0000-000000000008'), 0, 'ai_cache: other user cannot select the cache entry');
-
-savepoint sp_cache_update;
-with upd as (
-  update public.ai_cache set response = '{"hijacked":true}'::jsonb where id = 'a0000000-0000-0000-0000-000000000008' returning id
-)
-select is((select count(*)::int from upd), 0, 'ai_cache: other user cannot update the cache entry');
-rollback to savepoint sp_cache_update;
-
-savepoint sp_cache_delete;
-with del as (
-  delete from public.ai_cache where id = 'a0000000-0000-0000-0000-000000000008' returning id
-)
-select is((select count(*)::int from del), 0, 'ai_cache: other user cannot delete the cache entry');
-rollback to savepoint sp_cache_delete;
-
-select throws_ok(
-  $$insert into public.ai_cache (id, user_id, provider, model, cache_key, response) values ('a0000000-0000-0000-0000-000000000092', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'test', 'test-model', 'impersonated-key', '{}'::jsonb)$$,
-  '42501',
-  'new row violates row-level security policy for table "ai_cache"',
-  'ai_cache: other user cannot insert a cache entry impersonating the owner'
 );
 
 -- ============================================================

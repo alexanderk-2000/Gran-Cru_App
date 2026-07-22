@@ -1,4 +1,5 @@
 import { isOnline } from './networkState.ts';
+import { getAccessToken } from '../supabase.ts';
 import {
   getPendingAiQueueItems,
   markAiQueueStatus,
@@ -23,10 +24,12 @@ export const flushAiQueueForUser = async (userId: string): Promise<ProcessResult
     try {
       await markAiQueueStatus(item, 'syncing');
 
+      const token = await getAccessToken();
       const response = await fetch(item.endpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(item.payload)
       });

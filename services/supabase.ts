@@ -45,3 +45,14 @@ export const supabase = createClient(
 );
 
 export const isConfigured = Boolean(supabaseUrl && supabaseAnonKey && !supabaseUrl.includes('placeholder'));
+
+/**
+ * Current session access token, if any - used to authenticate requests to
+ * the backend's /api/ai/* routes, which now require a valid Supabase JWT.
+ * getSession() reads the cached session and works offline; it also returns
+ * anonymous/demo sessions, so this does not block the demo login flow.
+ */
+export const getAccessToken = async (): Promise<string | null> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
+};

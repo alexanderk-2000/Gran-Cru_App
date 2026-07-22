@@ -1,13 +1,14 @@
 
 import { supabase } from './supabase.ts';
 
-export type AIProvider = 'gemini' | 'openai';
+export type AIProvider = 'gemini' | 'openai' | 'openrouter';
 
 export interface UserSettings {
     user_id: string;
     ai_provider: AIProvider;
     gemini_model: string;
     openai_model: string;
+    openrouter_model: string;
     currency: string;
     language: string;
     target_date: string;
@@ -21,6 +22,7 @@ const DEFAULT_SETTINGS: Omit<UserSettings, 'user_id' | 'created_at' | 'updated_a
     ai_provider: 'openai',
     gemini_model: 'gemini-pro-latest',
     openai_model: '5.2',
+    openrouter_model: 'nvidia/llama-3.1-nemotron-70b-instruct',
     currency: 'EUR',
     language: 'de',
     target_date: '2044-12-31'
@@ -151,6 +153,9 @@ export const settingsService = {
 
         if (settings.ai_provider === 'openai') {
             return settings.openai_model || DEFAULT_SETTINGS.openai_model;
+        }
+        if (settings.ai_provider === 'openrouter') {
+            return settings.openrouter_model || DEFAULT_SETTINGS.openrouter_model;
         }
         return settings.gemini_model || DEFAULT_SETTINGS.gemini_model;
     },

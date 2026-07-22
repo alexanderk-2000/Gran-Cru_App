@@ -870,6 +870,39 @@ const StickyTabNav = memo(function StickyTabNav({
   );
 });
 
+const CONFIDENCE_LABELS: Record<'high' | 'medium' | 'low', { label: string; variant: 'sage' | 'gold' | 'bordeaux' }> = {
+  high: { label: 'KI-Daten: hohe Sicherheit', variant: 'sage' },
+  medium: { label: 'KI-Daten: mittlere Sicherheit', variant: 'gold' },
+  low: { label: 'KI-Daten: geringe Sicherheit', variant: 'bordeaux' }
+};
+
+// Confidence and missing_fields were only ever visible in the edit form's
+// raw JSON textareas - a wine with low confidence or several unresolved
+// fields looked identical to a fully verified one in read mode. This
+// surfaces that trust signal where a collector actually sees it.
+const ConfidenceBadge = memo(function ConfidenceBadge({
+  confidence,
+  missingFields
+}: {
+  confidence?: 'high' | 'medium' | 'low';
+  missingFields?: string[];
+}) {
+  if (!confidence) return null;
+
+  const { label, variant } = CONFIDENCE_LABELS[confidence];
+  const missingCount = missingFields?.length ?? 0;
+  const title = missingCount > 0 ? `Fehlende Felder: ${missingFields!.join(', ')}` : undefined;
+
+  return (
+    <span title={title}>
+      <Badge variant={variant}>
+        {label}
+        {missingCount > 0 ? ` · ${missingCount} Feld${missingCount === 1 ? '' : 'er'} offen` : ''}
+      </Badge>
+    </span>
+  );
+});
+
 const HeaderCard = memo(function HeaderCard({
   wine,
   isSaving,
@@ -945,6 +978,7 @@ const HeaderCard = memo(function HeaderCard({
                   {wine.region ? <Badge variant="sage">{wine.region}</Badge> : null}
                   {wine.wine_type ? <Badge variant="gold">{wine.wine_type}</Badge> : null}
                   {wine.category ? <Badge variant="bordeaux">{wine.category}</Badge> : null}
+                  <ConfidenceBadge confidence={wine.confidence} missingFields={wine.missing_fields} />
                 </div>
 
                 <h1 className="font-serif text-[2rem] leading-[1.05] text-stone-900 md:text-[3.25rem]">{wine.name}</h1>

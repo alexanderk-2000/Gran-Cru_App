@@ -6,6 +6,7 @@ const baseSettings: UserSettings = {
   ai_provider: 'openai',
   gemini_model: 'gemini-2.5-flash',
   openai_model: 'gpt-4o-mini',
+  openrouter_model: 'nvidia/llama-3.1-nemotron-70b-instruct',
   currency: 'EUR',
   language: 'de',
   target_date: '2044-12-31',
@@ -36,6 +37,16 @@ describe('settingsService.getModel', () => {
     });
 
     await expect(settingsService.getModel()).resolves.toBe('gemini-2.5-pro');
+  });
+
+  it('returns the persisted OpenRouter model when provider is openrouter', async () => {
+    vi.spyOn(settingsService, 'getUserSettings').mockResolvedValue({
+      ...baseSettings,
+      ai_provider: 'openrouter',
+      openrouter_model: 'nvidia/nemotron-nano-9b-v2'
+    });
+
+    await expect(settingsService.getModel()).resolves.toBe('nvidia/nemotron-nano-9b-v2');
   });
 
   it('falls back to defaults if settings are missing', async () => {

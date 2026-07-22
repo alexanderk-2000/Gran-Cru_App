@@ -4,6 +4,12 @@ import { runOfflineRuleEngine, type OfflineRuleEngineOutput } from './offlineRul
 import { storageService } from './storage.ts';
 import { enqueueAiQueueItem } from './pwa/aiQueue.ts';
 import { isOnline } from './pwa/networkState.ts';
+import { getAccessToken } from './supabase.ts';
+
+const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getAccessToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 export interface AIResponse {
     success: boolean;
@@ -15,7 +21,7 @@ export interface AIResponse {
 }
 
 export interface AssignmentAIRequest {
-    provider?: 'gemini' | 'openai';
+    provider?: 'gemini' | 'openai' | 'openrouter';
     instances: Array<{ id: string; date: string; title?: string }>;
     winePool: Array<{
         wine_id: string;
@@ -176,7 +182,8 @@ Offline-Normalisierung:
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...(await authHeaders())
                 },
                 body: JSON.stringify(requestPayload)
             });
@@ -265,7 +272,8 @@ Offline-Normalisierung:
             const response = await fetch('/api/ai/assignment', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...(await authHeaders())
                 },
                 body: JSON.stringify(requestPayload)
             });

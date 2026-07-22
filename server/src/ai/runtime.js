@@ -1,7 +1,9 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
-import { APPROVED_GEMINI_MODELS, isGeminiRetryableError } from './providers/gemini.js';
-import { resolveOpenAIModel, isOpenAIRetryableError } from './providers/openai.js';
+import {
+  VISION_MODEL_CANDIDATES,
+  resolveModelCandidates,
+  isRetryableModelError
+} from './providers/modelCatalog.js';
 import { normalizeWineJson } from './normalize/normalizeWineJson.js';
 import { buildProfilePrompt } from './prompts/profile.js';
 import { buildRepairPrompt } from './prompts/repair.js';
@@ -143,53 +145,7 @@ const unwrapModelResponse = (data) => {
   return data;
 };
 
-const createGeminiCaller = ({ geminiApiKey }) => async (prompt, temperature, maxOutputTokens) => {
-  if (!geminiApiKey) {
-    throw createHttpError(500, 'GEMINI_API_KEY not configured. Please add it to server/.env file.');
-  }
-
-  const lastErrors = [];
-  for (const model of APPROVED_GEMINI_MODELS) {
-    try {
-      const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const genModel = genAI.getGenerativeModel({ model });
-      const result = await genModel.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature,
-          maxOutputTokens,
-          responseMimeType: 'application/json'
-        }
-      });
-      return { result, model };
-    } catch (error) {
-      if (isGeminiRetryableError(sanitizeError, error)) {
-        lastErrors.push({ model, error: sanitizeError(error) });
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  const error = new Error(`Gemini failed for all candidate models: ${lastErrors.map((entry) => entry.model).join(', ')}`);
-  error.details = lastErrors;
-  throw error;
-};
-
-const createOpenAiCaller = ({ openaiApiKey }) => async (prompt, requestedModel, temperature, maxOutputTokens) => {
-  if (!openaiApiKey) {
-    throw createHttpError(500, 'OPENAI_API_KEY not configured. Please add it to server/.env file.');
-  }
-
-  const client = new OpenAI({ apiKey: openaiApiKey });
-  const preferred = resolveOpenAIModel(requestedModel);
-  const fallbackModels = ['gpt-5.2', 'gpt-5', 'gpt-4o', 'gpt-4o-mini'];
-  const candidateModels = [preferred, ...fallbackModels.filter((item) => item !== preferred)];
-
-  const lastErrors = [];
-  for (const model of candidateModels) {
-    try {
-      const webSearchEnforcedPrompt = `${prompt}
+const buildWebSearchEnforcedPrompt = (prompt) => `${prompt}
 
 KRITISCH:
 - Nutze verpflichtend Web-Recherche (Browser/Web Search Tool) für alle faktischen Aussagen.
@@ -203,61 +159,128 @@ KRITISCH:
 - Übernimm gefundene Kritiker-Scores in "scores" (critic, score, year).
 `;
 
-      const response = await client.responses.create({
-        model,
-        input: webSearchEnforcedPrompt,
-        temperature,
-        max_output_tokens: maxOutputTokens,
-        tools: [
-          {
-            type: 'web_search_preview',
-            user_location: {
-              type: 'approximate',
-              country: 'US'
-            }
-          }
-        ],
-        tool_choice: { type: 'web_search_preview' }
-      });
+// Every AI connection - Gemini, GPT, Nemotron - now goes through this single
+// OpenRouter client. OpenRouter exposes an OpenAI-compatible Chat Completions
+// API for all of them, so there is exactly one HTTP integration, one API key
+// and one retry/cache/normalize pipeline to maintain instead of three. The
+// ":online" model-slug suffix turns on OpenRouter's web-search plugin, which
+// gives every model family the same real grounding (previously only OpenAI's
+// own web_search_preview tool did real research; Gemini was prompt-only, see
+// docs/WEITERENTWICKLUNGSPOTENZIAL_2026-07-22.md).
+const createModelCaller = ({ openrouterApiKey, appUrl, appName }) => {
+  const client = openrouterApiKey
+    ? new OpenAI({
+        apiKey: openrouterApiKey,
+        baseURL: 'https://openrouter.ai/api/v1',
+        defaultHeaders: {
+          'HTTP-Referer': appUrl || 'http://localhost:3000',
+          'X-Title': appName || 'Grand Cru Vault'
+        }
+      })
+    : null;
 
-      const text = response?.output_text;
-      if (typeof text !== 'string' || text.trim().length === 0) {
-        throw new Error(`OpenAI model ${model} returned empty content`);
-      }
-
-      const usedWebSearch = Array.isArray(response?.output)
-        && response.output.some((item) => item?.type === 'web_search_call');
-
-      if (!usedWebSearch) {
-        throw new Error(`OpenAI model ${model} did not execute required web_search_call`);
-      }
-
-      return { text, model, usedWebSearch };
-    } catch (error) {
-      if (isOpenAIRetryableError(sanitizeError, error)) {
-        lastErrors.push({ model, error: sanitizeError(error) });
-        continue;
-      }
-      throw error;
+  return async (providerKey, prompt, requestedModel, temperature, maxOutputTokens, { online = true } = {}) => {
+    if (!client) {
+      throw createHttpError(500, 'OPENROUTER_API_KEY not configured. Please add it to server/.env file.');
     }
-  }
 
-  const error = new Error(`OpenAI failed for all candidate models: ${candidateModels.join(', ')}`);
-  error.details = lastErrors;
-  throw error;
+    const candidateModels = resolveModelCandidates(providerKey, requestedModel);
+    const content = online ? buildWebSearchEnforcedPrompt(prompt) : prompt;
+
+    const lastErrors = [];
+    for (const model of candidateModels) {
+      try {
+        const response = await client.chat.completions.create({
+          model: online ? `${model}:online` : model,
+          messages: [{ role: 'user', content }],
+          temperature,
+          max_tokens: maxOutputTokens,
+          response_format: { type: 'json_object' }
+        });
+
+        const text = response?.choices?.[0]?.message?.content;
+        if (typeof text !== 'string' || text.trim().length === 0) {
+          throw new Error(`Model ${model} returned empty content`);
+        }
+
+        const usedWebSearch = online && Array.isArray(response?.citations) && response.citations.length > 0;
+        return { text, model, usedWebSearch };
+      } catch (error) {
+        if (isRetryableModelError(sanitizeError, error)) {
+          lastErrors.push({ model, error: sanitizeError(error) });
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    const error = new Error(`All candidate models failed for ${providerKey}: ${candidateModels.join(', ')}`);
+    error.details = lastErrors;
+    throw error;
+  };
 };
 
-const extractTextFromProviderResult = async (provider, providerResult) => {
-  if (provider === 'openai') {
-    return {
-      text: providerResult.text,
-      model: providerResult.model,
-      usedWebSearch: Boolean(providerResult.usedWebSearch)
-    };
-  }
+const visionPrompt = `Analysiere dieses Weinetikett-Foto. Extrahiere folgende Informationen und antworte ausschließlich als JSON:
 
-  const response = await providerResult.result.response;
-  return { text: response.text(), model: providerResult.model, usedWebSearch: false };
+{
+  "name": "Vollständiger Weinname",
+  "producer": "Weingut / Produzent",
+  "vintage": 2020,
+  "region": "Region falls erkennbar",
+  "raw": "Gesamter erkennbarer Text auf dem Etikett"
+}
+
+Regeln:
+- Nur JSON ausgeben, kein zusätzlicher Text.
+- Falls ein Feld nicht erkennbar ist: null setzen.
+- "vintage" als Zahl.
+- "raw" enthält den gesamten lesbaren Text.`;
+
+const createVisionCaller = ({ openrouterApiKey, appUrl, appName }) => {
+  const client = openrouterApiKey
+    ? new OpenAI({
+        apiKey: openrouterApiKey,
+        baseURL: 'https://openrouter.ai/api/v1',
+        defaultHeaders: {
+          'HTTP-Referer': appUrl || 'http://localhost:3000',
+          'X-Title': appName || 'Grand Cru Vault'
+        }
+      })
+    : null;
+
+  return async (base64Image, mimeType) => {
+    if (!client) {
+      throw createHttpError(500, 'OPENROUTER_API_KEY not configured. Please add it to server/.env file.');
+    }
+
+    for (const model of VISION_MODEL_CANDIDATES) {
+      try {
+        const response = await client.chat.completions.create({
+          model,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: visionPrompt },
+              { type: 'image_url', image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${base64Image}` } }
+            ]
+          }],
+          temperature: 0.2,
+          max_tokens: 1024,
+          response_format: { type: 'json_object' }
+        });
+
+        const text = response?.choices?.[0]?.message?.content;
+        if (typeof text === 'string' && text.trim().length > 0) {
+          return text;
+        }
+      } catch (error) {
+        if (isRetryableModelError(sanitizeError, error)) continue;
+        throw error;
+      }
+    }
+
+    return null;
+  };
 };
 
 export const createAiRuntime = ({
@@ -266,28 +289,20 @@ export const createAiRuntime = ({
   openaiMaxOutputTokens,
   fastOpenaiMaxOutputTokens,
   fastGeminiMaxOutputTokens,
+  openrouterMaxOutputTokens,
+  fastOpenrouterMaxOutputTokens,
   cacheTtlMs,
   cacheMaxEntries,
-  geminiApiKey,
-  openaiApiKey
+  openrouterApiKey,
+  appUrl,
+  appName
 }) => {
   const cache = createAiCache({ ttlMs: cacheTtlMs, maxEntries: cacheMaxEntries });
-  const callGeminiWithFallback = createGeminiCaller({ geminiApiKey });
-  const callOpenAIWithFallback = createOpenAiCaller({ openaiApiKey });
+  const callModel = createModelCaller({ openrouterApiKey, appUrl, appName });
+  const callVisionModel = createVisionCaller({ openrouterApiKey, appUrl, appName });
 
-  const runProviderRequest = async ({
-    provider,
-    prompt,
-    model,
-    temperature,
-    maxOutputTokens
-  }) => {
-    if (provider === 'openai') {
-      return callOpenAIWithFallback(prompt, model, temperature, maxOutputTokens);
-    }
-
-    return callGeminiWithFallback(prompt, temperature, maxOutputTokens);
-  };
+  const runProviderRequest = async ({ provider, prompt, model, temperature, maxOutputTokens, online }) =>
+    callModel(provider, prompt, model, temperature, maxOutputTokens, { online });
 
   const executeAndNormalize = async ({
     provider,
@@ -295,7 +310,8 @@ export const createAiRuntime = ({
     model,
     temperature,
     maxOutputTokens,
-    allowRepair
+    allowRepair,
+    online
   }) => {
     const innerTimeout = Math.max(15000, requestTimeout - 5000);
     let timeoutHandle;
@@ -303,13 +319,7 @@ export const createAiRuntime = ({
       timeoutHandle = setTimeout(() => reject(new Error('AI request timeout')), innerTimeout);
     });
 
-    const providerPromise = runProviderRequest({
-      provider,
-      prompt,
-      model,
-      temperature,
-      maxOutputTokens
-    });
+    const providerPromise = runProviderRequest({ provider, prompt, model, temperature, maxOutputTokens, online });
 
     let providerResult;
     try {
@@ -318,22 +328,15 @@ export const createAiRuntime = ({
       if (timeoutHandle) clearTimeout(timeoutHandle);
     }
 
-    const { text, model: resolvedModel, usedWebSearch } = await extractTextFromProviderResult(provider, providerResult);
+    const { text, model: resolvedModel, usedWebSearch } = providerResult;
 
     let jsonData = tryParseJson(text);
     jsonData = unwrapModelResponse(jsonData);
 
     if (!jsonData && allowRepair) {
       const repairPrompt = buildRepairPrompt(prompt, ['invalid_json'], { raw: text });
-      const repairResult = await runProviderRequest({
-        provider,
-        prompt: repairPrompt,
-        model,
-        temperature: 0.2,
-        maxOutputTokens
-      });
-      const { text: repairText } = await extractTextFromProviderResult(provider, repairResult);
-      jsonData = unwrapModelResponse(tryParseJson(repairText));
+      const repairResult = await runProviderRequest({ provider, prompt: repairPrompt, model, temperature: 0.2, maxOutputTokens, online });
+      jsonData = unwrapModelResponse(tryParseJson(repairResult.text));
     }
 
     if (!jsonData) {
@@ -349,15 +352,8 @@ export const createAiRuntime = ({
     const shouldRepairByIssues = allowRepair && normalized.issues.length > 0;
     if (shouldRepairByIssues) {
       const repairPrompt = buildRepairPrompt(prompt, normalized.issues, jsonData);
-      const repairResult = await runProviderRequest({
-        provider,
-        prompt: repairPrompt,
-        model,
-        temperature: 0.2,
-        maxOutputTokens
-      });
-      const { text: repairText } = await extractTextFromProviderResult(provider, repairResult);
-      const repairedJson = unwrapModelResponse(tryParseJson(repairText));
+      const repairResult = await runProviderRequest({ provider, prompt: repairPrompt, model, temperature: 0.2, maxOutputTokens, online });
+      const repairedJson = unwrapModelResponse(tryParseJson(repairResult.text));
       if (repairedJson) normalized = normalizeWineJson(repairedJson);
     }
 
@@ -369,6 +365,12 @@ export const createAiRuntime = ({
     };
   };
 
+  const selectMaxOutputTokens = (provider, fast) => {
+    if (provider === 'openai') return fast ? fastOpenaiMaxOutputTokens : openaiMaxOutputTokens;
+    if (provider === 'openrouter') return fast ? fastOpenrouterMaxOutputTokens : openrouterMaxOutputTokens;
+    return fast ? fastGeminiMaxOutputTokens : geminiMaxOutputTokens;
+  };
+
   const searchWine = async (body) => {
     const validationError = validateAIRequest(body);
     if (validationError) {
@@ -376,7 +378,7 @@ export const createAiRuntime = ({
     }
 
     const { prompt, model } = body;
-    const provider = body?.provider === 'openai' ? 'openai' : 'gemini';
+    const provider = body?.provider === 'openai' ? 'openai' : body?.provider === 'openrouter' ? 'openrouter' : 'gemini';
     const searchModeRaw = typeof body?.search_mode === 'string' ? body.search_mode.toLowerCase() : 'adaptive';
     const searchMode = ['fast', 'full', 'adaptive'].includes(searchModeRaw) ? searchModeRaw : 'adaptive';
 
@@ -409,8 +411,9 @@ export const createAiRuntime = ({
       prompt: fastPrompt,
       model,
       temperature: 0.3,
-      maxOutputTokens: provider === 'openai' ? fastOpenaiMaxOutputTokens : fastGeminiMaxOutputTokens,
-      allowRepair: provider !== 'openai'
+      maxOutputTokens: selectMaxOutputTokens(provider, true),
+      allowRepair: true,
+      online: true
     });
 
     const fastData = fastRun.normalized?.data || null;
@@ -425,7 +428,7 @@ export const createAiRuntime = ({
         data: fastData,
         provider,
         model: fastRun.resolvedModel,
-        web_research: provider === 'openai' ? fastRun.usedWebSearch : false,
+        web_research: fastRun.usedWebSearch,
         search_profile: 'fast'
       };
       cache.set(cacheKey, payload);
@@ -449,8 +452,9 @@ export const createAiRuntime = ({
       prompt: fullPrompt,
       model,
       temperature: 0.45,
-      maxOutputTokens: provider === 'openai' ? openaiMaxOutputTokens : geminiMaxOutputTokens,
-      allowRepair: provider !== 'openai'
+      maxOutputTokens: selectMaxOutputTokens(provider, false),
+      allowRepair: true,
+      online: true
     });
 
     if (!fullRun.normalized) {
@@ -463,7 +467,7 @@ export const createAiRuntime = ({
         data: fastData,
         provider,
         model: fastRun.resolvedModel,
-        web_research: provider === 'openai' ? fastRun.usedWebSearch : false,
+        web_research: fastRun.usedWebSearch,
         search_profile: 'fast-fallback'
       };
       cache.set(cacheKey, fallbackPayload);
@@ -485,7 +489,7 @@ export const createAiRuntime = ({
       data: mergedData,
       provider,
       model: fullRun.resolvedModel || fastRun.resolvedModel,
-      web_research: provider === 'openai' ? (fullRun.usedWebSearch || fastRun.usedWebSearch) : false,
+      web_research: fullRun.usedWebSearch || fastRun.usedWebSearch,
       search_profile: 'full'
     };
     cache.set(cacheKey, finalPayload);
@@ -505,9 +509,10 @@ export const createAiRuntime = ({
       throw createHttpError(400, 'Prompt is required');
     }
 
-    const result = await callGeminiWithFallback(prompt, 0.3, geminiMaxOutputTokens);
-    const response = await result.result.response;
-    const text = response.text();
+    const provider = body?.provider === 'openai' ? 'openai' : body?.provider === 'openrouter' ? 'openrouter' : 'gemini';
+    // Internal reasoning over data the server already fetched - no web
+    // research needed, so this skips the ":online" plugin.
+    const { text } = await callModel(provider, prompt, body?.model, 0.3, selectMaxOutputTokens(provider, false), { online: false });
     const jsonData = tryParseJson(text);
 
     return {
@@ -525,62 +530,7 @@ export const createAiRuntime = ({
       throw createHttpError(400, 'Base64 image is required');
     }
 
-    if (!geminiApiKey) {
-      throw createHttpError(500, 'GEMINI_API_KEY not configured');
-    }
-
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-
-    let visionResult = null;
-    const visionModels = ['gemini-2.5-flash-preview-05-20', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
-    for (const modelName of visionModels) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent({
-          contents: [{
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType: mimeType || 'image/jpeg',
-                  data: image
-                }
-              },
-              {
-                text: `Analysiere dieses Weinetikett-Foto. Extrahiere folgende Informationen und antworte ausschließlich als JSON:
-
-{
-  "name": "Vollständiger Weinname",
-  "producer": "Weingut / Produzent",
-  "vintage": 2020,
-  "region": "Region falls erkennbar",
-  "raw": "Gesamter erkennbarer Text auf dem Etikett"
-}
-
-Regeln:
-- Nur JSON ausgeben, kein zusätzlicher Text.
-- Falls ein Feld nicht erkennbar ist: null setzen.
-- "vintage" als Zahl.
-- "raw" enthält den gesamten lesbaren Text.`
-              }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 1024,
-            responseMimeType: 'application/json'
-          }
-        });
-
-        const response = await result.response;
-        visionResult = response.text();
-        break;
-      } catch (error) {
-        if (isGeminiRetryableError(sanitizeError, error)) continue;
-        throw error;
-      }
-    }
-
+    const visionResult = await callVisionModel(image, mimeType);
     if (!visionResult) {
       throw createHttpError(502, 'Vision API konnte Bild nicht verarbeiten');
     }

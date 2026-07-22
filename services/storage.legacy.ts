@@ -210,6 +210,21 @@ export const storageService = {
     return (data as Wine[]) || [];
   },
 
+  /**
+   * Delta-sync counterpart to getWines()/getDeletedWines(): a single query
+   * covering both active and deleted wines (deleted_at is just a column on
+   * the same row), filtered to what changed since `cursor`. Pass `null` for
+   * a first-sync bootstrap (returns everything). Used by
+   * services/pwa/syncEngine.ts instead of a full-table pull every cycle.
+   */
+  getWinesUpdatedSince: async (cursor: string | null): Promise<Wine[]> => {
+    let query = supabase.from('wines').select('*').order('updated_at', { ascending: true });
+    if (cursor) query = query.gt('updated_at', cursor);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data as Wine[]) || [];
+  },
+
   getCellarPockets: async (): Promise<CellarPocket[]> => {
     const { data, error } = await supabase
       .from('cellar_pockets')
@@ -605,6 +620,47 @@ export const storageService = {
     }));
   },
 
+  /**
+   * Delta-sync counterpart to getConsumptionHistory(): inventory_events is
+   * append-only, so created_at alone is a correct cursor. getConsumptionHistory()
+   * pulled every event of every type ever recorded, unbounded, every cycle -
+   * this bounds it to what's new since the last sync.
+   */
+  getConsumptionHistorySince: async (cursor: string | null): Promise<Array<{
+    id: string;
+    wine_id: string;
+    user_id: string;
+    type: string;
+    delta: number;
+    source: string;
+    created_at: string;
+    wines: { name: string; producer?: string; vintage?: number } | null;
+  }>> => {
+    let query = supabase
+      .from('inventory_events')
+      .select('id,wine_id,user_id,type,delta,source,created_at,wines(name,producer,vintage)')
+      .eq('type', 'consume')
+      .order('created_at', { ascending: true });
+    if (cursor) query = query.gt('created_at', cursor);
+    const { data, error } = await query;
+    if (error) throw error;
+    const rows = (data || []) as Array<{
+      id: string;
+      wine_id: string;
+      user_id: string;
+      type: string;
+      delta: number;
+      source: string;
+      created_at: string;
+      wines: { name: string; producer?: string; vintage?: number }[] | { name: string; producer?: string; vintage?: number } | null;
+    }>;
+
+    return rows.map((row) => ({
+      ...row,
+      wines: Array.isArray(row.wines) ? row.wines[0] || null : row.wines
+    }));
+  },
+
   // --- SOFT DELETE & PAPIERKORB ---
   softDeleteWine: async (id: string, reason?: string) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -682,6 +738,15 @@ export const storageService = {
     return ((data as any[]) || []).map(normalizeOccasionRow);
   },
 
+  /** Delta-sync counterpart to getOccasions() - see getWinesUpdatedSince(). */
+  getOccasionsUpdatedSince: async (cursor: string | null): Promise<Occasion[]> => {
+    let query = supabase.from('occasions').select('*').order('updated_at', { ascending: true });
+    if (cursor) query = query.gt('updated_at', cursor);
+    const { data, error } = await query;
+    if (error) throw error;
+    return ((data as any[]) || []).map(normalizeOccasionRow);
+  },
+
   getOccasionInstances: async (): Promise<OccasionInstance[]> => {
     const { data, error } = await supabase
       .from('occasion_instances')
@@ -689,6 +754,15 @@ export const storageService = {
       .order('instance_date', { ascending: true });
     if (error) throw error;
     return (data as any[]) || [];
+  },
+
+  /** Delta-sync counterpart to getOccasionInstances() - see getWinesUpdatedSince(). */
+  getOccasionInstancesUpdatedSince: async (cursor: string | null): Promise<OccasionInstance[]> => {
+    let query = supabase.from('occasion_instances').select('*').order('updated_at', { ascending: true });
+    if (cursor) query = query.gt('updated_at', cursor);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data as OccasionInstance[]) || [];
   },
 
   getOccasionInstancesByOccasion: async (occasionId: string): Promise<OccasionInstance[]> => {
@@ -707,6 +781,20 @@ export const storageService = {
       .select('*, wine:wines(*)')
       .eq('occasion_id', occasionId)
       .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data as OccasionWinePoolEntry[]) || [];
+  },
+
+  /**
+   * Delta-sync counterpart to getOccasionWinePool(): fetches pool entries
+   * for ALL of the user's occasions in one query, filtered by `updated_at`
+   * since `cursor`, instead of one query per occasion (N+1 - see
+   * docs/WEITERENTWICKLUNGSPOTENZIAL_2026-07-22.md, architecture finding #4).
+   */
+  getOccasionWinePoolUpdatedSince: async (cursor: string | null): Promise<OccasionWinePoolEntry[]> => {
+    let query = supabase.from('occasion_wine_pool').select('*').order('updated_at', { ascending: true });
+    if (cursor) query = query.gt('updated_at', cursor);
+    const { data, error } = await query;
     if (error) throw error;
     return (data as OccasionWinePoolEntry[]) || [];
   },
@@ -1029,11 +1117,60 @@ export const storageService = {
     return (data as Tasting[]) || [];
   },
 
+  /**
+   * Delta-sync counterpart to getTastings(): fetches tastings for ALL of
+   * the user's wines in one query instead of one query per wine (N+1 - see
+   * docs/WEITERENTWICKLUNGSPOTENZIAL_2026-07-22.md, architecture finding #4).
+   * tastings are insert-only (no update path), so created_at is a correct
+   * cursor.
+   */
+  getTastingsCreatedSince: async (cursor: string | null): Promise<Tasting[]> => {
+    let query = supabase.from('tastings').select('*').order('created_at', { ascending: true });
+    if (cursor) query = query.gt('created_at', cursor);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data as Tasting[]) || [];
+  },
+
   addTasting: async (tasting: Partial<Tasting>): Promise<Tasting> => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase.from('tastings').insert([{ ...tasting, user_id: user?.id, date: new Date().toISOString() }]).select().single();
     if (error) throw error;
     await storageService.adjustStock(tasting.wine_id!, -1);
     return data as Tasting;
+  },
+
+  /**
+   * ID-only reconciliation for hard deletes: delta pulls above only see
+   * updated/created rows, never rows that were actually DELETEd (wines via
+   * permanentlyDeleteWine/emptyTrash, occasions - and cascaded instances/pool
+   * entries - via deleteOccasion). Fetching just the id column for
+   * everything the user currently has lets syncEngine diff against the
+   * local Dexie cache and drop anything no longer present remotely,
+   * without needing a tombstone table.
+   */
+  getSyncReconciliationIds: async (): Promise<{
+    wines: string[];
+    occasions: string[];
+    occasion_instances: string[];
+    occasion_wine_pool: string[];
+  }> => {
+    const [wines, occasions, occasionInstances, occasionWinePool] = await Promise.all([
+      supabase.from('wines').select('id'),
+      supabase.from('occasions').select('id'),
+      supabase.from('occasion_instances').select('id'),
+      supabase.from('occasion_wine_pool').select('id')
+    ]);
+    if (wines.error) throw wines.error;
+    if (occasions.error) throw occasions.error;
+    if (occasionInstances.error) throw occasionInstances.error;
+    if (occasionWinePool.error) throw occasionWinePool.error;
+
+    return {
+      wines: (wines.data || []).map((row) => row.id as string),
+      occasions: (occasions.data || []).map((row) => row.id as string),
+      occasion_instances: (occasionInstances.data || []).map((row) => row.id as string),
+      occasion_wine_pool: (occasionWinePool.data || []).map((row) => row.id as string)
+    };
   }
 };
