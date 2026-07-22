@@ -6,7 +6,7 @@ import { app } from '../../server/src/app.js';
 
 // The AI routes now require a valid Supabase session (see
 // server/src/middleware/requireAuth.js) - every request otherwise incurs
-// paid OpenAI/Gemini/OpenRouter cost with no gate at all. In CI a local
+// paid OpenRouter cost with no gate at all. In CI a local
 // Supabase stack is running (see .github/workflows/ci-deploy.yml) and
 // server/.env is populated with its URL/anon key, so we can obtain a real
 // anonymous session token here. Locally without `supabase start`, these
@@ -35,7 +35,6 @@ describe('server routes', () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
-    expect(typeof res.body.gemini).toBe('boolean');
     expect(typeof res.body.openrouter).toBe('boolean');
   });
 

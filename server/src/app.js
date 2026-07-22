@@ -40,8 +40,6 @@ const aiRuntime = createAiRuntime({
   fastOpenrouterMaxOutputTokens: FAST_OPENROUTER_MAX_OUTPUT_TOKENS,
   cacheTtlMs: AI_CACHE_TTL_MS,
   cacheMaxEntries: AI_CACHE_MAX_ENTRIES,
-  geminiApiKey: process.env.GEMINI_API_KEY,
-  openaiApiKey: process.env.OPENAI_API_KEY,
   openrouterApiKey: process.env.OPENROUTER_API_KEY,
   appUrl: process.env.APP_URL,
   appName: process.env.APP_NAME
@@ -74,13 +72,14 @@ app.use((req, res, next) => {
 registerHealthRoute(app, () => ({
   status: 'ok',
   timestamp: new Date().toISOString(),
-  gemini: Boolean(process.env.GEMINI_API_KEY),
-  openai: Boolean(process.env.OPENAI_API_KEY),
+  // Every model family (Gemini/OpenAI/Nemotron) is reached through this one
+  // OpenRouter key now - there is no separate direct Google/OpenAI SDK
+  // integration left to report on.
   openrouter: Boolean(process.env.OPENROUTER_API_KEY)
 }));
 
-// Every AI endpoint incurs paid provider cost (OpenAI/Gemini/OpenRouter) -
-// require a valid Supabase session and rate-limit before any of them run.
+// Every AI endpoint incurs paid provider cost via OpenRouter - require a
+// valid Supabase session and rate-limit before any of them run.
 app.use('/api/ai', requireAuth, aiRateLimiter);
 
 const providerLabel = (provider) => (provider === 'openai' ? 'OpenAI' : provider === 'openrouter' ? 'OpenRouter' : 'Gemini');
@@ -143,6 +142,6 @@ export { app };
 
 export const startServer = () => app.listen(PORT, () => {
   console.log(`🍷 Wine Vault API Server running on http://localhost:${PORT}`);
-  console.log(`   Gemini API: ${process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ Missing'}`);
+  console.log(`   OpenRouter API: ${process.env.OPENROUTER_API_KEY ? '✅ Configured' : '❌ Missing'}`);
   console.log(`   Request Timeout: ${REQUEST_TIMEOUT / 1000}s`);
 });

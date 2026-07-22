@@ -211,30 +211,14 @@ export const Settings: React.FC = () => {
                         <div className="flex items-start gap-3">
                             <AlertCircle className="w-5 h-5 text-gold shrink-0 mt-0.5" />
                             <div className="text-sm text-stone-gray">
-                                <p className="font-bold text-charcoal mb-1">API Keys konfigurieren</p>
+                                <p className="font-bold text-charcoal mb-1">API Key konfigurieren</p>
                                 <p className="mb-2">
-                                    API Keys werden sicher im Backend gespeichert. Bearbeite die Datei:
+                                    Gemini, GPT und Nemotron laufen alle über einen einzigen OpenRouter-Key. Trage ihn sicher im Backend ein:
                                 </p>
                                 <code className="bg-charcoal/5 px-3 py-2 rounded-lg block font-mono text-xs mb-3">
                                     server/.env
                                 </code>
                                 <div className="flex gap-4 mt-3">
-                                    <a
-                                        href="https://aistudio.google.com/apikey"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-burgundy hover:underline flex items-center gap-1"
-                                    >
-                                        Gemini Key erstellen <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                    <a
-                                        href="https://platform.openai.com/api-keys"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-burgundy hover:underline flex items-center gap-1"
-                                    >
-                                        OpenAI Key erstellen <ExternalLink className="w-3 h-3" />
-                                    </a>
                                     <a
                                         href="https://openrouter.ai/keys"
                                         target="_blank"
@@ -345,7 +329,7 @@ export const Settings: React.FC = () => {
                         </div>
                         <div>
                             <h2 className="font-serif text-2xl font-bold text-charcoal">KI-Provider</h2>
-                            <p className="text-sm text-stone-gray mt-1">Wähle deinen bevorzugten KI-Anbieter</p>
+                            <p className="text-sm text-stone-gray mt-1">Wähle dein bevorzugtes Modell - alle laufen über OpenRouter</p>
                         </div>
                     </div>
 
@@ -361,7 +345,7 @@ export const Settings: React.FC = () => {
                                 <h3 className="font-bold text-charcoal">Google Gemini</h3>
                                 {provider === 'gemini' && <CheckCircle className="w-5 h-5 text-burgundy" />}
                             </div>
-                            <p className="text-sm text-stone-gray text-left">Gemini Modelle (Fallback aktiv)</p>
+                            <p className="text-sm text-stone-gray text-left">Gemini Modelle via OpenRouter (Web-Search, Fallback aktiv)</p>
                         </button>
 
                         <button
@@ -375,7 +359,7 @@ export const Settings: React.FC = () => {
                                 <h3 className="font-bold text-charcoal">OpenAI</h3>
                                 {provider === 'openai' && <CheckCircle className="w-5 h-5 text-burgundy" />}
                             </div>
-                            <p className="text-sm text-stone-gray text-left">GPT Modelle (Search zuerst)</p>
+                            <p className="text-sm text-stone-gray text-left">GPT Modelle via OpenRouter (Web-Search, Fallback aktiv)</p>
                         </button>
 
                         <button
@@ -386,10 +370,10 @@ export const Settings: React.FC = () => {
                                 }`}
                         >
                             <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-charcoal">Nemotron (OpenRouter)</h3>
+                                <h3 className="font-bold text-charcoal">Nemotron</h3>
                                 {provider === 'openrouter' && <CheckCircle className="w-5 h-5 text-burgundy" />}
                             </div>
-                            <p className="text-sm text-stone-gray text-left">NVIDIA Nemotron via OpenRouter (Web-Search)</p>
+                            <p className="text-sm text-stone-gray text-left">NVIDIA Nemotron via OpenRouter (Web-Search, Fallback aktiv)</p>
                         </button>
                     </div>
                 </section>

@@ -61,12 +61,14 @@ Positiv bestätigt: DB-Indizierung ist größtenteils durchdacht (Barcode-Index,
 
 Aus den "schnell umsetzbaren" Punkten unten wurde direkt umgesetzt, plus die vom Nutzer explizit gewünschte Erweiterung um einen dritten KI-Provider:
 
-- **Nemotron via OpenRouter als dritter KI-Provider** (`server/src/ai/providers/openrouter.js`, Wiring in `server/src/ai/runtime.js`, UI in `features/Settings.tsx`). Nutzt OpenRouters `:online`-Web-Search-Plugin, damit dieser Pfad (anders als Gemini) echte Recherche statt reinen Prompt-Zwang bekommt.
+- **Alle KI-Anbindungen laufen nur noch über OpenRouter** (`server/src/ai/providers/modelCatalog.js`, komplett neu geschriebenes `server/src/ai/runtime.js`, UI in `features/Settings.tsx`). Es gibt keine direkte Google-/OpenAI-SDK-Integration mehr - Gemini, GPT und Nemotron sind reine Modell-Familien innerhalb eines einzigen OpenRouter-Zugangs. Jede Anfrage nutzt OpenRouters `:online`-Web-Search-Plugin, damit alle drei Familien gleichermaßen echte Recherche statt reinen Prompt-Zwang bekommen (vorher hatte nur OpenAI ein echtes Search-Tool, Gemini keins).
 - **KI-Endpunkte abgesichert**: `requireAuth`-Middleware (Supabase-JWT-Pflicht) + In-Memory-Rate-Limiter vor `/api/ai/*` (Security-Fund #1).
 - **RLS-Lücke geschlossen**: `wine_catalog_aliases` bekommt RLS (deny-all, da bisher ungenutzt); `test1234`/`manual_test_table` sowie die tote `ai_cache`-Tabelle entfernt (Security-Fund #2, KI-Strategie-Fund #2).
 - **`ai_provider`-Spaltenbug behoben**: Die Spalte existierte trotz Client-Referenz nie in der DB - Speichern der Provider-Wahl schlug für eingeloggte Nutzer bislang fehl.
 
 Bewusst **nicht** in diesem Durchlauf umgesetzt (siehe Begründung oben, "Mittelfristig"/"Größere Investition"): Sync-Engine-Delta/Cursor-Umbau, Feature-Page-Zerlegung, CI-Parallelisierung, Signed URLs für den Wine-Images-Bucket, Confidence-Anzeige im Lesemodus. Diese bleiben als nächste Schritte offen.
+
+Nachträglich korrigiert: Die pgTAP-RLS-Suite (`supabase/tests/database/rls_isolation.test.sql`) referenzierte die inzwischen gedroppte `ai_cache`-Tabelle noch fest (Fixture-Insert + 5 Assertions) - das ließ den ersten echten CI-Lauf dieser Änderung mit "relation does not exist" scheitern. Der ai_cache-Testblock wurde entfernt und `plan(47)` auf `plan(42)` korrigiert.
 
 ## Priorisierte Gesamtempfehlung
 

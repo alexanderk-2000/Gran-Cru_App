@@ -16,7 +16,7 @@ flowchart LR
   ApiRoutes["server/src/routes/*"]
   Cache["server/src/cache/aiCache.js"]
   DB["Supabase (RLS + Tables)"]
-  Providers["OpenAI / Gemini"]
+  Providers["OpenRouter (Gemini / GPT / Nemotron)"]
 
   UI --> Domain
   UI --> StorageFacade
