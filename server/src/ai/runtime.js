@@ -2,6 +2,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 import { APPROVED_GEMINI_MODELS, isGeminiRetryableError } from './providers/gemini.js';
 import { resolveOpenAIModel, isOpenAIRetryableError } from './providers/openai.js';
+import {
+  APPROVED_OPENROUTER_MODELS,
+  resolveOpenRouterModel,
+  isOpenRouterRetryableError
+} from './providers/openrouter.js';
 import { normalizeWineJson } from './normalize/normalizeWineJson.js';
 import { buildProfilePrompt } from './prompts/profile.js';
 import { buildRepairPrompt } from './prompts/repair.js';
@@ -176,6 +181,20 @@ const createGeminiCaller = ({ geminiApiKey }) => async (prompt, temperature, max
   throw error;
 };
 
+const buildWebSearchEnforcedPrompt = (prompt) => `${prompt}
+
+KRITISCH:
+- Nutze verpflichtend Web-Recherche (Browser/Web Search Tool) für alle faktischen Aussagen.
+- Ohne Web-Recherche dürfen keine Fakten behauptet werden.
+- Füge belastbare Quellen in "sources" hinzu (URL).
+- "sources" muss mindestens enthalten:
+  1) eine Quelle von gute-weine.de
+  2) eine Quelle von wine-searcher.com
+  3) mindestens eine weitere unabhängige Quelle.
+- Suche aktiv nach Kritikerbewertungen (mindestens versuchen): James Suckling, Robert Parker/Wine Advocate, Vinous, Decanter, Jancis Robinson, Falstaff.
+- Übernimm gefundene Kritiker-Scores in "scores" (critic, score, year).
+`;
+
 const createOpenAiCaller = ({ openaiApiKey }) => async (prompt, requestedModel, temperature, maxOutputTokens) => {
   if (!openaiApiKey) {
     throw createHttpError(500, 'OPENAI_API_KEY not configured. Please add it to server/.env file.');
@@ -189,19 +208,7 @@ const createOpenAiCaller = ({ openaiApiKey }) => async (prompt, requestedModel, 
   const lastErrors = [];
   for (const model of candidateModels) {
     try {
-      const webSearchEnforcedPrompt = `${prompt}
-
-KRITISCH:
-- Nutze verpflichtend Web-Recherche (Browser/Web Search Tool) für alle faktischen Aussagen.
-- Ohne Web-Recherche dürfen keine Fakten behauptet werden.
-- Füge belastbare Quellen in "sources" hinzu (URL).
-- "sources" muss mindestens enthalten:
-  1) eine Quelle von gute-weine.de
-  2) eine Quelle von wine-searcher.com
-  3) mindestens eine weitere unabhängige Quelle.
-- Suche aktiv nach Kritikerbewertungen (mindestens versuchen): James Suckling, Robert Parker/Wine Advocate, Vinous, Decanter, Jancis Robinson, Falstaff.
-- Übernimm gefundene Kritiker-Scores in "scores" (critic, score, year).
-`;
+      const webSearchEnforcedPrompt = buildWebSearchEnforcedPrompt(prompt);
 
       const response = await client.responses.create({
         model,
@@ -247,8 +254,63 @@ KRITISCH:
   throw error;
 };
 
+// OpenRouter exposes an OpenAI-compatible Chat Completions API. Appending
+// ":online" to the model slug turns on OpenRouter's web-search plugin (Exa),
+// giving Nemotron the same "must actually research the web" grounding that
+// the OpenAI path gets via web_search_preview - Gemini has no such tool and
+// is prompt-only, see docs/WEITERENTWICKLUNGSPOTENZIAL_2026-07-22.md.
+const createOpenRouterCaller = ({ openrouterApiKey, appUrl, appName }) => async (prompt, requestedModel, temperature, maxOutputTokens) => {
+  if (!openrouterApiKey) {
+    throw createHttpError(500, 'OPENROUTER_API_KEY not configured. Please add it to server/.env file.');
+  }
+
+  const client = new OpenAI({
+    apiKey: openrouterApiKey,
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+      'HTTP-Referer': appUrl || 'http://localhost:3000',
+      'X-Title': appName || 'Grand Cru Vault'
+    }
+  });
+
+  const preferred = resolveOpenRouterModel(requestedModel);
+  const candidateModels = [preferred, ...APPROVED_OPENROUTER_MODELS.filter((item) => item !== preferred)];
+
+  const lastErrors = [];
+  for (const model of candidateModels) {
+    try {
+      const response = await client.chat.completions.create({
+        model: `${model}:online`,
+        messages: [{ role: 'user', content: buildWebSearchEnforcedPrompt(prompt) }],
+        temperature,
+        max_tokens: maxOutputTokens,
+        response_format: { type: 'json_object' }
+      });
+
+      const text = response?.choices?.[0]?.message?.content;
+      if (typeof text !== 'string' || text.trim().length === 0) {
+        throw new Error(`OpenRouter model ${model} returned empty content`);
+      }
+
+      const usedWebSearch = Array.isArray(response?.citations) && response.citations.length > 0;
+
+      return { text, model, usedWebSearch };
+    } catch (error) {
+      if (isOpenRouterRetryableError(sanitizeError, error)) {
+        lastErrors.push({ model, error: sanitizeError(error) });
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const error = new Error(`OpenRouter failed for all candidate models: ${candidateModels.join(', ')}`);
+  error.details = lastErrors;
+  throw error;
+};
+
 const extractTextFromProviderResult = async (provider, providerResult) => {
-  if (provider === 'openai') {
+  if (provider === 'openai' || provider === 'openrouter') {
     return {
       text: providerResult.text,
       model: providerResult.model,
@@ -266,14 +328,20 @@ export const createAiRuntime = ({
   openaiMaxOutputTokens,
   fastOpenaiMaxOutputTokens,
   fastGeminiMaxOutputTokens,
+  openrouterMaxOutputTokens,
+  fastOpenrouterMaxOutputTokens,
   cacheTtlMs,
   cacheMaxEntries,
   geminiApiKey,
-  openaiApiKey
+  openaiApiKey,
+  openrouterApiKey,
+  appUrl,
+  appName
 }) => {
   const cache = createAiCache({ ttlMs: cacheTtlMs, maxEntries: cacheMaxEntries });
   const callGeminiWithFallback = createGeminiCaller({ geminiApiKey });
   const callOpenAIWithFallback = createOpenAiCaller({ openaiApiKey });
+  const callOpenRouterWithFallback = createOpenRouterCaller({ openrouterApiKey, appUrl, appName });
 
   const runProviderRequest = async ({
     provider,
@@ -284,6 +352,10 @@ export const createAiRuntime = ({
   }) => {
     if (provider === 'openai') {
       return callOpenAIWithFallback(prompt, model, temperature, maxOutputTokens);
+    }
+
+    if (provider === 'openrouter') {
+      return callOpenRouterWithFallback(prompt, model, temperature, maxOutputTokens);
     }
 
     return callGeminiWithFallback(prompt, temperature, maxOutputTokens);
@@ -369,6 +441,13 @@ export const createAiRuntime = ({
     };
   };
 
+  const supportsWebResearchFlag = (provider) => provider === 'openai' || provider === 'openrouter';
+  const selectMaxOutputTokens = (provider, fast) => {
+    if (provider === 'openai') return fast ? fastOpenaiMaxOutputTokens : openaiMaxOutputTokens;
+    if (provider === 'openrouter') return fast ? fastOpenrouterMaxOutputTokens : openrouterMaxOutputTokens;
+    return fast ? fastGeminiMaxOutputTokens : geminiMaxOutputTokens;
+  };
+
   const searchWine = async (body) => {
     const validationError = validateAIRequest(body);
     if (validationError) {
@@ -376,7 +455,7 @@ export const createAiRuntime = ({
     }
 
     const { prompt, model } = body;
-    const provider = body?.provider === 'openai' ? 'openai' : 'gemini';
+    const provider = body?.provider === 'openai' ? 'openai' : body?.provider === 'openrouter' ? 'openrouter' : 'gemini';
     const searchModeRaw = typeof body?.search_mode === 'string' ? body.search_mode.toLowerCase() : 'adaptive';
     const searchMode = ['fast', 'full', 'adaptive'].includes(searchModeRaw) ? searchModeRaw : 'adaptive';
 
@@ -409,7 +488,7 @@ export const createAiRuntime = ({
       prompt: fastPrompt,
       model,
       temperature: 0.3,
-      maxOutputTokens: provider === 'openai' ? fastOpenaiMaxOutputTokens : fastGeminiMaxOutputTokens,
+      maxOutputTokens: selectMaxOutputTokens(provider, true),
       allowRepair: provider !== 'openai'
     });
 
@@ -425,7 +504,7 @@ export const createAiRuntime = ({
         data: fastData,
         provider,
         model: fastRun.resolvedModel,
-        web_research: provider === 'openai' ? fastRun.usedWebSearch : false,
+        web_research: supportsWebResearchFlag(provider) ? fastRun.usedWebSearch : false,
         search_profile: 'fast'
       };
       cache.set(cacheKey, payload);
@@ -449,7 +528,7 @@ export const createAiRuntime = ({
       prompt: fullPrompt,
       model,
       temperature: 0.45,
-      maxOutputTokens: provider === 'openai' ? openaiMaxOutputTokens : geminiMaxOutputTokens,
+      maxOutputTokens: selectMaxOutputTokens(provider, false),
       allowRepair: provider !== 'openai'
     });
 
@@ -463,7 +542,7 @@ export const createAiRuntime = ({
         data: fastData,
         provider,
         model: fastRun.resolvedModel,
-        web_research: provider === 'openai' ? fastRun.usedWebSearch : false,
+        web_research: supportsWebResearchFlag(provider) ? fastRun.usedWebSearch : false,
         search_profile: 'fast-fallback'
       };
       cache.set(cacheKey, fallbackPayload);
@@ -485,7 +564,7 @@ export const createAiRuntime = ({
       data: mergedData,
       provider,
       model: fullRun.resolvedModel || fastRun.resolvedModel,
-      web_research: provider === 'openai' ? (fullRun.usedWebSearch || fastRun.usedWebSearch) : false,
+      web_research: supportsWebResearchFlag(provider) ? (fullRun.usedWebSearch || fastRun.usedWebSearch) : false,
       search_profile: 'full'
     };
     cache.set(cacheKey, finalPayload);

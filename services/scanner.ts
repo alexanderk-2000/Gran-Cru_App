@@ -8,6 +8,7 @@
 import { enqueueAiQueueItem } from './pwa/aiQueue.ts';
 import { isOnline } from './pwa/networkState.ts';
 import { storageService } from './storage.ts';
+import { getAccessToken } from './supabase.ts';
 
 /* ---------- Types ---------- */
 
@@ -133,9 +134,13 @@ export async function analyzeLabel(imageBlob: Blob): Promise<ScanResult> {
 
     let res: Response;
     try {
+        const token = await getAccessToken();
         res = await fetch(`${API_BASE}/api/ai/vision`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
             body: JSON.stringify(payload),
         });
     } catch (error) {

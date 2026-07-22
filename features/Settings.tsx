@@ -14,6 +14,7 @@ export const Settings: React.FC = () => {
     const [provider, setProvider] = useState<AIProvider>('openai');
     const [geminiModel, setGeminiModel] = useState('gemini-pro-latest');
     const [openaiModel, setOpenaiModel] = useState('gpt-5.2');
+    const [openrouterModel, setOpenrouterModel] = useState('nvidia/llama-3.1-nemotron-70b-instruct');
     const [isSaving, setIsSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -57,6 +58,12 @@ export const Settings: React.FC = () => {
         { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Fallback 4' }
     ];
 
+    const openrouterModels = [
+        { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B', description: 'Größtes Modell, mit Web-Search' },
+        { id: 'nvidia/nemotron-nano-9b-v2', name: 'Nemotron Nano 9B', description: 'Schnell & günstig' },
+        { id: 'nvidia/nemotron-nano-12b-v2-vl', name: 'Nemotron Nano 12B VL', description: 'Mit Bildverständnis' }
+    ];
+
 
     useEffect(() => {
         loadSettings();
@@ -82,6 +89,7 @@ export const Settings: React.FC = () => {
                 setProvider(userSettings.ai_provider || 'openai');
                 setGeminiModel(userSettings.gemini_model || 'gemini-pro-latest');
                 setOpenaiModel(userSettings.openai_model || 'gpt-5.2');
+                setOpenrouterModel(userSettings.openrouter_model || 'nvidia/llama-3.1-nemotron-70b-instruct');
             }
         } catch (error) {
             console.error('Failed to load settings:', error);
@@ -108,7 +116,8 @@ export const Settings: React.FC = () => {
             await settingsService.updateSettings({
                 ai_provider: provider,
                 gemini_model: geminiModel,
-                openai_model: openaiModel
+                openai_model: openaiModel,
+                openrouter_model: openrouterModel
             });
             setSaveStatus('success');
             setTimeout(() => setSaveStatus('idle'), 3000);
@@ -226,6 +235,14 @@ export const Settings: React.FC = () => {
                                     >
                                         OpenAI Key erstellen <ExternalLink className="w-3 h-3" />
                                     </a>
+                                    <a
+                                        href="https://openrouter.ai/keys"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-burgundy hover:underline flex items-center gap-1"
+                                    >
+                                        OpenRouter Key erstellen <ExternalLink className="w-3 h-3" />
+                                    </a>
                                 </div>
                             </div>
                         </div>
@@ -332,7 +349,7 @@ export const Settings: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         <button
                             onClick={() => setProvider('gemini')}
                             className={`p-6 rounded-2xl border-2 transition-all ${provider === 'gemini'
@@ -360,6 +377,20 @@ export const Settings: React.FC = () => {
                             </div>
                             <p className="text-sm text-stone-gray text-left">GPT Modelle (Search zuerst)</p>
                         </button>
+
+                        <button
+                            onClick={() => setProvider('openrouter')}
+                            className={`p-6 rounded-2xl border-2 transition-all ${provider === 'openrouter'
+                                ? 'border-burgundy bg-burgundy/5'
+                                : 'border-burgundy/10 hover:border-burgundy/30'
+                                }`}
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-bold text-charcoal">Nemotron (OpenRouter)</h3>
+                                {provider === 'openrouter' && <CheckCircle className="w-5 h-5 text-burgundy" />}
+                            </div>
+                            <p className="text-sm text-stone-gray text-left">NVIDIA Nemotron via OpenRouter (Web-Search)</p>
+                        </button>
                     </div>
                 </section>
 
@@ -372,21 +403,27 @@ export const Settings: React.FC = () => {
                         <div>
                             <h2 className="font-serif text-2xl font-bold text-charcoal">KI-Modell</h2>
                             <p className="text-sm text-stone-gray mt-1">
-                                Wähle das {provider === 'gemini' ? 'Gemini' : 'OpenAI'}-Modell für Weinanalysen
+                                Wähle das {provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'Nemotron'}-Modell für Weinanalysen
                             </p>
                         </div>
                     </div>
 
                     <div className="space-y-4">
-                        {(provider === 'gemini' ? geminiModels : openaiModels).map((model) => {
+                        {(provider === 'gemini' ? geminiModels : provider === 'openai' ? openaiModels : openrouterModels).map((model) => {
                             const isSelected = provider === 'gemini'
                                 ? geminiModel === model.id
-                                : openaiModel === model.id;
+                                : provider === 'openai'
+                                    ? openaiModel === model.id
+                                    : openrouterModel === model.id;
 
                             return (
                                 <button
                                     key={model.id}
-                                    onClick={() => provider === 'gemini' ? setGeminiModel(model.id) : setOpenaiModel(model.id)}
+                                    onClick={() => {
+                                        if (provider === 'gemini') setGeminiModel(model.id);
+                                        else if (provider === 'openai') setOpenaiModel(model.id);
+                                        else setOpenrouterModel(model.id);
+                                    }}
                                     className={`w-full p-6 rounded-2xl border-2 transition-all text-left ${isSelected
                                         ? 'border-burgundy bg-burgundy/5'
                                         : 'border-burgundy/10 hover:border-burgundy/30'
