@@ -5,6 +5,7 @@ import { Wine, Category, WineStatus } from '../../types.ts';
 import { WineCard } from '../../components/WineCard.tsx';
 import { ScannerOverlay } from '../../components/ScannerOverlay.tsx';
 import { ScanResultDialog } from '../../components/ScanResultDialog.tsx';
+import { WineCaptureForm } from '../wine-capture/WineCaptureForm.tsx';
 import type { ScanResult } from '../../services/scanner.ts';
 import { Search, Plus, X, Loader2, Wand2, Upload, Copy, Check, ScanBarcode } from 'lucide-react';
 import { getWineFamily, getWineStatus } from '../../utils.ts';
@@ -46,7 +47,8 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [preferencesHydrated, setPreferencesHydrated] = useState(false);
 
   // Add wine modal states
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isJsonImportModalOpen, setIsJsonImportModalOpen] = useState(false);
+  const [isCaptureFormOpen, setIsCaptureFormOpen] = useState(false);
   const [aiInput, setAiInput] = useState('');
   const [generatedPrompt, setGeneratedPrompt] = useState('');
   const [promptCopied, setPromptCopied] = useState(false);
@@ -253,7 +255,7 @@ export const Inventory: React.FC<InventoryProps> = ({
       }
 
       await onWineUpdate();
-      setIsAiModalOpen(false);
+      setIsJsonImportModalOpen(false);
       setAiInput('');
       setJsonCodeInput('');
       setGeneratedPrompt('');
@@ -408,26 +410,6 @@ Regeln:
     }
   };
 
-  const manualAdd = async () => {
-    const currentYear = new Date().getFullYear();
-    const normalizedTargetSubcellar = normalizeSubcellar(targetSubcellar);
-    await storageService.saveWine({
-      name: 'Neuer Wein',
-      vintage: currentYear,
-      region: 'Unbekannt',
-      category: 'Daily Drinker',
-      quantity: 1,
-      purchase_price: 0,
-      format: '0.75L',
-      drink_start: currentYear,
-      drink_end: currentYear + 10,
-      subcellar: normalizedTargetSubcellar || undefined,
-      wishlist: wishlistOnly
-    });
-    onWineUpdate();
-    setIsAiModalOpen(false);
-  };
-
   const createPocket = async () => {
     const normalizedName = normalizeSubcellar(newPocketName);
     if (!normalizedName || isPocketSaving) return;
@@ -527,7 +509,7 @@ Regeln:
             className="hidden"
           />
           <button
-            onClick={openJsonImportPicker}
+            onClick={() => setIsJsonImportModalOpen(true)}
             disabled={isJsonImporting}
             className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 disabled:opacity-50 uppercase tracking-wider text-[10px]"
           >
@@ -544,7 +526,7 @@ Regeln:
             onClick={() => {
               const mappedFromFilter = subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter;
               setTargetSubcellar(mappedFromFilter);
-              setIsAiModalOpen(true);
+              setIsCaptureFormOpen(true);
             }}
             className="flex items-center gap-2 px-6 py-3.5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl transition-all shadow-premium uppercase tracking-wider text-[10px]"
           >
@@ -676,15 +658,15 @@ Regeln:
         </div>
       )}
 
-      {isAiModalOpen && (
+      {isJsonImportModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in">
           <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-burgundy/5 overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-burgundy text-white rounded-2xl shadow-burgundy-glow"><Wand2 className="w-6 h-6" /></div>
-                <h3 className="font-serif text-2xl font-bold text-charcoal">Prompt für Weinrecherche</h3>
+                <h3 className="font-serif text-2xl font-bold text-charcoal">JSON-Import</h3>
               </div>
-              <button onClick={() => setIsAiModalOpen(false)} className="p-2"><X /></button>
+              <button onClick={() => setIsJsonImportModalOpen(false)} className="p-2"><X /></button>
             </div>
             <div className="p-10 space-y-10 overflow-y-auto">
               <div className="space-y-4">
@@ -743,9 +725,8 @@ Regeln:
                 ) : null}
 
                 <div className="flex items-center justify-center gap-4">
-                  <button onClick={manualAdd} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest">Manuell anlegen</button>
                   <button onClick={openJsonImportPicker} disabled={isJsonImporting} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest disabled:opacity-50">
-                    {isJsonImporting ? 'Import läuft...' : 'JSON importieren'}
+                    {isJsonImporting ? 'Import läuft...' : 'JSON-Datei hochladen'}
                   </button>
                 </div>
                 <div className="space-y-2">
@@ -872,6 +853,15 @@ Regeln:
         wishlist={wishlistOnly}
         targetSubcellar={subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter}
         existingWines={wines}
+      />
+      <WineCaptureForm
+        open={isCaptureFormOpen}
+        mode="create"
+        existingWines={wines}
+        wishlist={wishlistOnly}
+        targetSubcellar={targetSubcellar}
+        onClose={() => setIsCaptureFormOpen(false)}
+        onSaved={() => { setIsCaptureFormOpen(false); onWineUpdate(); }}
       />
     </div>
   );

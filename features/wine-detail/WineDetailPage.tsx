@@ -15,11 +15,12 @@ import {
   X
 } from 'lucide-react';
 import { Badge } from '../../components/Badge.tsx';
-import { ImageUploader } from '../../components/ImageUploader.tsx';
 import { storageService } from '../../services/storage.ts';
 import { imageStorageService, type ImageSlot } from '../../services/imageStorage.ts';
 import { evaluateWineDrinkability, formatCurrency } from '../../utils.ts';
-import { BottleFormat, Category, CriticScore, Tasting, Wine, WineDetails, WineType } from '../../types.ts';
+import { CriticScore, Tasting, Wine, WineDetails } from '../../types.ts';
+import { Dialog } from '../../components/Dialog.tsx';
+import { WineCaptureForm } from '../wine-capture/WineCaptureForm.tsx';
 
 const LUXURY_BG = '#FDFBF7';
 const ACCENT_BURGUNDY = '#5B1E2D';
@@ -42,69 +43,6 @@ interface ToastMessage {
   text: string;
 }
 
-interface GrapeFormEntry {
-  name: string;
-  percentage: string;
-}
-
-interface ScoreFormEntry {
-  critic: string;
-  score: string;
-  year: string;
-}
-
-interface StructureFormState {
-  acidity: number | null;
-  tannin: number | null;
-  body: number | null;
-  sweetness: number | null;
-  oak: number | null;
-}
-
-const EMPTY_STRUCTURE_FORM: StructureFormState = {
-  acidity: null,
-  tannin: null,
-  body: null,
-  sweetness: null,
-  oak: null
-};
-
-interface EditFormState {
-  name: string;
-  producer: string;
-  vintage: string;
-  region: string;
-  subcellar: string;
-  appellation: string;
-  country: string;
-  quantity: string;
-  category: string;
-  wine_type: string;
-  format: string;
-  purchase_price: string;
-  market_price: string;
-  drink_start: string;
-  drink_end: string;
-  peak_year: string;
-  alcohol_percent: string;
-  vineyard: string;
-  subregion: string;
-  closure_type: string;
-  fermentation: string;
-  aging_process: string;
-  farming: string;
-  confidence: string;
-  wishlist: string;
-  is_favorite: string;
-  grapes: GrapeFormEntry[];
-  structure: StructureFormState;
-  scores: ScoreFormEntry[];
-  aromas_json: string;
-  pairings_json: string;
-  ai_details_json: string;
-  ai_sources_json: string;
-  missing_fields_json: string;
-}
 
 interface WindowMetrics {
   known: boolean;
@@ -171,18 +109,7 @@ interface StructureRows {
   oak: number | null;
 }
 
-const CATEGORY_OPTIONS: Category[] = ['Genuss', 'Rarität', 'Daily Drinker'];
-const WINE_TYPE_OPTIONS: WineType[] = ['Rot', 'Weiß', 'Rosé', 'Schaumwein', 'Süßwein'];
-const FORMAT_OPTIONS: BottleFormat[] = ['0.375L', '0.75L', '1.5L (Magnum)', '3.0L (Double Magnum)', '6.0L (Imperial)'];
-
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-
-const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return null;
-};
 
 const toNullableString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
@@ -272,150 +199,6 @@ const toScoreLabel = (value: number): string => (Number.isInteger(value) ? Strin
 const normalizeError = (error: unknown, fallback = 'Unbekannter Fehler'): string => {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
   return fallback;
-};
-
-const toJsonText = (value: unknown, fallback: string): string => {
-  if (value === null || value === undefined) return fallback;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return fallback;
-  }
-};
-
-const parseJsonField = <T,>(raw: string, label: string, validate: (value: unknown) => value is T, fallback: T): T => {
-  const trimmed = raw.trim();
-  if (!trimmed) return fallback;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    throw new Error(`${label}: JSON ist ungültig.`);
-  }
-
-  if (!validate(parsed)) {
-    throw new Error(`${label}: Struktur ist ungültig.`);
-  }
-  return parsed;
-};
-
-const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
-
-const isAromaArray = (value: unknown): value is NonNullable<Wine['aromas']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      typeof (entry as { tag?: unknown }).tag === 'string' &&
-      ((entry as { intensity?: unknown }).intensity === undefined || typeof (entry as { intensity?: unknown }).intensity === 'number')
-  );
-
-const isPairingsArray = (value: unknown): value is NonNullable<Wine['pairings']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      typeof (entry as { item?: unknown }).item === 'string' &&
-      ((entry as { category?: unknown }).category === undefined || typeof (entry as { category?: unknown }).category === 'string') &&
-      ((entry as { note?: unknown }).note === undefined || typeof (entry as { note?: unknown }).note === 'string')
-  );
-
-const isWineDetails = (value: unknown): value is WineDetails => asRecord(value) !== null;
-
-const grapesToFormState = (grapes: Wine['grapes']): GrapeFormEntry[] =>
-  (grapes ?? []).map((entry) => ({
-    name: entry.name,
-    percentage: entry.percentage !== undefined && entry.percentage !== null ? String(entry.percentage) : ''
-  }));
-
-const grapesFromFormState = (entries: GrapeFormEntry[]): Wine['grapes'] =>
-  entries
-    .map((entry) => ({ name: entry.name.trim(), percentage: entry.percentage.trim() }))
-    .filter((entry) => entry.name.length > 0)
-    .map((entry) => {
-      const percentage = Number.parseFloat(entry.percentage.replace(',', '.'));
-      return { name: entry.name, percentage: Number.isFinite(percentage) ? percentage : undefined };
-    });
-
-const pickStructureValue = (value: number | undefined): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? value : null;
-
-const structureToFormState = (structure: Wine['structure']): StructureFormState => ({
-  acidity: pickStructureValue(structure?.acidity),
-  tannin: pickStructureValue(structure?.tannin),
-  body: pickStructureValue(structure?.body),
-  sweetness: pickStructureValue(structure?.sweetness),
-  oak: pickStructureValue(structure?.oak)
-});
-
-const structureFromFormState = (state: StructureFormState): Wine['structure'] => {
-  const structure: Wine['structure'] = {};
-  if (state.acidity !== null) structure.acidity = state.acidity;
-  if (state.tannin !== null) structure.tannin = state.tannin;
-  if (state.body !== null) structure.body = state.body;
-  if (state.sweetness !== null) structure.sweetness = state.sweetness;
-  if (state.oak !== null) structure.oak = state.oak;
-  return structure;
-};
-
-const scoresToFormState = (scores: Wine['scores']): ScoreFormEntry[] =>
-  (scores ?? []).map((entry) => ({
-    critic: entry.critic,
-    score: String(entry.score ?? ''),
-    year: entry.year !== undefined && entry.year !== null ? String(entry.year) : ''
-  }));
-
-const scoresFromFormState = (entries: ScoreFormEntry[]): Wine['scores'] =>
-  entries
-    .map((entry) => ({ critic: entry.critic.trim(), score: entry.score.trim(), year: entry.year.trim() }))
-    .filter((entry) => entry.critic.length > 0 && entry.score.length > 0)
-    .map((entry) => {
-      const year = Number.parseInt(entry.year, 10);
-      return { critic: entry.critic, score: entry.score, year: Number.isFinite(year) ? year : undefined };
-    });
-
-const isAiSources = (value: unknown): value is NonNullable<Wine['ai_sources']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      ((entry as { title?: unknown }).title === undefined || typeof (entry as { title?: unknown }).title === 'string') &&
-      ((entry as { url?: unknown }).url === undefined || typeof (entry as { url?: unknown }).url === 'string')
-  );
-
-const parseCategory = (value: string): Category | undefined => {
-  const trimmed = value.trim();
-  return CATEGORY_OPTIONS.includes(trimmed as Category) ? (trimmed as Category) : undefined;
-};
-
-const parseWineType = (value: string): WineType | undefined => {
-  const trimmed = value.trim();
-  return WINE_TYPE_OPTIONS.includes(trimmed as WineType) ? (trimmed as WineType) : undefined;
-};
-
-const parseFormat = (value: string): BottleFormat | undefined => {
-  const trimmed = value.trim();
-  if (FORMAT_OPTIONS.includes(trimmed as BottleFormat)) return trimmed as BottleFormat;
-
-  const normalized = trimmed.toLowerCase().replace(/\s/g, '');
-  if (normalized.includes('0.375')) return '0.375L';
-  if (normalized.includes('0.75')) return '0.75L';
-  if (normalized.includes('1.5') || normalized.includes('magnum')) return '1.5L (Magnum)';
-  if (normalized.includes('3.0') || normalized.includes('doublemagnum')) return '3.0L (Double Magnum)';
-  if (normalized.includes('6.0') || normalized.includes('imperial')) return '6.0L (Imperial)';
-  return undefined;
-};
-
-const parseConfidenceValue = (value: string): Wine['confidence'] | undefined => {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'high') return 'high';
-  if (normalized === 'medium') return 'medium';
-  if (normalized === 'low') return 'low';
-  return undefined;
 };
 
 const computeWindowMetrics = (wine: Wine): WindowMetrics => {
@@ -922,39 +705,6 @@ const StickyTabNav = memo(function StickyTabNav({
   );
 });
 
-const CONFIDENCE_LABELS: Record<'high' | 'medium' | 'low', { label: string; variant: 'sage' | 'gold' | 'bordeaux' }> = {
-  high: { label: 'KI-Daten: hohe Sicherheit', variant: 'sage' },
-  medium: { label: 'KI-Daten: mittlere Sicherheit', variant: 'gold' },
-  low: { label: 'KI-Daten: geringe Sicherheit', variant: 'bordeaux' }
-};
-
-// Confidence and missing_fields were only ever visible in the edit form's
-// raw JSON textareas - a wine with low confidence or several unresolved
-// fields looked identical to a fully verified one in read mode. This
-// surfaces that trust signal where a collector actually sees it.
-const ConfidenceBadge = memo(function ConfidenceBadge({
-  confidence,
-  missingFields
-}: {
-  confidence?: 'high' | 'medium' | 'low';
-  missingFields?: string[];
-}) {
-  if (!confidence) return null;
-
-  const { label, variant } = CONFIDENCE_LABELS[confidence];
-  const missingCount = missingFields?.length ?? 0;
-  const title = missingCount > 0 ? `Fehlende Felder: ${missingFields!.join(', ')}` : undefined;
-
-  return (
-    <span title={title}>
-      <Badge variant={variant}>
-        {label}
-        {missingCount > 0 ? ` · ${missingCount} Feld${missingCount === 1 ? '' : 'er'} offen` : ''}
-      </Badge>
-    </span>
-  );
-});
-
 const HeaderCard = memo(function HeaderCard({
   wine,
   isSaving,
@@ -1030,7 +780,6 @@ const HeaderCard = memo(function HeaderCard({
                   {wine.region ? <Badge variant="sage">{wine.region}</Badge> : null}
                   {wine.wine_type ? <Badge variant="gold">{wine.wine_type}</Badge> : null}
                   {wine.category ? <Badge variant="bordeaux">{wine.category}</Badge> : null}
-                  <ConfidenceBadge confidence={wine.confidence} missingFields={wine.missing_fields} />
                 </div>
 
                 <h1 className="font-serif text-[2rem] leading-[1.05] text-stone-900 md:text-[3.25rem]">{wine.name}</h1>
@@ -1565,95 +1314,6 @@ const SourceFooter = memo(function SourceFooter({ sources }: { sources: SourceLi
   );
 });
 
-const Dialog = memo(function Dialog({
-  open,
-  title,
-  onClose,
-  children
-}: {
-  open: boolean;
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  const titleId = useMemo(() => `dialog-${title.toLowerCase().replace(/\s+/g, '-')}`, [title]);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const node = dialogRef.current;
-    if (!node) return undefined;
-
-    const selectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const focusables = Array.from(node.querySelectorAll<HTMLElement>(selectors)).filter((entry) => !entry.hasAttribute('disabled'));
-    const fieldFocusables = focusables.filter((entry) => {
-      const tag = entry.tagName.toLowerCase();
-      return tag === 'input' || tag === 'select' || tag === 'textarea';
-    });
-    const first = fieldFocusables[0] || focusables[0];
-    first?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-
-      if (event.key !== 'Tab') return;
-      if (focusables.length === 0) return;
-
-      const activeElement = document.activeElement;
-      const firstFocusable = focusables[0];
-      const lastFocusable = focusables[focusables.length - 1];
-
-      if (!event.shiftKey && activeElement === lastFocusable) {
-        event.preventDefault();
-        firstFocusable.focus();
-      } else if (event.shiftKey && activeElement === firstFocusable) {
-        event.preventDefault();
-        lastFocusable.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_20px_50px_rgba(0,0,0,0.20)]"
-      >
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <h3 id={titleId} className="font-serif text-2xl text-stone-900">{title}</h3>
-          <button type="button" onClick={onClose} className="rounded-full p-1 text-stone-500 hover:bg-stone-100" aria-label="Dialog schließen">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-});
-
 export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrink }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -1671,42 +1331,6 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
   const [purchasePrice, setPurchasePrice] = useState('0');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState<EditFormState>({
-    name: '',
-    producer: '',
-    vintage: '',
-    region: '',
-    subcellar: '',
-    appellation: '',
-    country: '',
-    quantity: '0',
-    category: '',
-    wine_type: '',
-    format: '',
-    purchase_price: '',
-    market_price: '',
-    drink_start: '',
-    drink_end: '',
-    peak_year: '',
-    alcohol_percent: '',
-    vineyard: '',
-    subregion: '',
-    closure_type: '',
-    fermentation: '',
-    aging_process: '',
-    farming: '',
-    confidence: '',
-    wishlist: 'false',
-    is_favorite: 'false',
-    grapes: [],
-    structure: EMPTY_STRUCTURE_FORM,
-    scores: [],
-    aromas_json: '[]',
-    pairings_json: '[]',
-    ai_details_json: '{}',
-    ai_sources_json: '[]',
-    missing_fields_json: '[]'
-  });
 
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
@@ -1787,49 +1411,8 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
   }, []);
 
   const canMutate = !isSaving;
-  const updateEditField = useCallback((field: keyof EditFormState, value: string) => {
-    setEditForm((prev) => ({ ...prev, [field]: value }));
-  }, []);
-
   const openEditModal = useCallback(() => {
     if (!wine) return;
-
-    setEditForm({
-      name: wine.name ?? '',
-      producer: wine.producer ?? '',
-      vintage: String(wine.vintage ?? ''),
-      region: wine.region ?? '',
-      subcellar: wine.subcellar ?? '',
-      appellation: wine.appellation ?? '',
-      country: wine.country ?? '',
-      quantity: String(wine.quantity ?? 0),
-      category: wine.category ?? '',
-      wine_type: wine.wine_type ?? '',
-      format: wine.format ?? '',
-      purchase_price: String(wine.purchase_price ?? ''),
-      market_price: String(wine.market_price ?? ''),
-      drink_start: String(wine.drink_start ?? ''),
-      drink_end: String(wine.drink_end ?? ''),
-      peak_year: String(wine.peak_year ?? ''),
-      alcohol_percent: String(wine.alcohol_percent ?? ''),
-      vineyard: wine.vineyard ?? '',
-      subregion: wine.subregion ?? '',
-      closure_type: wine.closure_type ?? '',
-      fermentation: wine.fermentation ?? '',
-      aging_process: wine.aging_process ?? '',
-      farming: wine.farming ?? '',
-      confidence: wine.confidence ?? '',
-      wishlist: wine.wishlist ? 'true' : 'false',
-      is_favorite: wine.is_favorite ? 'true' : 'false',
-      grapes: grapesToFormState(wine.grapes),
-      structure: structureToFormState(wine.structure),
-      scores: scoresToFormState(wine.scores),
-      aromas_json: toJsonText(wine.aromas ?? [], '[]'),
-      pairings_json: toJsonText(wine.pairings ?? [], '[]'),
-      ai_details_json: toJsonText(wine.ai_details ?? {}, '{}'),
-      ai_sources_json: toJsonText(wine.ai_sources ?? [], '[]'),
-      missing_fields_json: toJsonText(wine.missing_fields ?? [], '[]')
-    });
     setIsEditModalOpen(true);
   }, [wine]);
 
@@ -1895,132 +1478,11 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
     }
   }, [wine, canMutate, navigate, showToast]);
 
-  const handleSaveEdit = useCallback(async () => {
-    if (!wine || !canMutate) return;
-
-    const name = editForm.name.trim();
-    if (!name) {
-      showToast('Name ist erforderlich.', 'error');
-      return;
-    }
-
-    const vintage = toNullableInt(editForm.vintage);
-    if (vintage === null) {
-      showToast('Bitte gültigen Jahrgang eintragen.', 'error');
-      return;
-    }
-
-    const quantity = Math.max(0, Math.round(toNullableNumber(editForm.quantity) ?? 0));
-    const purchasePrice = Math.max(0, toNullableNumber(editForm.purchase_price) ?? wine.purchase_price ?? 0);
-    const marketPrice = toNullableNumber(editForm.market_price) ?? undefined;
-    const drinkStart = toNullableInt(editForm.drink_start) ?? wine.drink_start;
-    const drinkEnd = toNullableInt(editForm.drink_end) ?? wine.drink_end;
-    const peakYear = toNullableInt(editForm.peak_year) ?? undefined;
-    const alcoholPercent = toNullableNumber(editForm.alcohol_percent) ?? undefined;
-    const category = parseCategory(editForm.category) ?? wine.category;
-    const wineType = parseWineType(editForm.wine_type);
-    const format = parseFormat(editForm.format) ?? wine.format;
-    const confidence = parseConfidenceValue(editForm.confidence);
-
-    if (drinkStart > drinkEnd) {
-      showToast('Trinkfenster ist ungültig: Start darf nicht nach Ende liegen.', 'error');
-      return;
-    }
-
-    const grapes: Wine['grapes'] = grapesFromFormState(editForm.grapes);
-    const structure: Wine['structure'] = structureFromFormState(editForm.structure);
-    const scores: Wine['scores'] = scoresFromFormState(editForm.scores);
-    let aromas: Wine['aromas'] = wine.aromas;
-    let pairings: Wine['pairings'] = wine.pairings;
-    let aiDetailsValue: WineDetails | undefined = wine.ai_details;
-    let aiSourcesValue: Wine['ai_sources'] = wine.ai_sources;
-    let missingFieldsValue: string[] | undefined = wine.missing_fields;
-
-    try {
-      aromas = parseJsonField(editForm.aromas_json, 'Aromen', isAromaArray, wine.aromas ?? []);
-      pairings = parseJsonField(editForm.pairings_json, 'Pairings', isPairingsArray, wine.pairings ?? []);
-      aiDetailsValue = parseJsonField(editForm.ai_details_json, 'AI Details', isWineDetails, wine.ai_details ?? {});
-      aiSourcesValue = parseJsonField(editForm.ai_sources_json, 'AI Quellen', isAiSources, wine.ai_sources ?? []);
-      missingFieldsValue = parseJsonField(editForm.missing_fields_json, 'Fehlende Felder', isStringArray, wine.missing_fields ?? []);
-    } catch (error) {
-      showToast(normalizeError(error, 'JSON-Felder sind ungültig.'), 'error');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const updated = await storageService.saveWine({
-        ...wine,
-        name,
-        producer: editForm.producer.trim() || undefined,
-        vintage,
-        region: editForm.region.trim() || '',
-        subcellar: editForm.subcellar.trim() || undefined,
-        appellation: editForm.appellation.trim() || undefined,
-        country: editForm.country.trim() || undefined,
-        quantity,
-        category,
-        wine_type: wineType,
-        format,
-        purchase_price: purchasePrice,
-        market_price: marketPrice,
-        drink_start: drinkStart,
-        drink_end: drinkEnd,
-        peak_year: peakYear,
-        alcohol_percent: alcoholPercent,
-        vineyard: editForm.vineyard.trim() || undefined,
-        subregion: editForm.subregion.trim() || undefined,
-        closure_type: editForm.closure_type.trim() || undefined,
-        fermentation: editForm.fermentation.trim() || undefined,
-        aging_process: editForm.aging_process.trim() || undefined,
-        farming: editForm.farming.trim() || undefined,
-        confidence,
-        wishlist: editForm.wishlist === 'true',
-        is_favorite: editForm.is_favorite === 'true',
-        grapes,
-        aromas,
-        structure,
-        pairings,
-        scores,
-        ai_details: aiDetailsValue,
-        ai_sources: aiSourcesValue,
-        missing_fields: missingFieldsValue,
-        updated_at: new Date().toISOString()
-      });
-
-      setWine(updated);
-      setIsEditModalOpen(false);
-      showToast('Wein wurde gespeichert.', 'success');
-    } catch (error) {
-      showToast(normalizeError(error, 'Speichern fehlgeschlagen.'), 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  }, [wine, canMutate, editForm, showToast]);
-
   const wineImages = useMemo<Record<ImageSlot, string | null>>(
     () => (wine ? imageStorageService.getImagesFromWine(wine) : { bottle: null, label: null, case: null }),
     [wine]
   );
   const heroImage = wineImages.bottle || wineImages.label || wineImages.case;
-
-  const handleImageUpload = useCallback(async (slot: ImageSlot, file: File) => {
-    if (!wine) return;
-    const url = await imageStorageService.upload(wine.id, slot, file);
-    const updatedDetails = imageStorageService.mergeImageUrl(wine.ai_details, slot, url);
-    const updated = await storageService.saveWine({ ...wine, ai_details: updatedDetails, updated_at: new Date().toISOString() });
-    setWine(updated);
-    showToast('Bild hochgeladen.', 'success');
-  }, [wine, showToast]);
-
-  const handleImageDelete = useCallback(async (slot: ImageSlot) => {
-    if (!wine) return;
-    await imageStorageService.delete(wine.id, slot);
-    const updatedDetails = imageStorageService.mergeImageUrl(wine.ai_details, slot, null);
-    const updated = await storageService.saveWine({ ...wine, ai_details: updatedDetails, updated_at: new Date().toISOString() });
-    setWine(updated);
-    showToast('Bild gelöscht.', 'success');
-  }, [wine, showToast]);
 
   if (loading) {
     return (
@@ -2192,143 +1654,21 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
         </div>
       </Dialog>
 
-      <Dialog open={isEditModalOpen} title="Wein bearbeiten" onClose={() => setIsEditModalOpen(false)}>
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSaveEdit();
-          }}
-        >
-          <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
-            {/* Image upload section */}
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Fotos</h4>
-              <div className="grid grid-cols-3 gap-3">
-                {(['bottle', 'label', 'case'] as const).map((slot) => (
-                  <ImageUploader
-                    key={slot}
-                    label={slot === 'bottle' ? 'Flasche' : slot === 'label' ? 'Etikett' : 'Kiste'}
-                    currentUrl={wineImages[slot]}
-                    onUpload={(file) => handleImageUpload(slot, file)}
-                    onDelete={() => handleImageDelete(slot)}
-                    disabled={isSaving}
-                  />
-                ))}
-              </div>
-            </section>
-
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Basisdaten</h4>
-              <FormField label="Name" value={editForm.name} onChange={(value) => updateEditField('name', value)} required />
-              <FormField label="Produzent" value={editForm.producer} onChange={(value) => updateEditField('producer', value)} />
-              <FormField label="Jahrgang" value={editForm.vintage} onChange={(value) => updateEditField('vintage', value)} type="number" required />
-              <FormField label="Region" value={editForm.region} onChange={(value) => updateEditField('region', value)} required />
-              <FormField label="Unterkeller" value={editForm.subcellar} onChange={(value) => updateEditField('subcellar', value)} />
-              <FormField label="Appellation" value={editForm.appellation} onChange={(value) => updateEditField('appellation', value)} />
-              <FormField label="Land" value={editForm.country} onChange={(value) => updateEditField('country', value)} />
-              <FormField label="Subregion" value={editForm.subregion} onChange={(value) => updateEditField('subregion', value)} />
-              <FormField label="Lage / Vineyard" value={editForm.vineyard} onChange={(value) => updateEditField('vineyard', value)} />
-            </section>
-
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Keller & Klassifikation</h4>
-              <SelectField
-                label="Kategorie"
-                value={editForm.category}
-                options={[{ value: '', label: 'Bitte wählen' }, ...CATEGORY_OPTIONS.map((item) => ({ value: item, label: item }))]}
-                onChange={(value) => updateEditField('category', value)}
-              />
-              <SelectField
-                label="Weintyp"
-                value={editForm.wine_type}
-                options={[{ value: '', label: 'Bitte wählen' }, ...WINE_TYPE_OPTIONS.map((item) => ({ value: item, label: item }))]}
-                onChange={(value) => updateEditField('wine_type', value)}
-              />
-              <SelectField
-                label="Flaschenformat"
-                value={editForm.format}
-                options={[{ value: '', label: 'Bitte wählen' }, ...FORMAT_OPTIONS.map((item) => ({ value: item, label: item }))]}
-                onChange={(value) => updateEditField('format', value)}
-              />
-              <FormField label="Menge" value={editForm.quantity} onChange={(value) => updateEditField('quantity', value)} type="number" required />
-              <FormField label="Kaufpreis" value={editForm.purchase_price} onChange={(value) => updateEditField('purchase_price', value)} />
-              <FormField label="Marktpreis" value={editForm.market_price} onChange={(value) => updateEditField('market_price', value)} />
-              <FormField label="Alkohol %" value={editForm.alcohol_percent} onChange={(value) => updateEditField('alcohol_percent', value)} type="number" />
-              <FormField label="Trinkstart" value={editForm.drink_start} onChange={(value) => updateEditField('drink_start', value)} type="number" />
-              <FormField label="Trinkende" value={editForm.drink_end} onChange={(value) => updateEditField('drink_end', value)} type="number" />
-              <FormField label="Peak Year" value={editForm.peak_year} onChange={(value) => updateEditField('peak_year', value)} type="number" />
-              <FormField label="Verschluss" value={editForm.closure_type} onChange={(value) => updateEditField('closure_type', value)} />
-              <FormField label="Gärung" value={editForm.fermentation} onChange={(value) => updateEditField('fermentation', value)} />
-              <FormField label="Ausbau" value={editForm.aging_process} onChange={(value) => updateEditField('aging_process', value)} />
-              <FormField label="Anbau" value={editForm.farming} onChange={(value) => updateEditField('farming', value)} />
-              <SelectField
-                label="Confidence"
-                value={editForm.confidence}
-                options={[
-                  { value: '', label: 'Nicht gesetzt' },
-                  { value: 'high', label: 'high' },
-                  { value: 'medium', label: 'medium' },
-                  { value: 'low', label: 'low' }
-                ]}
-                onChange={(value) => updateEditField('confidence', value)}
-              />
-              <SelectField
-                label="Wishlist"
-                value={editForm.wishlist}
-                options={[
-                  { value: 'false', label: 'Nein' },
-                  { value: 'true', label: 'Ja' }
-                ]}
-                onChange={(value) => updateEditField('wishlist', value)}
-              />
-              <SelectField
-                label="Favorit"
-                value={editForm.is_favorite}
-                options={[
-                  { value: 'false', label: 'Nein' },
-                  { value: 'true', label: 'Ja' }
-                ]}
-                onChange={(value) => updateEditField('is_favorite', value)}
-              />
-            </section>
-
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Rebsorten</h4>
-              <GrapesField
-                value={editForm.grapes}
-                onChange={(next) => setEditForm((prev) => ({ ...prev, grapes: next }))}
-              />
-            </section>
-
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Struktur</h4>
-              <StructureSlidersField
-                value={editForm.structure}
-                onChange={(next) => setEditForm((prev) => ({ ...prev, structure: next }))}
-              />
-            </section>
-
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Kritiker-Scores</h4>
-              <ScoresField
-                value={editForm.scores}
-                onChange={(next) => setEditForm((prev) => ({ ...prev, scores: next }))}
-              />
-            </section>
-
-          </div>
-
-          <button
-            type="submit"
-            disabled={!canMutate}
-            className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-            style={{ backgroundColor: ACCENT_BURGUNDY }}
-          >
-            Speichern
-          </button>
-        </form>
-      </Dialog>
+      <WineCaptureForm
+        open={isEditModalOpen}
+        mode="edit"
+        wine={wine}
+        onClose={() => setIsEditModalOpen(false)}
+        onSaved={(updated) => {
+          setWine(updated);
+          setIsEditModalOpen(false);
+          showToast('Wein wurde gespeichert.', 'success');
+        }}
+        onWineImagesChanged={(updated) => {
+          setWine(updated);
+          showToast('Bild aktualisiert.', 'success');
+        }}
+      />
     </div>
   );
 };
@@ -2343,235 +1683,3 @@ const TerroirRow = memo(function TerroirRow({ label, value }: { label: string; v
   );
 });
 
-const FormField = memo(function FormField({
-  label,
-  value,
-  onChange,
-  type = 'text',
-  required
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: 'text' | 'number';
-  required?: boolean;
-}) {
-  return (
-    <label className="block text-sm text-stone-700">
-      {label}
-      <input
-        type={type}
-        required={required}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-stone-900 outline-none focus:border-stone-500"
-      />
-    </label>
-  );
-});
-
-const SelectField = memo(function SelectField({
-  label,
-  value,
-  options,
-  onChange
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block text-sm text-stone-700">
-      {label}
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-stone-900 outline-none focus:border-stone-500"
-      >
-        {options.map((option) => (
-          <option key={`${label}-${option.value}`} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-});
-
-const GrapesField = memo(function GrapesField({
-  value,
-  onChange
-}: {
-  value: GrapeFormEntry[];
-  onChange: (next: GrapeFormEntry[]) => void;
-}) {
-  const updateRow = (index: number, patch: Partial<GrapeFormEntry>) => {
-    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  };
-  const removeRow = (index: number) => {
-    onChange(value.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div className="space-y-2">
-      {value.map((row, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Rebsorte, z. B. Cabernet Sauvignon"
-            value={row.name}
-            onChange={(event) => updateRow(index, { name: event.target.value })}
-            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
-          />
-          <input
-            type="number"
-            placeholder="%"
-            min={0}
-            max={100}
-            value={row.percentage}
-            onChange={(event) => updateRow(index, { percentage: event.target.value })}
-            className="w-20 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
-          />
-          <button
-            type="button"
-            onClick={() => removeRow(index)}
-            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
-            aria-label="Rebsorte entfernen"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...value, { name: '', percentage: '' }])}
-        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
-      >
-        <Plus className="h-3.5 w-3.5" /> Rebsorte hinzufügen
-      </button>
-    </div>
-  );
-});
-
-const STRUCTURE_SLIDER_FIELDS: {
-  key: keyof StructureFormState;
-  label: string;
-  lowLabel: string;
-  highLabel: string;
-}[] = [
-  { key: 'acidity', label: 'Säure', lowLabel: 'mild', highLabel: 'straff' },
-  { key: 'tannin', label: 'Tannin', lowLabel: 'weich', highLabel: 'kräftig' },
-  { key: 'body', label: 'Körper', lowLabel: 'leicht', highLabel: 'voll' },
-  { key: 'sweetness', label: 'Süße', lowLabel: 'trocken', highLabel: 'süß' },
-  { key: 'oak', label: 'Holzausbau', lowLabel: 'kein Holz', highLabel: 'stark geprägt' }
-];
-
-const StructureSlidersField = memo(function StructureSlidersField({
-  value,
-  onChange
-}: {
-  value: StructureFormState;
-  onChange: (next: StructureFormState) => void;
-}) {
-  return (
-    <div className="space-y-4">
-      {STRUCTURE_SLIDER_FIELDS.map(({ key, label, lowLabel, highLabel }) => {
-        const current = value[key];
-        const isSet = current !== null;
-        return (
-          <div key={key} className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-stone-700">{label}</span>
-              <label className="flex items-center gap-2 text-xs text-stone-500">
-                <input
-                  type="checkbox"
-                  checked={isSet}
-                  onChange={(event) =>
-                    onChange({ ...value, [key]: event.target.checked ? current ?? 3 : null })
-                  }
-                />
-                erfasst
-              </label>
-            </div>
-            <input
-              type="range"
-              min={1}
-              max={5}
-              step={1}
-              value={current ?? 3}
-              disabled={!isSet}
-              onChange={(event) => onChange({ ...value, [key]: Number(event.target.value) })}
-              className="w-full accent-[#5B1E2D] disabled:opacity-40"
-            />
-            <div className="flex justify-between text-[10px] uppercase tracking-[0.1em] text-stone-400">
-              <span>{lowLabel}</span>
-              <span>{isSet ? current : '—'}</span>
-              <span>{highLabel}</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-});
-
-const ScoresField = memo(function ScoresField({
-  value,
-  onChange
-}: {
-  value: ScoreFormEntry[];
-  onChange: (next: ScoreFormEntry[]) => void;
-}) {
-  const updateRow = (index: number, patch: Partial<ScoreFormEntry>) => {
-    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  };
-  const removeRow = (index: number) => {
-    onChange(value.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div className="space-y-2">
-      {value.map((row, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Kritiker, z. B. Parker"
-            value={row.critic}
-            onChange={(event) => updateRow(index, { critic: event.target.value })}
-            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
-          />
-          <input
-            type="text"
-            placeholder="Score"
-            value={row.score}
-            onChange={(event) => updateRow(index, { score: event.target.value })}
-            className="w-20 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
-          />
-          <input
-            type="number"
-            placeholder="Jahr"
-            value={row.year}
-            onChange={(event) => updateRow(index, { year: event.target.value })}
-            className="w-24 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
-          />
-          <button
-            type="button"
-            onClick={() => removeRow(index)}
-            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
-            aria-label="Score entfernen"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...value, { critic: '', score: '', year: '' }])}
-        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
-      >
-        <Plus className="h-3.5 w-3.5" /> Score hinzufügen
-      </button>
-    </div>
-  );
-});
