@@ -1,17 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
-
 // The /api/ai/* routes had no auth check at all: any request that could
-// reach the server could trigger paid OpenAI/Gemini/OpenRouter calls.
-// This validates the Supabase session JWT the client already holds
-// (anonymous/demo sessions included - they still carry a valid access
-// token) before letting a request reach the AI runtime.
+// reach the server could trigger paid OpenAI/Gemini/OpenRouter (now
+// OpenRouter-only) calls. This validates the Supabase session JWT the
+// client already holds (anonymous/demo sessions included - they still
+// carry a valid access token) before letting a request reach the AI
+// runtime.
+//
+// Deliberately a plain fetch against GoTrue's REST endpoint instead of
+// the @supabase/supabase-js SDK: constructing a SupabaseClient always
+// eagerly builds a RealtimeClient too, which throws ("native WebSocket
+// not found") on Node <22 with no polyfill - exactly the Node version CI
+// runs on. Verifying a bearer token needs none of that.
 export const createRequireAuth = ({ supabaseUrl, supabaseAnonKey }) => {
-  const client = supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } })
-    : null;
+  const userEndpoint = supabaseUrl ? `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/user` : null;
 
   return async (req, res, next) => {
-    if (!client) {
+    if (!userEndpoint || !supabaseAnonKey) {
       return res.status(500).json({
         success: false,
         error: 'Server auth not configured (SUPABASE_URL / SUPABASE_ANON_KEY missing).'
@@ -24,12 +27,27 @@ export const createRequireAuth = ({ supabaseUrl, supabaseAnonKey }) => {
       return res.status(401).json({ success: false, error: 'Missing bearer token' });
     }
 
-    const { data, error } = await client.auth.getUser(token);
-    if (error || !data?.user) {
-      return res.status(401).json({ success: false, error: 'Invalid or expired session' });
-    }
+    try {
+      const response = await fetch(userEndpoint, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey
+        }
+      });
 
-    req.userId = data.user.id;
-    next();
+      if (!response.ok) {
+        return res.status(401).json({ success: false, error: 'Invalid or expired session' });
+      }
+
+      const user = await response.json();
+      if (!user?.id) {
+        return res.status(401).json({ success: false, error: 'Invalid or expired session' });
+      }
+
+      req.userId = user.id;
+      next();
+    } catch {
+      return res.status(502).json({ success: false, error: 'Auth service unreachable' });
+    }
   };
 };
