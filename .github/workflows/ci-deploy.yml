@@ -8,6 +8,41 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # Typecheck/lint/unit-tests/build need no Supabase/Docker/Playwright at
+  # all - they used to run inside quality-gate *after* the Supabase stack
+  # start, wasting that stack's ~10-15s startup on steps that never touch
+  # it. Runs as its own job so it starts immediately in parallel with
+  # quality-gate instead of serially after it.
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        run: npm ci --prefix server
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
+
   quality-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -50,8 +85,15 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run Quality Gate (CI Check)
-        run: npm run ci:check
+      # Re-run (not just checks' copy): only here is SUPABASE_URL/ANON_KEY
+      # populated, so this is the one run that actually exercises the
+      # auth-gated /api/ai/* cases in tests/unit/server.routes.test.ts
+      # against a real session instead of skipping them.
+      - name: Unit tests (live Supabase)
+        run: npm run test:unit
+
+      - name: E2E tests
+        run: npm run test:ui
 
       - name: Upload Playwright report
         if: always()
