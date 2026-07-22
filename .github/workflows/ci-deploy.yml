@@ -42,7 +42,10 @@ jobs:
             --override-name auth.anon_key=VITE_SUPABASE_ANON_KEY \
             >> .env.local
           mkdir -p server
-          touch server/.env
+          supabase status -o env \
+            --override-name api.url=SUPABASE_URL \
+            --override-name auth.anon_key=SUPABASE_ANON_KEY \
+            >> server/.env
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

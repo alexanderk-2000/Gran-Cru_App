@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -6,8 +7,13 @@ import { registerAiSearchRoute } from './routes/aiSearch.js';
 import { registerAiAssignmentRoute } from './routes/aiAssignment.js';
 import { registerAiVisionRoute } from './routes/aiVision.js';
 import { createAiRuntime } from './ai/runtime.js';
+import { createRequireAuth } from './middleware/requireAuth.js';
+import { createAiRateLimiter } from './middleware/rateLimit.js';
 
-dotenv.config();
+// Resolve relative to this file rather than process.cwd() - `npm run server`
+// runs with cwd=server/ but `vitest run` (repo root) imports this module
+// with cwd=repo root, which would otherwise silently load the wrong .env.
+dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,8 +23,12 @@ const GEMINI_MAX_OUTPUT_TOKENS = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 
 const OPENAI_MAX_OUTPUT_TOKENS = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 4096);
 const FAST_OPENAI_MAX_OUTPUT_TOKENS = Number(process.env.FAST_OPENAI_MAX_OUTPUT_TOKENS || 1800);
 const FAST_GEMINI_MAX_OUTPUT_TOKENS = Number(process.env.FAST_GEMINI_MAX_OUTPUT_TOKENS || 1800);
+const OPENROUTER_MAX_OUTPUT_TOKENS = Number(process.env.OPENROUTER_MAX_OUTPUT_TOKENS || 4096);
+const FAST_OPENROUTER_MAX_OUTPUT_TOKENS = Number(process.env.FAST_OPENROUTER_MAX_OUTPUT_TOKENS || 1800);
 const AI_CACHE_TTL_MS = Number(process.env.AI_CACHE_TTL_MS || 7 * 24 * 60 * 60 * 1000);
 const AI_CACHE_MAX_ENTRIES = Number(process.env.AI_CACHE_MAX_ENTRIES || 600);
+const AI_RATE_LIMIT_WINDOW_MS = Number(process.env.AI_RATE_LIMIT_WINDOW_MS || 5 * 60 * 1000);
+const AI_RATE_LIMIT_MAX_REQUESTS = Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS || 30);
 
 const aiRuntime = createAiRuntime({
   requestTimeout: REQUEST_TIMEOUT,
@@ -26,12 +36,25 @@ const aiRuntime = createAiRuntime({
   openaiMaxOutputTokens: OPENAI_MAX_OUTPUT_TOKENS,
   fastOpenaiMaxOutputTokens: FAST_OPENAI_MAX_OUTPUT_TOKENS,
   fastGeminiMaxOutputTokens: FAST_GEMINI_MAX_OUTPUT_TOKENS,
+  openrouterMaxOutputTokens: OPENROUTER_MAX_OUTPUT_TOKENS,
+  fastOpenrouterMaxOutputTokens: FAST_OPENROUTER_MAX_OUTPUT_TOKENS,
   cacheTtlMs: AI_CACHE_TTL_MS,
   cacheMaxEntries: AI_CACHE_MAX_ENTRIES,
   geminiApiKey: process.env.GEMINI_API_KEY,
-  openaiApiKey: process.env.OPENAI_API_KEY
+  openaiApiKey: process.env.OPENAI_API_KEY,
+  openrouterApiKey: process.env.OPENROUTER_API_KEY,
+  appUrl: process.env.APP_URL,
+  appName: process.env.APP_NAME
 });
 
+const requireAuth = createRequireAuth({
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+});
+const aiRateLimiter = createAiRateLimiter({
+  windowMs: AI_RATE_LIMIT_WINDOW_MS,
+  maxRequests: AI_RATE_LIMIT_MAX_REQUESTS
+});
 app.use(cors({
   origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   credentials: true
@@ -52,11 +75,18 @@ registerHealthRoute(app, () => ({
   status: 'ok',
   timestamp: new Date().toISOString(),
   gemini: Boolean(process.env.GEMINI_API_KEY),
-  openai: Boolean(process.env.OPENAI_API_KEY)
+  openai: Boolean(process.env.OPENAI_API_KEY),
+  openrouter: Boolean(process.env.OPENROUTER_API_KEY)
 }));
 
+// Every AI endpoint incurs paid provider cost (OpenAI/Gemini/OpenRouter) -
+// require a valid Supabase session and rate-limit before any of them run.
+app.use('/api/ai', requireAuth, aiRateLimiter);
+
+const providerLabel = (provider) => (provider === 'openai' ? 'OpenAI' : provider === 'openrouter' ? 'OpenRouter' : 'Gemini');
+
 registerAiSearchRoute(app, async (req, res) => {
-  const provider = req.body?.provider === 'openai' ? 'openai' : 'gemini';
+  const provider = req.body?.provider === 'openai' ? 'openai' : req.body?.provider === 'openrouter' ? 'openrouter' : 'gemini';
   try {
     const result = await aiRuntime.searchWine(req.body);
     return res.status(result.status).json(result.body);
@@ -65,10 +95,10 @@ registerAiSearchRoute(app, async (req, res) => {
     const isTimeout = /timeout/i.test(safeError);
     const isOverloaded = /overloaded|503|service unavailable/i.test(safeError);
     const status = error?.status || (isTimeout ? 408 : isOverloaded ? 503 : 500);
-    console.error(`${provider === 'openai' ? 'OpenAI' : 'Gemini'} API Error:`, safeError);
+    console.error(`${providerLabel(provider)} API Error:`, safeError);
     return res.status(status).json({
       success: false,
-      error: `${provider === 'openai' ? 'OpenAI' : 'Gemini'} API error: ${safeError}`
+      error: `${providerLabel(provider)} API error: ${safeError}`
     });
   }
 });
