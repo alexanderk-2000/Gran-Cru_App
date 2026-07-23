@@ -36,6 +36,25 @@ export type WineCaptureAiExtras = Pick<
   'grapes' | 'aromas' | 'structure' | 'pairings' | 'scores' | 'ai_details' | 'ai_sources' | 'missing_fields'
 >;
 
+export interface GrapeFormEntry {
+  name: string;
+  percentage: string;
+}
+
+export interface ScoreFormEntry {
+  critic: string;
+  score: string;
+  year: string;
+}
+
+export interface StructureFormState {
+  acidity: number | null;
+  tannin: number | null;
+  body: number | null;
+  sweetness: number | null;
+  oak: number | null;
+}
+
 export const CATEGORY_OPTIONS: Category[] = ['Genuss', 'Investment', 'Rarität', 'Daily Drinker'];
 export const WINE_TYPE_OPTIONS: WineType[] = ['Rot', 'Weiß', 'Rosé', 'Schaumwein', 'Süßwein'];
 export const FORMAT_OPTIONS: BottleFormat[] = ['0.375L', '0.75L', '1.5L (Magnum)', '3.0L (Double Magnum)', '6.0L (Imperial)'];
@@ -153,6 +172,58 @@ export const applyAiEnrichment = (form: WineCaptureFormValues, data: Record<stri
   confidence: data.confidence !== undefined && data.confidence !== null ? toStr(data.confidence) : form.confidence
 });
 
+export const grapesToFormState = (grapes: Wine['grapes']): GrapeFormEntry[] =>
+  (grapes ?? []).map((entry) => ({
+    name: entry.name,
+    percentage: entry.percentage !== undefined && entry.percentage !== null ? String(entry.percentage) : ''
+  }));
+
+export const grapesFromFormState = (entries: GrapeFormEntry[]): Wine['grapes'] =>
+  entries
+    .map((entry) => ({ name: entry.name.trim(), percentage: entry.percentage.trim() }))
+    .filter((entry) => entry.name.length > 0)
+    .map((entry) => {
+      const percentage = Number.parseFloat(entry.percentage.replace(',', '.'));
+      return { name: entry.name, percentage: Number.isFinite(percentage) ? percentage : undefined };
+    });
+
+const pickStructureValue = (value: number | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+export const structureToFormState = (structure: Wine['structure']): StructureFormState => ({
+  acidity: pickStructureValue(structure?.acidity),
+  tannin: pickStructureValue(structure?.tannin),
+  body: pickStructureValue(structure?.body),
+  sweetness: pickStructureValue(structure?.sweetness),
+  oak: pickStructureValue(structure?.oak)
+});
+
+export const structureFromFormState = (state: StructureFormState): Wine['structure'] => {
+  const structure: Wine['structure'] = {};
+  if (state.acidity !== null) structure.acidity = state.acidity;
+  if (state.tannin !== null) structure.tannin = state.tannin;
+  if (state.body !== null) structure.body = state.body;
+  if (state.sweetness !== null) structure.sweetness = state.sweetness;
+  if (state.oak !== null) structure.oak = state.oak;
+  return structure;
+};
+
+export const scoresToFormState = (scores: Wine['scores']): ScoreFormEntry[] =>
+  (scores ?? []).map((entry) => ({
+    critic: entry.critic,
+    score: String(entry.score ?? ''),
+    year: entry.year !== undefined && entry.year !== null ? String(entry.year) : ''
+  }));
+
+export const scoresFromFormState = (entries: ScoreFormEntry[]): Wine['scores'] =>
+  entries
+    .map((entry) => ({ critic: entry.critic.trim(), score: entry.score.trim(), year: entry.year.trim() }))
+    .filter((entry) => entry.critic.length > 0 && entry.score.length > 0)
+    .map((entry) => {
+      const year = Number.parseInt(entry.year, 10);
+      return { critic: entry.critic, score: entry.score, year: Number.isFinite(year) ? year : undefined };
+    });
+
 export const extractAiExtras = (data: Record<string, any> | null | undefined): WineCaptureAiExtras | null => {
   if (!data) return null;
   return {
@@ -206,21 +277,36 @@ const toNullableInt = (value: string): number | undefined => {
 /**
  * Builds the storageService.saveWine payload from the form's string state.
  * `base` (an existing Wine, in edit mode) is spread first so fields the form
- * doesn't manage (id, ai_details, grapes, timestamps, ...) carry over untouched;
- * `extras` (from a fresh AI enrichment during create) overrides those on top.
+ * doesn't manage (id, ai_details, timestamps, ...) carry over untouched;
+ * `extras` (from a fresh AI enrichment during create) overrides those on top;
+ * `structured` (the Rebsorten/Struktur/Scores editor state, always present)
+ * overrides both, since it reflects what's actually rendered and editable.
  */
 export const buildWinePayload = (
   form: WineCaptureFormValues,
-  options: { base?: Partial<Wine>; extras?: WineCaptureAiExtras | null } = {}
+  options: {
+    base?: Partial<Wine>;
+    extras?: WineCaptureAiExtras | null;
+    structured?: { grapes: GrapeFormEntry[]; structure: StructureFormState; scores: ScoreFormEntry[] };
+  } = {}
 ): Partial<Wine> => {
   const currentYear = new Date().getFullYear();
   const vintage = toNullableInt(form.vintage) ?? currentYear;
   const drinkStart = toNullableInt(form.drink_start) ?? vintage + 2;
   const drinkEnd = toNullableInt(form.drink_end) ?? vintage + 12;
 
+  const structuredOverrides = options.structured
+    ? {
+        grapes: grapesFromFormState(options.structured.grapes),
+        structure: structureFromFormState(options.structured.structure),
+        scores: scoresFromFormState(options.structured.scores)
+      }
+    : {};
+
   return {
     ...options.base,
     ...(options.extras ?? {}),
+    ...structuredOverrides,
     name: form.name.trim(),
     producer: form.producer.trim() || undefined,
     vintage,

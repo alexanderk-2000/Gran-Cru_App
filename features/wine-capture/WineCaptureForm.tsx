@@ -3,6 +3,9 @@ import { AlertTriangle, Check, Loader2, Wand2 } from 'lucide-react';
 import { Dialog } from '../../components/Dialog.tsx';
 import { FormField } from '../../components/form/FormField.tsx';
 import { SelectField } from '../../components/form/SelectField.tsx';
+import { GrapesField } from '../../components/form/GrapesField.tsx';
+import { StructureSlidersField } from '../../components/form/StructureSlidersField.tsx';
+import { ScoresField } from '../../components/form/ScoresField.tsx';
 import { ImageUploader } from '../../components/ImageUploader.tsx';
 import { aiService } from '../../services/ai.ts';
 import { storageService } from '../../services/storage.ts';
@@ -15,11 +18,17 @@ import {
   buildWinePayload,
   applyAiEnrichment,
   extractAiExtras,
+  grapesToFormState,
+  structureToFormState,
+  scoresToFormState,
   CATEGORY_OPTIONS,
   WINE_TYPE_OPTIONS,
   FORMAT_OPTIONS,
   type WineCaptureAiExtras,
-  type WineCaptureFormValues
+  type WineCaptureFormValues,
+  type GrapeFormEntry,
+  type StructureFormState,
+  type ScoreFormEntry
 } from './wineCaptureMapping.ts';
 
 interface WineCaptureFormProps {
@@ -55,6 +64,9 @@ export const WineCaptureForm: React.FC<WineCaptureFormProps> = ({
     buildInitialFormValues({ wine, initialData, wishlist, targetSubcellar })
   );
   const [aiExtras, setAiExtras] = useState<WineCaptureAiExtras | null>(null);
+  const [grapes, setGrapes] = useState<GrapeFormEntry[]>(() => grapesToFormState(wine?.grapes));
+  const [structure, setStructure] = useState<StructureFormState>(() => structureToFormState(wine?.structure));
+  const [scores, setScores] = useState<ScoreFormEntry[]>(() => scoresToFormState(wine?.scores));
   const [enriched, setEnriched] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -65,6 +77,9 @@ export const WineCaptureForm: React.FC<WineCaptureFormProps> = ({
     if (!open) return;
     setForm(buildInitialFormValues({ wine, initialData, wishlist, targetSubcellar }));
     setAiExtras(null);
+    setGrapes(grapesToFormState(wine?.grapes));
+    setStructure(structureToFormState(wine?.structure));
+    setScores(scoresToFormState(wine?.scores));
     setEnriched(false);
     setError(null);
     setValidationErrors([]);
@@ -101,7 +116,13 @@ export const WineCaptureForm: React.FC<WineCaptureFormProps> = ({
       const response = await aiService.generateWineInfo(form.name.trim(), form.producer.trim(), vintage);
       if (response.success && response.data) {
         setForm((prev) => applyAiEnrichment(prev, response.data));
-        setAiExtras(extractAiExtras(response.data));
+        const extras = extractAiExtras(response.data);
+        setAiExtras(extras);
+        if (extras) {
+          setGrapes(grapesToFormState(extras.grapes));
+          setStructure(structureToFormState(extras.structure));
+          setScores(scoresToFormState(extras.scores));
+        }
         setEnriched(true);
       } else {
         setError(response.error || 'AI-Anreicherung fehlgeschlagen.');
@@ -119,7 +140,8 @@ export const WineCaptureForm: React.FC<WineCaptureFormProps> = ({
 
     const payload = buildWinePayload(form, {
       base: mode === 'edit' ? wine : undefined,
-      extras: mode === 'create' ? aiExtras : undefined
+      extras: mode === 'create' ? aiExtras : undefined,
+      structured: { grapes, structure, scores }
     });
 
     const errors = validateWineInput(payload);
@@ -137,7 +159,7 @@ export const WineCaptureForm: React.FC<WineCaptureFormProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [form, mode, wine, aiExtras, canSubmit, onSaved]);
+  }, [form, mode, wine, aiExtras, grapes, structure, scores, canSubmit, onSaved]);
 
   const wineImages = useMemo<Record<ImageSlot, string | null>>(
     () => (mode === 'edit' && wine ? imageStorageService.getImagesFromWine(wine) : { bottle: null, label: null, case: null }),
@@ -312,6 +334,21 @@ export const WineCaptureForm: React.FC<WineCaptureFormProps> = ({
               ]}
               onChange={(value) => updateField('is_favorite', value)}
             />
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Rebsorten</h4>
+            <GrapesField value={grapes} onChange={setGrapes} />
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Struktur</h4>
+            <StructureSlidersField value={structure} onChange={setStructure} />
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Kritiker-Scores</h4>
+            <ScoresField value={scores} onChange={setScores} />
           </section>
 
           {validationErrors.length > 0 && (
