@@ -118,9 +118,11 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 
 ---
 
-### Phase 1 — Ehrlichkeit herstellen (≈ 1 Woche)
+### Phase 1 — Ehrlichkeit herstellen ✅ umgesetzt
 
 *Ziel: Nichts in der App behauptet mehr etwas, das nicht stimmt.*
+
+> **Status:** umgesetzt. Umsetzungsnotizen am Ende dieses Abschnitts.
 
 | # | Arbeitspaket | Behebt |
 | --- | --- | --- |
@@ -132,6 +134,16 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 | 1.6 | **Trinkhistorie-Fehlerbanner reparieren** (aus dem Nicht-Leer-Zweig herausziehen) und Interna aus den Texten entfernen. | B20 |
 
 **Fertig, wenn:** In einem frischen Vercel-Deployment funktionieren Scan und KI-Recherche, oder sie sind ehrlich als „nicht verfügbar" markiert. Keine Kennzahl auf dem Dashboard widerspricht mehr der Kellerliste.
+
+#### Umsetzungsnotizen
+
+- **1.1** `api/index.js` exportiert die vorhandene Express-App als Vercel-Function; `vercel.json` leitet `/api/(.*)` **vor** dem SPA-Fallback dorthin. `express`/`cors`/`dotenv`/`openai` sind jetzt auch im Root-`package.json` deklariert, weil Vercel nur dort installiert — Nebeneffekt: `tests/unit/server.routes.test.ts` läuft lokal ohne `npm ci --prefix server`. Das Funktions-Timeout ist auf 55 s gesetzt (unter `maxDuration` 60 s), sonst würde die Plattform vor unserem eigenen Timeout abbrechen. Env-Variablen und ein `curl`-Check stehen in `VERCEL_SETUP.md`.
+- **1.2** Neu: `services/apiHealth.ts`. Ein Backend gilt erst als erreichbar, wenn die Antwort JSON mit `status: "ok"` ist — `response.ok` allein war der Grund für die falsche Meldung „Server läuft". Die KI-Aufrufe prüfen denselben Content-Type und melden statt „Unexpected token '<'" einen verständlichen Hinweis. Fünf Testfälle in `tests/unit/apiHealth.test.ts`, darunter explizit der SPA-Fallback.
+- **1.3** `WINE_CATEGORIES` in `constants.ts` ist jetzt die einzige Quelle; Filter und Bearbeiten-Formular leiten sich daraus ab. Alle vier Kategorien bleiben erhalten (Wegnehmen hätte bestehende Datensätze entwertet).
+- **1.4** `getBottleUnitValue` / `getWinePositionValue` / `hasKnownPrice` in `utils.ts`; Portfolio-Statistik, Dashboard, Wertsortierung und Weinkarte rechnen darüber. Die Karte beschriftet den Wert jetzt danach, woher er stammt. Tests in `tests/unit/portfolioValue.test.ts`.
+- **1.5** „Einkauf erfassen" heißt „Nachkauf erfassen" und öffnet über `?action=purchase` einen echten Dialog (`components/PurchaseDialog.tsx`: Wein wählen, Flaschen, Preis → `recordPurchase`). Alerts verlinken über `?issue=…` auf gefilterte Listen; persistierte Filter werden in dieser Ansicht bewusst übergangen, damit die Antwort vollständig bleibt. `onAddBottle` ist entfernt.
+- **1.6** Fehlerbanner der Trinkhistorie steht außerhalb des Nicht-Leer-Zweigs, `alert()` entfällt, Einträge verlinken auf den Wein, interne Quellenschlüssel sind übersetzt.
+- **Zusätzlich mitgenommen:** Die Dashboard-Dublettenprüfung nutzt jetzt `findLikelyDuplicates` statt eigener Logik (B9, war für Phase 5 vorgesehen — die Zusammenführen-Aktion bleibt dort); irreführende Beschriftungen korrigiert („Trinkbereit (nächste 90 Tage)" → „Trinkbereit", „Marktwert" → „Kellerwert · Marktpreis, sonst Einstand", „Zuletzt hinzugefügt oder getrunken" → „Zuletzt getrunken"); die leere Kellerliste hat einen Einstiegsknopf statt eines Satzes.
 
 ---
 

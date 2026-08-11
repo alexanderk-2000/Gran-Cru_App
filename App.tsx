@@ -196,7 +196,6 @@ const App: React.FC = () => {
                 <Inventory
                   wines={wines}
                   onWineUpdate={fetchWines}
-                  onAddBottle={() => { }}
                   onDrink={handleDrink}
                 />
               }
@@ -210,7 +209,6 @@ const App: React.FC = () => {
                   wines={wines}
                   wishlistOnly
                   onWineUpdate={fetchWines}
-                  onAddBottle={() => { }}
                   onDrink={() => { }}
                 />
               }

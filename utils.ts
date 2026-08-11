@@ -9,6 +9,29 @@ export const getWineStatus = (wine: Wine): WineStatus => {
   return WineStatus.READY;
 };
 
+/**
+ * The value of one bottle: current market price where known, purchase price
+ * otherwise.
+ *
+ * This used to be decided per screen - portfolio stats counted purchase price
+ * only, while the dashboard and the "highest value" sort already preferred the
+ * market price - so the same cellar was worth different amounts depending on
+ * where you looked. Every value calculation goes through here now.
+ */
+export const getBottleUnitValue = (wine: Pick<Wine, 'market_price' | 'purchase_price'>): number => {
+  if (typeof wine.market_price === 'number' && wine.market_price > 0) return wine.market_price;
+  if (typeof wine.purchase_price === 'number' && wine.purchase_price > 0) return wine.purchase_price;
+  return 0;
+};
+
+/** Total value of a wine position (unit value × bottles on hand). */
+export const getWinePositionValue = (wine: Pick<Wine, 'market_price' | 'purchase_price' | 'quantity'>): number =>
+  getBottleUnitValue(wine) * Math.max(0, wine.quantity || 0);
+
+/** True when neither a market nor a purchase price is known. */
+export const hasKnownPrice = (wine: Pick<Wine, 'market_price' | 'purchase_price'>): boolean =>
+  getBottleUnitValue(wine) > 0;
+
 export const calculatePortfolioStats = (wines: Wine[]): PortfolioStats => {
   const currentYear = new Date().getFullYear();
 
@@ -16,10 +39,10 @@ export const calculatePortfolioStats = (wines: Wine[]): PortfolioStats => {
 
   const stats = inventory.reduce((acc, wine) => {
     acc.totalBottles += wine.quantity;
-    acc.totalValue += wine.purchase_price * wine.quantity;
+    acc.totalValue += getWinePositionValue(wine);
 
     if (wine.category === 'Investment') {
-      acc.investmentValue += wine.purchase_price * wine.quantity;
+      acc.investmentValue += getWinePositionValue(wine);
     }
 
     const status = getWineStatus(wine);

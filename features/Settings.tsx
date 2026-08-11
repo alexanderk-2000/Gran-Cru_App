@@ -8,6 +8,7 @@ import { getSyncStateSnapshot } from '../services/pwa/offlineDb.ts';
 import { subscribeQueueSnapshot } from '../services/pwa/aiQueue.ts';
 import { runSyncCycle } from '../services/pwa/syncEngine.ts';
 import { storageService } from '../services/storage.ts';
+import { checkApiHealth } from '../services/apiHealth.ts';
 
 export const Settings: React.FC = () => {
     const [, setSettings] = useState<UserSettings | null>(null);
@@ -18,6 +19,7 @@ export const Settings: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+    const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null);
     const [installState, setInstallState] = useState<InstallPromptState>({
         canPromptInstall: false,
         isInstalled: false,
@@ -97,16 +99,9 @@ export const Settings: React.FC = () => {
     };
 
     const checkServerStatus = async () => {
-        try {
-            const response = await fetch('/api/health');
-            if (response.ok) {
-                setServerStatus('online');
-            } else {
-                setServerStatus('offline');
-            }
-        } catch {
-            setServerStatus('offline');
-        }
+        const health = await checkApiHealth();
+        setServerStatus(health.online ? 'online' : 'offline');
+        setKeyConfigured(health.online ? health.openrouterConfigured : null);
     };
 
     const handleSave = async () => {
@@ -190,18 +185,34 @@ export const Settings: React.FC = () => {
                         </span>
                     </div>
 
+                    {serverStatus === 'online' && keyConfigured === false && (
+                        <div className="mt-6 bg-gold/5 p-6 rounded-2xl border border-gold/20">
+                            <div className="flex items-start gap-3">
+                                <AlertCircle className="w-5 h-5 text-gold shrink-0 mt-0.5" />
+                                <div className="text-sm">
+                                    <p className="font-bold text-charcoal mb-1">Kein KI-Schlüssel hinterlegt</p>
+                                    <p className="text-stone-gray">
+                                        Der Server läuft, aber ohne OpenRouter-Schlüssel. Recherche, Etikett-Scan und
+                                        Anlass-Vorschläge bleiben deshalb ohne Ergebnis.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {serverStatus === 'offline' && (
                         <div className="mt-6 bg-red-50 p-6 rounded-2xl border border-red-200">
                             <div className="flex items-start gap-3">
                                 <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                                 <div className="text-sm">
-                                    <p className="font-bold text-red-800 mb-2">Server nicht gestartet</p>
+                                    <p className="font-bold text-red-800 mb-2">KI-Funktionen nicht verfügbar</p>
                                     <p className="text-red-700 mb-3">
-                                        Der API-Server muss für KI-Funktionen laufen. Starte ihn mit:
+                                        Recherche, Etikett-Scan und Anlass-Vorschläge brauchen den API-Dienst. Alles
+                                        andere - Keller, Bestand, Planung - funktioniert davon unabhängig weiter.
                                     </p>
-                                    <code className="bg-red-100 px-3 py-2 rounded-lg block font-mono text-xs">
-                                        cd server && npm install && npm run dev
-                                    </code>
+                                    <p className="text-red-700">
+                                        In der lokalen Entwicklung startet ihn <code className="bg-red-100 px-1.5 py-0.5 rounded font-mono text-xs">npm run server</code>.
+                                    </p>
                                 </div>
                             </div>
                         </div>

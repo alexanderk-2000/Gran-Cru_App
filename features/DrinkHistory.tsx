@@ -1,7 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, GlassWater, Loader2, RefreshCw } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+
+/** Internal event sources ("detail", "dashboard", …) are not user-facing wording. */
+const SOURCE_LABELS: Record<string, string> = {
+  detail: 'Über die Weinseite',
+  dashboard: 'Über die Kellerliste',
+  stocktake: 'Bei der Inventur',
+  genussplan: 'Über einen Anlass',
+  manual: 'Manuell erfasst'
+};
+
+const sourceLabel = (source: string): string => SOURCE_LABELS[source] || 'Getrunken';
 
 interface ConsumeEvent {
   id: string;
@@ -34,9 +45,10 @@ export const DrinkHistory: React.FC = () => {
       setEvents(data as ConsumeEvent[]);
       setError(null);
     } catch (err: any) {
-      const message = err?.message || 'Trinkhistorie konnte nicht geladen werden.';
-      setError(message);
-      alert(message);
+      // The banner below renders on every branch now. It used to sit inside
+      // the "list is not empty" branch, so a failed load - which leaves the
+      // list empty - showed nothing but a blocking alert().
+      setError(err?.message || 'Trinkhistorie konnte nicht geladen werden.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -73,7 +85,7 @@ export const DrinkHistory: React.FC = () => {
             <ArrowLeft className="w-4 h-4" /> Zurück
           </button>
           <h2 className="font-serif text-4xl font-bold text-charcoal">Trinkhistorie</h2>
-          <p className="text-stone-gray font-medium tracking-wide">Alle konsumierten Flaschen aus inventory_events.</p>
+          <p className="text-stone-gray font-medium tracking-wide">Jede geöffnete Flasche, nach Tagen gruppiert.</p>
         </div>
 
         <button
@@ -85,6 +97,12 @@ export const DrinkHistory: React.FC = () => {
           Aktualisieren
         </button>
       </header>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="py-24 flex flex-col items-center gap-4">
@@ -99,12 +117,6 @@ export const DrinkHistory: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-              {error}
-            </div>
-          )}
-
           {grouped.map(([day, dayEvents]) => (
             <section key={day} className="bg-white rounded-[2rem] border border-burgundy/5 shadow-premium overflow-hidden">
               <div className="px-6 py-4 border-b border-alabaster bg-alabaster/40">
@@ -113,21 +125,29 @@ export const DrinkHistory: React.FC = () => {
 
               <div className="divide-y divide-alabaster">
                 {dayEvents.map((event) => (
-                  <article key={event.id} className="px-6 py-4 flex items-start justify-between gap-4">
+                  <Link
+                    key={event.id}
+                    to={`/wine/${event.wine_id}`}
+                    className="px-6 py-4 flex items-start justify-between gap-4 transition-colors hover:bg-alabaster/50"
+                  >
                     <div>
                       <p className="font-serif text-xl text-charcoal">
                         {event.wines?.vintage ? `${event.wines.vintage} ` : ''}
                         {event.wines?.name || 'Unbekannter Wein'}
                       </p>
                       <p className="text-sm text-stone-gray">{event.wines?.producer || 'Produzent unbekannt'}</p>
-                      <p className="text-[10px] mt-1 uppercase tracking-widest text-stone-gray/80">Quelle: {event.source}</p>
+                      <p className="text-[10px] mt-1 uppercase tracking-widest text-stone-gray/80">
+                        {sourceLabel(event.source)}
+                      </p>
                     </div>
 
                     <div className="text-right">
-                      <p className="text-sm font-black text-burgundy">{event.delta}</p>
+                      <p className="text-sm font-black text-burgundy">
+                        {Math.abs(event.delta)} Fl.
+                      </p>
                       <p className="text-xs text-stone-gray">{new Date(event.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
-                  </article>
+                  </Link>
                 ))}
               </div>
             </section>

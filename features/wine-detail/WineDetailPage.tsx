@@ -20,6 +20,7 @@ import { storageService } from '../../services/storage.ts';
 import { imageStorageService, type ImageSlot } from '../../services/imageStorage.ts';
 import { evaluateWineDrinkability, formatCurrency } from '../../utils.ts';
 import { BottleFormat, Category, CriticScore, Tasting, Wine, WineDetails, WineType } from '../../types.ts';
+import { WINE_CATEGORIES } from '../../constants.ts';
 
 const LUXURY_BG = '#FDFBF7';
 const ACCENT_BURGUNDY = '#5B1E2D';
@@ -171,7 +172,7 @@ interface StructureRows {
   oak: number | null;
 }
 
-const CATEGORY_OPTIONS: Category[] = ['Genuss', 'Rarität', 'Daily Drinker'];
+const CATEGORY_OPTIONS: Category[] = WINE_CATEGORIES;
 const WINE_TYPE_OPTIONS: WineType[] = ['Rot', 'Weiß', 'Rosé', 'Schaumwein', 'Süßwein'];
 const FORMAT_OPTIONS: BottleFormat[] = ['0.375L', '0.75L', '1.5L (Magnum)', '3.0L (Double Magnum)', '6.0L (Imperial)'];
 

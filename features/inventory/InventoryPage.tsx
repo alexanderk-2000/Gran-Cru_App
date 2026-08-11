@@ -5,10 +5,12 @@ import { Wine, Category, WineStatus } from '../../types.ts';
 import { WineCard } from '../../components/WineCard.tsx';
 import { ScannerOverlay } from '../../components/ScannerOverlay.tsx';
 import { ScanResultDialog } from '../../components/ScanResultDialog.tsx';
+import { PurchaseDialog } from '../../components/PurchaseDialog.tsx';
 import type { ScanResult } from '../../services/scanner.ts';
 import { Search, Plus, X, Loader2, Wand2, Upload, Copy, Check, ScanBarcode } from 'lucide-react';
-import { getWineFamily, getWineStatus } from '../../utils.ts';
+import { getBottleUnitValue, getWineFamily, getWineStatus, hasKnownPrice } from '../../utils.ts';
 import { storageService } from '../../services/storage.ts';
+import { WINE_CATEGORIES } from '../../constants.ts';
 import { parseJsonInput } from '../../domain/wine/jsonParsers.ts';
 import {
   getImportCandidates,
@@ -22,11 +24,19 @@ import { loadInventoryViewPreferences, saveInventoryViewPreferences, type Invent
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
 
+type IssueFilter = 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon';
+
+const ISSUE_META: Record<IssueFilter, { title: string; subtitle: string }> = {
+  'missing-price': { title: 'Ohne Preis', subtitle: 'Weine ohne Einstands- oder Marktpreis.' },
+  duplicates: { title: 'Mögliche Dubletten', subtitle: 'Positionen, die doppelt erfasst sein könnten.' },
+  'low-stock': { title: 'Letzte Flasche', subtitle: 'Weine mit nur noch einer Flasche im Keller.' },
+  'ending-soon': { title: 'Fensterende in Sicht', subtitle: 'Trinkfenster endet dieses oder nächstes Jahr.' }
+};
+
 interface InventoryProps {
   wines: Wine[];
   wishlistOnly?: boolean;
   onWineUpdate: () => void;
-  onAddBottle: (wine: Partial<Wine>) => void;
   onDrink: (wine: Wine) => void;
 }
 
@@ -60,6 +70,8 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [draggedWineId, setDraggedWineId] = useState<string | null>(null);
   const [dropTargetPocketId, setDropTargetPocketId] = useState<string | null>(null);
   const [isMovingWine, setIsMovingWine] = useState(false);
+  const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [isScanResultOpen, setIsScanResultOpen] = useState(false);
@@ -72,6 +84,21 @@ export const Inventory: React.FC<InventoryProps> = ({
     return null;
   }, [location.search]);
 
+  // Dashboard alerts link here with ?issue=… so their "Anzeigen" button lands
+  // on exactly the affected bottles instead of the unfiltered cellar list.
+  const presetIssue = useMemo<IssueFilter | null>(() => {
+    const issue = new URLSearchParams(location.search).get('issue');
+    const allowed = new Set<IssueFilter>(['missing-price', 'duplicates', 'low-stock', 'ending-soon']);
+    if (issue && allowed.has(issue as IssueFilter)) return issue as IssueFilter;
+    return null;
+  }, [location.search]);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('action') === 'purchase') {
+      setIsPurchaseOpen(true);
+    }
+  }, [location.search]);
+
   const presetMeta = useMemo(() => {
     if (wishlistOnly) {
       return {
@@ -79,6 +106,7 @@ export const Inventory: React.FC<InventoryProps> = ({
         subtitle: 'Geplante Ergänzungen.'
       };
     }
+    if (presetIssue) return ISSUE_META[presetIssue];
     switch (presetView) {
       case 'ready':
         return { title: 'Trinkbereit', subtitle: 'Flaschen im aktiven Trinkfenster.' };
@@ -95,9 +123,9 @@ export const Inventory: React.FC<InventoryProps> = ({
       case 'fortified':
         return { title: 'Portwein', subtitle: 'Segmentliste Fortified/Portwein.' };
       default:
-        return { title: 'Hauptkeller', subtitle: 'Verwaltung Ihrer flüssigen Assets.' };
+        return { title: 'Hauptkeller', subtitle: 'Deine Sammlung im Überblick.' };
     }
-  }, [presetView, wishlistOnly]);
+  }, [presetIssue, presetView, wishlistOnly]);
 
   const refreshStoredPockets = useCallback(async () => {
     try {
@@ -289,9 +317,45 @@ export const Inventory: React.FC<InventoryProps> = ({
     await importWinesFromJsonText(jsonCodeInput);
   };
 
+  const duplicateWineIds = useMemo(() => {
+    if (presetIssue !== 'duplicates') return new Set<string>();
+    const inventory = wines.filter((wine) => wine.wishlist === wishlistOnly);
+    const ids = new Set<string>();
+    for (const wine of inventory) {
+      if (ids.has(wine.id)) continue;
+      const matches = findLikelyDuplicates(wine, inventory, { excludeId: wine.id });
+      if (matches.length > 0) {
+        ids.add(wine.id);
+        for (const match of matches) ids.add(match.id);
+      }
+    }
+    return ids;
+  }, [presetIssue, wines, wishlistOnly]);
+
+  const matchesIssue = useCallback(
+    (wine: Wine): boolean => {
+      if (!presetIssue) return true;
+      const currentYear = new Date().getFullYear();
+      switch (presetIssue) {
+        case 'missing-price':
+          return !hasKnownPrice(wine);
+        case 'duplicates':
+          return duplicateWineIds.has(wine.id);
+        case 'low-stock':
+          return (wine.quantity || 0) > 0 && (wine.quantity || 0) <= 1;
+        case 'ending-soon':
+          return typeof wine.drink_end === 'number' && wine.drink_end <= currentYear + 1;
+        default:
+          return true;
+      }
+    },
+    [duplicateWineIds, presetIssue]
+  );
+
   const filteredWines = useMemo(() => {
     return wines.filter(wine => {
       if (wine.wishlist !== wishlistOnly) return false;
+      if (!matchesIssue(wine)) return false;
       if (presetView === 'ready' && getWineStatus(wine) !== WineStatus.READY) return false;
       if (presetView === 'holding' && getWineStatus(wine) !== WineStatus.HOLD) return false;
       if (presetView === 'past' && getWineStatus(wine) !== WineStatus.PAST_PEAK) return false;
@@ -303,10 +367,15 @@ export const Inventory: React.FC<InventoryProps> = ({
         wine.region.toLowerCase().includes(search.toLowerCase()) ||
         wine.producer?.toLowerCase().includes(search.toLowerCase()) ||
         wine.subcellar?.toLowerCase().includes(search.toLowerCase());
-      const matchesCategory = categoryFilter === 'All' || wine.category === categoryFilter;
-      const matchesStatus = statusFilter === 'All' || getWineStatus(wine) === statusFilter;
+      // An issue view answers a question the dashboard asked ("which bottles
+      // have no price?"). Persisted category/status/pocket filters from an
+      // earlier visit would silently hide part of that answer, so they are
+      // bypassed here - the search box still applies.
+      const matchesCategory = presetIssue !== null || categoryFilter === 'All' || wine.category === categoryFilter;
+      const matchesStatus = presetIssue !== null || statusFilter === 'All' || getWineStatus(wine) === statusFilter;
       const normalizedWineSubcellar = normalizeSubcellar(wine.subcellar);
       const matchesSubcellar =
+        presetIssue !== null ||
         subcellarFilter === 'All' ||
         (subcellarFilter === MAIN_CELLAR_FILTER
           ? normalizedWineSubcellar.length === 0
@@ -314,11 +383,11 @@ export const Inventory: React.FC<InventoryProps> = ({
       return matchesSearch && matchesCategory && matchesStatus && matchesSubcellar;
     }).sort((a, b) => {
       if (sort === 'vintage-desc') return b.vintage - a.vintage || a.name.localeCompare(b.name, 'de');
-      if (sort === 'value-desc') return (b.market_price ?? b.purchase_price) - (a.market_price ?? a.purchase_price) || a.name.localeCompare(b.name, 'de');
+      if (sort === 'value-desc') return getBottleUnitValue(b) - getBottleUnitValue(a) || a.name.localeCompare(b.name, 'de');
       if (sort === 'quantity-desc') return b.quantity - a.quantity || a.name.localeCompare(b.name, 'de');
       return a.name.localeCompare(b.name, 'de');
     });
-  }, [wines, search, categoryFilter, statusFilter, subcellarFilter, wishlistOnly, presetView, sort]);
+  }, [wines, search, categoryFilter, statusFilter, subcellarFilter, wishlistOnly, presetView, presetIssue, matchesIssue, sort]);
 
   const groupedWines = useMemo(() => {
     const groups = new Map<string, Wine[]>();
@@ -503,7 +572,7 @@ Regeln:
     setDropTargetPocketId(null);
   };
 
-  const showPocketDashboard = !wishlistOnly && !presetView && subcellarFilter === 'All';
+  const showPocketDashboard = !wishlistOnly && !presetView && !presetIssue && subcellarFilter === 'All';
   const allPocketBottleCount = pocketSummaries.find((item) => item.id === 'All')?.bottleCount ?? 0;
   const pocketDashboardEntries = pocketSummaries.filter((item) => item.id !== 'All');
 
@@ -553,6 +622,19 @@ Regeln:
         </div>
       </header>
 
+      {feedback && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-sage/30 bg-sage-light px-4 py-3 text-sm text-sage">
+          <span>{feedback}</span>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="text-[10px] font-black uppercase tracking-[0.14em]"
+          >
+            Schließen
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row gap-4 p-4 bg-white border-2 border-burgundy/5 rounded-[2rem] shadow-premium">
         <div className="flex-1 relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
@@ -562,7 +644,15 @@ Regeln:
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <FilterSelect label="Kategorie" value={categoryFilter} onChange={setCategoryFilter} options={[{ label: 'Alle Kategorien', value: 'All' }, { label: 'Genuss', value: 'Genuss' }, { label: 'Investment', value: 'Investment' }, { label: 'Rarität', value: 'Rarität' }]} />
+          <FilterSelect
+            label="Kategorie"
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={[
+              { label: 'Alle Kategorien', value: 'All' as const },
+              ...WINE_CATEGORIES.map((category) => ({ label: category, value: category }))
+            ]}
+          />
           <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }]} />
           <FilterSelect label="Sortierung" value={sort} onChange={setSort} options={[{ label: 'Name A–Z', value: 'name-asc' }, { label: 'Neuester Jahrgang', value: 'vintage-desc' }, { label: 'Höchster Wert', value: 'value-desc' }, { label: 'Meiste Flaschen', value: 'quantity-desc' }]} />
         </div>
@@ -848,11 +938,34 @@ Regeln:
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-32 bg-white rounded-[3rem] border-2 border-dashed border-burgundy/10">
+        <div className="flex flex-col items-center justify-center py-32 bg-white rounded-[3rem] border-2 border-dashed border-burgundy/10 text-center px-6">
           <Search className="w-16 h-16 text-burgundy/10 mb-6" />
-          <p className="text-stone-gray max-w-sm mx-auto">Starten Sie Ihre Kollektion.</p>
+          <p className="text-stone-gray max-w-sm mx-auto">
+            {presetIssue || presetView || search || categoryFilter !== 'All' || statusFilter !== 'All'
+              ? 'Keine Weine passen zu dieser Auswahl.'
+              : 'Noch kein Wein im Keller. Leg den ersten an – scannen, recherchieren oder von Hand.'}
+          </p>
+          {!(presetIssue || presetView || search || categoryFilter !== 'All' || statusFilter !== 'All') && (
+            <button
+              onClick={() => setIsAiModalOpen(true)}
+              className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-burgundy px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-white shadow-premium transition-all hover:bg-burgundy-light"
+            >
+              <Plus className="h-4 w-4" /> Ersten Wein anlegen
+            </button>
+          )}
         </div>
       )}
+
+      <PurchaseDialog
+        open={isPurchaseOpen}
+        wines={wines}
+        onClose={() => setIsPurchaseOpen(false)}
+        onSaved={(message) => {
+          setIsPurchaseOpen(false);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+      />
 
       {/* Scanner */}
       <ScannerOverlay

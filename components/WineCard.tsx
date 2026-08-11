@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wine, WineStatus } from '../types.ts';
-import { getWineStatus, formatCurrency } from '../utils.ts';
+import { getBottleUnitValue, getWineStatus, formatCurrency, hasKnownPrice } from '../utils.ts';
 import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
 
@@ -171,8 +171,10 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
             </div>
           </div>
           <div className="flex flex-col gap-1 items-end">
-            <span className="text-[10px] font-black uppercase tracking-widest text-stone-gray">Einstand Ø</span>
-            <span className="text-sm font-bold text-charcoal">{formatCurrency(wine.purchase_price)}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-stone-gray">
+              {hasKnownPrice(wine) && wine.market_price ? 'Marktwert' : 'Einstand'}
+            </span>
+            <span className="text-sm font-bold text-charcoal">{formatCurrency(getBottleUnitValue(wine))}</span>
           </div>
           <div className="flex items-center gap-2 col-span-2 text-stone-gray">
             <Calendar className="w-4 h-4 text-gold" />

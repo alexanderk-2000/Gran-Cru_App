@@ -11,8 +11,16 @@ import {
   Wine as WineIcon
 } from 'lucide-react';
 import { OccasionInstance, Wine, WineStatus } from '../types.ts';
-import { formatCurrency, getWineFamily, getWineStatus, type WineFamily } from '../utils.ts';
+import {
+  formatCurrency,
+  getWineFamily,
+  getWinePositionValue,
+  getWineStatus,
+  hasKnownPrice,
+  type WineFamily
+} from '../utils.ts';
 import { storageService } from '../services/storage.ts';
+import { findLikelyDuplicates } from '../domain/wine/duplicateDetection.ts';
 
 interface RecommendationRow {
   wine: Wine;
@@ -33,19 +41,17 @@ const ratio = (value: number, total: number): number => (total <= 0 ? 0 : value 
 
 const toPercent = (value: number): string => `${Math.round(value * 100)}%`;
 
-const normalizeKey = (value: string): string =>
-  value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-
 const buildWindowText = (wine: Wine): string => `${wine.drink_start ?? '—'}–${wine.drink_end ?? '—'}`;
 
 const viewPath = (view: 'ready' | 'holding' | 'past' | 'red' | 'white' | 'sparkling' | 'fortified'): string =>
   `/inventory?view=${view}`;
+
+/**
+ * Alerts used to link to the unfiltered cellar list, leaving the user to find
+ * the affected bottles themselves. These land on a pre-filtered list instead.
+ */
+const issuePath = (issue: 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon'): string =>
+  `/inventory?issue=${issue}`;
 
 const familyLabel: Record<Exclude<WineFamily, 'unknown'>, string> = {
   red: 'Rot',
@@ -144,26 +150,10 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
   const overripeRiskTone =
     overripeRiskLabel === 'niedrig' ? 'text-sage' : overripeRiskLabel === 'mittel' ? 'text-gold-dim' : 'text-burgundy';
 
-  const pricedWineCount = useMemo(
-    () =>
-      inventory.filter((wine) => {
-        const market = typeof wine.market_price === 'number' && wine.market_price > 0;
-        const purchase = typeof wine.purchase_price === 'number' && wine.purchase_price > 0;
-        return market || purchase;
-      }).length,
-    [inventory]
-  );
+  const pricedWineCount = useMemo(() => inventory.filter(hasKnownPrice).length, [inventory]);
 
   const marketValue = useMemo(
-    () =>
-      inventory.reduce((sum, wine) => {
-        const qty = Math.max(0, wine.quantity || 0);
-        if (qty === 0) return sum;
-        const market = typeof wine.market_price === 'number' && wine.market_price > 0 ? wine.market_price : null;
-        const purchase = typeof wine.purchase_price === 'number' && wine.purchase_price > 0 ? wine.purchase_price : null;
-        const unit = market ?? purchase;
-        return unit ? sum + unit * qty : sum;
-      }, 0),
+    () => inventory.reduce((sum, wine) => sum + getWinePositionValue(wine), 0),
     [inventory]
   );
 
@@ -260,7 +250,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
         id: 'window-now',
         title: 'Trinkfenster erreicht',
         detail: `${enteringWindowBottles} Flaschen erreichen dieses Jahr ihr Fenster.`,
-        ctaLabel: 'Beheben',
+        ctaLabel: 'Anzeigen',
         to: viewPath('ready')
       });
     }
@@ -274,44 +264,46 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     if (endSoonBottles > 0) {
       rows.push({
         id: 'window-end',
-        title: 'Überreif in ≤ 12 Monaten',
-        detail: `${endSoonBottles} Flaschen nähern sich dem Fensterende.`,
-        ctaLabel: 'Beheben',
-        to: viewPath('past')
+        title: 'Fensterende in Sicht',
+        detail: `${endSoonBottles} Flaschen erreichen dieses oder nächstes Jahr das Fensterende.`,
+        ctaLabel: 'Anzeigen',
+        to: issuePath('ending-soon')
       });
     }
 
     const missingPriceBottles = inventory.reduce((sum, wine) => {
       const qty = Math.max(0, wine.quantity || 0);
       if (!qty) return sum;
-      const hasPrice =
-        (typeof wine.purchase_price === 'number' && wine.purchase_price > 0) ||
-        (typeof wine.market_price === 'number' && wine.market_price > 0);
-      return hasPrice ? sum : sum + qty;
+      return hasKnownPrice(wine) ? sum : sum + qty;
     }, 0);
     if (missingPriceBottles > 0) {
       rows.push({
         id: 'missing-price',
         title: 'Preis fehlt',
         detail: `${missingPriceBottles} Flaschen ohne Preisbasis.`,
-        ctaLabel: 'Beheben',
-        to: '/inventory'
+        ctaLabel: 'Anzeigen',
+        to: issuePath('missing-price')
       });
     }
 
-    const keyCount = new Map<string, number>();
+    // Uses the same detection as the import guard (domain/wine/duplicateDetection),
+    // so the dashboard cannot warn about pairs the import would have accepted.
+    const duplicateWineIds = new Set<string>();
     for (const wine of inventory) {
-      const key = `${normalizeKey(wine.producer || '')}::${normalizeKey(wine.name || '')}::${wine.vintage || 'nv'}`;
-      keyCount.set(key, (keyCount.get(key) || 0) + 1);
+      if (duplicateWineIds.has(wine.id)) continue;
+      const matches = findLikelyDuplicates(wine, inventory, { excludeId: wine.id });
+      if (matches.length > 0) {
+        duplicateWineIds.add(wine.id);
+        for (const match of matches) duplicateWineIds.add(match.id);
+      }
     }
-    const duplicateGroups = [...keyCount.values()].filter((count) => count > 1).length;
-    if (duplicateGroups > 0) {
+    if (duplicateWineIds.size > 0) {
       rows.push({
         id: 'duplicate',
-        title: 'Duplikat erkannt',
-        detail: `${duplicateGroups} doppelte Weinposition(en) erkannt.`,
-        ctaLabel: 'Beheben',
-        to: '/inventory'
+        title: 'Mögliche Dublette',
+        detail: `${duplicateWineIds.size} Weinpositionen sehen doppelt erfasst aus.`,
+        ctaLabel: 'Anzeigen',
+        to: issuePath('duplicates')
       });
     }
 
@@ -321,8 +313,8 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
         id: 'low-stock',
         title: 'Bestand niedrig',
         detail: `${lowStockWines} Wein(e) nur noch mit 1 Flasche.`,
-        ctaLabel: 'Beheben',
-        to: '/inventory'
+        ctaLabel: 'Anzeigen',
+        to: issuePath('low-stock')
       });
     }
 
@@ -373,11 +365,11 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
         <KpiCard icon={Layers3} label="Gesamtbestand (Flaschen)" value={`${totalBottles} Fl.`} />
         <KpiCard
           icon={ShoppingCart}
-          label="Marktwert"
+          label="Kellerwert"
           value={pricedWineCount > 0 ? formatCurrency(marketValue) : '—'}
-          subline={pricedWineCount > 0 ? undefined : 'Preise fehlen'}
+          subline={pricedWineCount > 0 ? 'Marktpreis, sonst Einstand' : 'Preise fehlen'}
         />
-        <KpiCard icon={CheckCircle2} label="Trinkbereit (nächste 90 Tage)" value={`${readyBottles} Fl.`} accent="text-sage" />
+        <KpiCard icon={CheckCircle2} label="Trinkbereit" value={`${readyBottles} Fl.`} accent="text-sage" />
         <KpiCard
           icon={AlertTriangle}
           label="Überreif-Risiko"
@@ -565,8 +557,8 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <h3 className="font-serif text-2xl text-charcoal">Letzte Aktivitäten</h3>
-          <p className="mt-1 text-sm text-stone-gray">Zuletzt hinzugefügt oder getrunken.</p>
+          <h3 className="font-serif text-2xl text-charcoal">Zuletzt getrunken</h3>
+          <p className="mt-1 text-sm text-stone-gray">Die letzten geöffneten Flaschen.</p>
           <div className="mt-4">
             {activitiesLoading ? (
               <p className="text-sm text-stone-gray">Aktivitäten werden geladen …</p>
@@ -635,11 +627,11 @@ const DashboardHeader = () => (
         Wein hinzufügen
       </Link>
       <Link
-        to="/inventory"
+        to="/inventory?action=purchase"
         className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-stone-700"
       >
         <ShoppingCart className="h-4 w-4" />
-        Einkauf erfassen
+        Nachkauf erfassen
       </Link>
     </div>
   </header>
