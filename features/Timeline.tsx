@@ -1,9 +1,18 @@
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Wine } from '../types.ts';
 
 export const Timeline: React.FC<{ wines: Wine[] }> = ({ wines }) => {
   const currentYear = new Date().getFullYear();
+
+  // A wine without both window years would render a bar at NaN pixels. It is
+  // listed separately instead of silently disappearing behind an invisible bar.
+  const cellarWines = wines.filter((wine) => !wine.wishlist);
+  const hasWindow = (wine: Wine): boolean =>
+    Number.isFinite(wine.drink_start) && Number.isFinite(wine.drink_end) && wine.drink_start <= wine.drink_end;
+  const winesWithWindow = cellarWines.filter(hasWindow);
+  const winesWithoutWindow = cellarWines.filter((wine) => !hasWindow(wine));
   const startYear = currentYear - 5;
   const endYear = currentYear + 35;
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
@@ -14,6 +23,18 @@ export const Timeline: React.FC<{ wines: Wine[] }> = ({ wines }) => {
         <h2 className="font-serif text-4xl font-bold text-charcoal">Reife-Horizont</h2>
         <p className="text-stone-gray font-medium tracking-wide">Dynamische Visualisierung der optimalen Trinkfenster Ihrer Weine.</p>
       </header>
+
+      {winesWithoutWindow.length > 0 && (
+        <div className="rounded-2xl border border-stone-200 bg-white px-5 py-4 text-sm text-stone-gray">
+          {winesWithoutWindow.length} Wein(e) ohne belastbares Trinkfenster erscheinen hier nicht:{' '}
+          {winesWithoutWindow.slice(0, 3).map((wine) => `${wine.vintage} ${wine.name}`).join(', ')}
+          {winesWithoutWindow.length > 3 ? ' …' : ''}
+          {'. '}
+          <Link to="/inventory?issue=no-window" className="font-bold text-burgundy">
+            Fenster ergänzen
+          </Link>
+        </div>
+      )}
 
       <div className="bg-white border border-burgundy/5 rounded-3xl overflow-hidden shadow-premium">
         <div className="overflow-x-auto p-8">
@@ -38,7 +59,7 @@ export const Timeline: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 
             {/* Wine Tracks */}
             <div className="space-y-6">
-              {wines.filter(w => !w.wishlist).map((wine) => {
+              {winesWithWindow.map((wine) => {
                 const startPos = Math.max(0, (wine.drink_start - startYear) * 80);
                 const width = Math.max(20, (wine.drink_end - wine.drink_start + 1) * 80);
 

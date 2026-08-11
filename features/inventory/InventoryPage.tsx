@@ -25,13 +25,17 @@ import { loadInventoryViewPreferences, saveInventoryViewPreferences, type Invent
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
 
-type IssueFilter = 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon';
+type IssueFilter = 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon' | 'no-window';
 
 const ISSUE_META: Record<IssueFilter, { title: string; subtitle: string }> = {
   'missing-price': { title: 'Ohne Preis', subtitle: 'Weine ohne Einstands- oder Marktpreis.' },
   duplicates: { title: 'Mögliche Dubletten', subtitle: 'Positionen, die doppelt erfasst sein könnten.' },
   'low-stock': { title: 'Letzte Flasche', subtitle: 'Weine mit nur noch einer Flasche im Keller.' },
-  'ending-soon': { title: 'Fensterende in Sicht', subtitle: 'Trinkfenster endet dieses oder nächstes Jahr.' }
+  'ending-soon': { title: 'Fensterende in Sicht', subtitle: 'Trinkfenster endet dieses oder nächstes Jahr.' },
+  'no-window': {
+    title: 'Ohne Trinkfenster',
+    subtitle: 'Weine, für die sich die Reife nicht bestimmen lässt – Start-, End- oder Peak-Jahr ergänzen.'
+  }
 };
 
 interface InventoryProps {
@@ -88,7 +92,7 @@ export const Inventory: React.FC<InventoryProps> = ({
   // on exactly the affected bottles instead of the unfiltered cellar list.
   const presetIssue = useMemo<IssueFilter | null>(() => {
     const issue = new URLSearchParams(location.search).get('issue');
-    const allowed = new Set<IssueFilter>(['missing-price', 'duplicates', 'low-stock', 'ending-soon']);
+    const allowed = new Set<IssueFilter>(['missing-price', 'duplicates', 'low-stock', 'ending-soon', 'no-window']);
     if (issue && allowed.has(issue as IssueFilter)) return issue as IssueFilter;
     return null;
   }, [location.search]);
@@ -345,6 +349,8 @@ export const Inventory: React.FC<InventoryProps> = ({
           return (wine.quantity || 0) > 0 && (wine.quantity || 0) <= 1;
         case 'ending-soon':
           return typeof wine.drink_end === 'number' && wine.drink_end <= currentYear + 1;
+        case 'no-window':
+          return getWineStatus(wine) === WineStatus.UNKNOWN;
         default:
           return true;
       }
@@ -653,7 +659,7 @@ Regeln:
               ...WINE_CATEGORIES.map((category) => ({ label: category, value: category }))
             ]}
           />
-          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }]} />
+          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }, { label: 'Kein Fenster', value: WineStatus.UNKNOWN }]} />
           <FilterSelect label="Sortierung" value={sort} onChange={setSort} options={[{ label: 'Name A–Z', value: 'name-asc' }, { label: 'Neuester Jahrgang', value: 'vintage-desc' }, { label: 'Höchster Wert', value: 'value-desc' }, { label: 'Meiste Flaschen', value: 'quantity-desc' }]} />
         </div>
       </div>

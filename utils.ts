@@ -1,13 +1,16 @@
 
 
 import { Wine, WineStatus, PortfolioStats } from './types.ts';
+import { getWineMaturity } from './domain/wine/drinkability.ts';
 
-export const getWineStatus = (wine: Wine): WineStatus => {
-  const currentYear = new Date().getFullYear();
-  if (currentYear < wine.drink_start) return WineStatus.HOLD;
-  if (currentYear > wine.drink_end) return WineStatus.PAST_PEAK;
-  return WineStatus.READY;
-};
+/**
+ * The app's single maturity verdict, coarsened to the three-plus-one buckets
+ * lists and badges use. Delegates to the drinkability model in
+ * `domain/wine/drinkability.ts` - this used to be an independent
+ * `currentYear`-in-window comparison, which is why the same bottle could read
+ * differently in the cellar list than on its own page.
+ */
+export const getWineStatus = (wine: Wine): WineStatus => getWineMaturity(wine).status;
 
 /**
  * The value of one bottle: current market price where known, purchase price
@@ -137,6 +140,10 @@ export const extractVintageFromQuery = (query: string): number | null => {
 export {
   calculateDrinkability,
   evaluateWineDrinkability,
+  evaluateStoredWine,
+  getWineMaturity,
+  DRINKABILITY_STATUS_LABELS,
+  type WineMaturity,
   type DrinkabilityResult,
   type DrinkabilityStatus,
   type DrinkabilityUncertainty,

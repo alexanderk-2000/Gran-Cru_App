@@ -1,4 +1,4 @@
-import { Wine } from '../../types.ts';
+import { Wine, WineStatus } from '../../types.ts';
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
@@ -240,12 +240,88 @@ export interface DrinkabilityResult {
   wu: number;
 }
 
+export const DRINKABILITY_STATUS_LABELS: Record<DrinkabilityStatus, string> = {
+  too_early: 'Zu früh',
+  approaching: 'Anlaufphase',
+  drinking_window: 'Trinkreif',
+  peak: 'Optimal',
+  past_peak: 'Über Fenster',
+  unknown: 'Unklar',
+};
+
 const mapWineTypeToOenologyType = (wineType: Wine['wine_type']): OenologyWineType => {
   if (wineType === 'Rot') return 'red';
   if (wineType === 'Weiß') return 'white';
   if (wineType === 'Rosé') return 'rose';
   if (wineType === 'Schaumwein') return 'sparkling';
   return null;
+};
+
+/**
+ * Runs the drinkability model for a stored wine.
+ *
+ * Extracted so every screen shares one maturity verdict. The app used to have
+ * two: a naive `currentYear` in/out comparison drove the cellar list, the wine
+ * cards, the dashboard KPIs and the timeline, while this model (Gauss curve,
+ * structure-derived longevity, uncertainty) only drove the wine detail and the
+ * occasion planner - so the same bottle could read "Trinkreif" in the list and
+ * "zu früh" on its own page.
+ */
+export const evaluateStoredWine = (
+  wine: Wine,
+  todayYear: number = new Date().getFullYear()
+): OenologyDrinkabilityOutput =>
+  evaluateWineDrinkability({
+    today_year: todayYear,
+    wine: {
+      vintage: isFiniteNumber(wine.vintage) ? wine.vintage : null,
+      drink_start: isFiniteNumber(wine.drink_start) ? wine.drink_start : null,
+      peak_year: isFiniteNumber(wine.peak_year) ? wine.peak_year : null,
+      drink_end: isFiniteNumber(wine.drink_end) ? wine.drink_end : null,
+      wine_type: mapWineTypeToOenologyType(wine.wine_type),
+      structure: {
+        acidity: isFiniteNumber(wine.structure?.acidity) ? wine.structure?.acidity ?? null : null,
+        tannin: isFiniteNumber(wine.structure?.tannin) ? wine.structure?.tannin ?? null : null,
+        body: isFiniteNumber(wine.structure?.body) ? wine.structure?.body ?? null : null,
+        sweetness: isFiniteNumber(wine.structure?.sweetness) ? wine.structure?.sweetness ?? null : null,
+        oak: isFiniteNumber(wine.structure?.oak) ? wine.structure?.oak ?? null : null,
+      },
+    },
+  });
+
+export interface WineMaturity {
+  /** Coarse bucket used by filters, badges and KPIs. */
+  status: WineStatus;
+  /** The model's own finer verdict. */
+  detail: DrinkabilityStatus;
+  /** 0-100; how well the wine sits in its window right now. */
+  index: number;
+  uncertainty: DrinkabilityUncertainty;
+  label: string;
+  explanation: string;
+}
+
+const STATUS_BUCKET: Record<DrinkabilityStatus, WineStatus> = {
+  too_early: WineStatus.HOLD,
+  approaching: WineStatus.READY,
+  drinking_window: WineStatus.READY,
+  peak: WineStatus.READY,
+  past_peak: WineStatus.PAST_PEAK,
+  // No usable window at all. Previously this silently counted as "Trinkreif",
+  // because comparing against an undefined year makes every comparison false.
+  unknown: WineStatus.UNKNOWN,
+};
+
+export const getWineMaturity = (wine: Wine, todayYear?: number): WineMaturity => {
+  const evaluation = evaluateStoredWine(wine, todayYear);
+  return {
+    status: STATUS_BUCKET[evaluation.status],
+    detail: evaluation.status,
+    index: evaluation.drinkability_index,
+    uncertainty: evaluation.uncertainty,
+    label: DRINKABILITY_STATUS_LABELS[evaluation.status],
+    explanation: evaluation.explanation,
+  };
 };
 
 export const calculateDrinkability = (wine: Wine): DrinkabilityResult => {
@@ -269,14 +345,7 @@ export const calculateDrinkability = (wine: Wine): DrinkabilityResult => {
     },
   });
 
-  const statusLabelMap: Record<DrinkabilityStatus, string> = {
-    too_early: 'Zu früh',
-    approaching: 'Anlaufphase',
-    drinking_window: 'Trinkreif',
-    peak: 'Optimal',
-    past_peak: 'Über Fenster',
-    unknown: 'Unbekannt',
-  };
+  const statusLabelMap = DRINKABILITY_STATUS_LABELS;
 
   const windowUsed = evaluation.window_used;
   const fallbackWu = evaluation.status === 'past_peak' ? 1 : evaluation.status === 'too_early' ? 0 : 0;

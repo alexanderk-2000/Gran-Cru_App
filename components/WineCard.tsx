@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wine, WineStatus } from '../types.ts';
-import { getBottleUnitValue, getWineStatus, formatCurrency, hasKnownPrice } from '../utils.ts';
+import { getBottleUnitValue, getWineMaturity, formatCurrency, hasKnownPrice } from '../utils.ts';
 import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
 
@@ -15,7 +15,8 @@ interface WineCardProps {
 }
 
 export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onUpdate }) => {
-  const status = getWineStatus(wine);
+  const maturity = getWineMaturity(wine);
+  const status = maturity.status;
   const isReady = status === WineStatus.READY;
   const isEmpty = wine.quantity === 0;
   const [isAdjusting, setIsAdjusting] = useState(false);
@@ -80,14 +81,28 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onUpdate
     }
   };
 
+  // The badge shows the model's finer verdict ("Optimal", "Anlaufphase") in the
+  // colour of its coarse bucket, plus a marker when the verdict rests on thin
+  // data - a wine without a drinking window is no longer silently "Trinkreif".
   const getStatusBadge = () => {
+    const label = maturity.label;
+    const title = maturity.explanation;
+    const base = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tighter border';
+
     switch (status) {
       case WineStatus.READY:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] bg-sage-light text-sage border border-sage font-bold uppercase tracking-tighter">Trinkreif</span>;
+        return <span title={title} className={`${base} bg-sage-light text-sage border-sage`}>{label}</span>;
       case WineStatus.HOLD:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] bg-alabaster text-gold border border-gold font-bold uppercase tracking-tighter">Halten</span>;
+        return <span title={title} className={`${base} bg-alabaster text-gold border-gold`}>{label}</span>;
       case WineStatus.PAST_PEAK:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-50 text-red-700 border border-red-200 font-bold uppercase tracking-tighter">Über Peak</span>;
+        return <span title={title} className={`${base} bg-red-50 text-red-700 border-red-200`}>{label}</span>;
+      case WineStatus.UNKNOWN:
+      default:
+        return (
+          <span title={title} className={`${base} bg-stone-100 text-stone-500 border-stone-300`}>
+            Kein Fenster
+          </span>
+        );
     }
   };
 

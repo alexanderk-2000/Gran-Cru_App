@@ -50,7 +50,7 @@ const viewPath = (view: 'ready' | 'holding' | 'past' | 'red' | 'white' | 'sparkl
  * Alerts used to link to the unfiltered cellar list, leaving the user to find
  * the affected bottles themselves. These land on a pre-filtered list instead.
  */
-const issuePath = (issue: 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon'): string =>
+const issuePath = (issue: 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon' | 'no-window'): string =>
   `/inventory?issue=${issue}`;
 
 const familyLabel: Record<Exclude<WineFamily, 'unknown'>, string> = {
@@ -121,29 +121,35 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     [inventory]
   );
 
-  const readyBottles = useMemo(
-    () =>
-      inventory.reduce((sum, wine) => {
-        const qty = Math.max(0, wine.quantity || 0);
-        if (qty === 0) return sum;
-        const status = getWineStatus(wine);
-        const entersThisYear = typeof wine.drink_start === 'number' && wine.drink_start === currentYear;
-        return status === WineStatus.READY || entersThisYear ? sum + qty : sum;
-      }, 0),
-    [inventory, currentYear]
-  );
+  // Counted per bucket instead of deriving "holding" as a remainder: with the
+  // shared maturity model a wine can now also be "Kein Fenster", which the old
+  // subtraction would have silently filed under "Lagernd".
+  const maturityBottles = useMemo(() => {
+    const buckets = { ready: 0, holding: 0, pastPeak: 0, unknown: 0 };
+    for (const wine of inventory) {
+      const qty = Math.max(0, wine.quantity || 0);
+      if (qty === 0) continue;
+      switch (getWineStatus(wine)) {
+        case WineStatus.READY:
+          buckets.ready += qty;
+          break;
+        case WineStatus.HOLD:
+          buckets.holding += qty;
+          break;
+        case WineStatus.PAST_PEAK:
+          buckets.pastPeak += qty;
+          break;
+        default:
+          buckets.unknown += qty;
+      }
+    }
+    return buckets;
+  }, [inventory]);
 
-  const pastPeakBottles = useMemo(
-    () =>
-      inventory.reduce((sum, wine) => {
-        const qty = Math.max(0, wine.quantity || 0);
-        if (qty === 0) return sum;
-        return getWineStatus(wine) === WineStatus.PAST_PEAK ? sum + qty : sum;
-      }, 0),
-    [inventory]
-  );
-
-  const holdingBottles = Math.max(0, totalBottles - readyBottles - pastPeakBottles);
+  const readyBottles = maturityBottles.ready;
+  const pastPeakBottles = maturityBottles.pastPeak;
+  const holdingBottles = maturityBottles.holding;
+  const unknownWindowBottles = maturityBottles.unknown;
 
   const overripeShare = ratio(pastPeakBottles, Math.max(1, totalBottles));
   const overripeRiskLabel = overripeShare < 0.1 ? 'niedrig' : overripeShare < 0.25 ? 'mittel' : 'hoch';
@@ -307,6 +313,16 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
       });
     }
 
+    if (unknownWindowBottles > 0) {
+      rows.push({
+        id: 'no-window',
+        title: 'Trinkfenster fehlt',
+        detail: `${unknownWindowBottles} Flaschen haben kein belastbares Trinkfenster.`,
+        ctaLabel: 'Anzeigen',
+        to: issuePath('no-window')
+      });
+    }
+
     const lowStockWines = inventory.filter((wine) => (wine.quantity || 0) > 0 && (wine.quantity || 0) <= 1).length;
     if (lowStockWines > 0) {
       rows.push({
@@ -329,7 +345,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     }
 
     return rows.slice(0, 6);
-  }, [inventory, currentYear]);
+  }, [inventory, currentYear, unknownWindowBottles]);
 
   if (inventory.length === 0) {
     return (
@@ -355,7 +371,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     );
   }
 
-  const maturityTotal = Math.max(1, readyBottles + holdingBottles + pastPeakBottles);
+  const maturityTotal = Math.max(1, readyBottles + holdingBottles + pastPeakBottles + unknownWindowBottles);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -418,6 +434,16 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
             <SegmentLinkCard to={viewPath('holding')} label="Lagernd" value={`${holdingBottles} Fl.`} tone="text-gold-dim" share={toPercent(ratio(holdingBottles, maturityTotal))} />
             <SegmentLinkCard to={viewPath('past')} label="Überreif" value={`${pastPeakBottles} Fl.`} tone="text-burgundy" share={toPercent(ratio(pastPeakBottles, maturityTotal))} />
           </div>
+
+          {unknownWindowBottles > 0 ? (
+            <p className="mt-4 text-xs text-stone-500">
+              {unknownWindowBottles} Flaschen ohne belastbares Trinkfenster sind hier nicht eingeordnet - sie
+              zählten früher stillschweigend als trinkbereit.{' '}
+              <Link to={issuePath('no-window')} className="font-bold text-burgundy">
+                Anzeigen
+              </Link>
+            </p>
+          ) : null}
         </article>
 
         <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
