@@ -4,11 +4,10 @@ import { useLocation } from 'react-router-dom';
 import { Wine, Category, WineStatus } from '../../types.ts';
 import { WineCard } from '../../components/WineCard.tsx';
 import { ScannerOverlay } from '../../components/ScannerOverlay.tsx';
-import { ScanResultDialog } from '../../components/ScanResultDialog.tsx';
 import { PurchaseDialog } from '../../components/PurchaseDialog.tsx';
+import { AddWineDialog, type AddWineSeed } from '../../components/AddWineDialog.tsx';
 import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
-import type { ScanResult } from '../../services/scanner.ts';
-import { Search, Plus, X, Loader2, Wand2, Upload, Copy, Check, ScanBarcode } from 'lucide-react';
+import { Search, Plus, X, Loader2, Upload, ScanBarcode } from 'lucide-react';
 import { getBottleUnitValue, getWineFamily, getWineStatus, hasKnownPrice } from '../../utils.ts';
 import { storageService } from '../../services/storage.ts';
 import { WINE_CATEGORIES } from '../../constants.ts';
@@ -59,11 +58,11 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [preferencesHydrated, setPreferencesHydrated] = useState(false);
 
   // Add wine modal states
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-  const [aiInput, setAiInput] = useState('');
-  const [generatedPrompt, setGeneratedPrompt] = useState('');
-  const [promptCopied, setPromptCopied] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addSeed, setAddSeed] = useState<AddWineSeed | null>(null);
   const [isJsonImporting, setIsJsonImporting] = useState(false);
+  const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [jsonCodeInput, setJsonCodeInput] = useState('');
   const [targetSubcellar, setTargetSubcellar] = useState('');
   const [storedPocketNames, setStoredPocketNames] = useState<string[]>([]);
@@ -77,8 +76,6 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [isScanResultOpen, setIsScanResultOpen] = useState(false);
   const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const presetView = useMemo(() => {
@@ -236,6 +233,7 @@ export const Inventory: React.FC<InventoryProps> = ({
 
   const importWinesFromJsonText = async (jsonText: string) => {
     setIsJsonImporting(true);
+    setImportError(null);
     try {
       const parsed = parseJsonInput(jsonText);
       const candidates = getImportCandidates(parsed);
@@ -285,24 +283,18 @@ export const Inventory: React.FC<InventoryProps> = ({
       }
 
       await onWineUpdate();
-      setIsAiModalOpen(false);
-      setAiInput('');
+      setIsJsonModalOpen(false);
       setJsonCodeInput('');
-      setGeneratedPrompt('');
-      setPromptCopied(false);
 
-      if (failed > 0 || invalid > 0 || duplicateSkipped > 0) {
-        const parts = [`${saved} Wein(e) importiert`];
-        if (invalid > 0) parts.push(`${invalid} Eintrag/Einträge waren ungültig`);
-        if (duplicateSkipped > 0) parts.push(`${duplicateSkipped} Eintrag/Einträge übersprungen (bereits im Keller)`);
-        if (failed > 0) parts.push(`${failed} Eintrag/Einträge konnten nicht gespeichert werden`);
-        alert(`${parts.join(', ')}.`);
-      } else {
-        alert(`${saved} Wein(e) erfolgreich importiert und global verfügbar.`);
-      }
+      const parts = [`${saved} Wein(e) importiert`];
+      if (invalid > 0) parts.push(`${invalid} ungültig`);
+      if (duplicateSkipped > 0) parts.push(`${duplicateSkipped} übersprungen (bereits im Keller)`);
+      if (failed > 0) parts.push(`${failed} nicht speicherbar`);
+      setFeedback(`${parts.join(' · ')}.`);
     } catch (error: any) {
       console.error('JSON import failed:', error);
-      alert(`JSON-Import fehlgeschlagen: ${error?.message || 'Ungültige Datei.'}\n\nTipp: Nur JSON einfügen oder den generierten Prompt nutzen und die Antwort 1:1 kopieren.`);
+      setFeedback(null);
+      setImportError(error?.message || 'Die Datei enthält kein gültiges JSON.');
     } finally {
       setIsJsonImporting(false);
     }
@@ -419,90 +411,6 @@ export const Inventory: React.FC<InventoryProps> = ({
       }));
   }, [filteredWines]);
 
-  const buildPromptForWine = (wineQuery: string): string => {
-    const target = wineQuery.trim();
-    return `Du bist ein Wein-Daten-Assistent. Erzeuge nur valides JSON ohne Markdown und ohne Zusatztext.
-
-Suche nach diesem Wein:
-"${target}"
-
-Liefere exakt dieses Schema:
-{
-  "name": string,
-  "producer": string|null,
-  "vintage": number|null,
-  "country": string|null,
-  "region": string|null,
-  "appellation": string|null,
-  "vineyard": string|null,
-  "wine_type": string|null,
-  "format": string|null,
-  "quantity": number,
-  "purchase_price": number,
-  "market_price": number|null,
-  "drink_start": number|null,
-  "peak_year": number|null,
-  "drink_end": number|null,
-  "alcohol_percent": number|null,
-  "closure_type": string|null,
-  "grapes": [{"name": string, "percentage": number|null}],
-  "aromas": [{"tag": string, "intensity": number|null}],
-  "structure": {"acidity": number|null, "tannin": number|null, "body": number|null, "sweetness": number|null, "oak": number|null},
-  "pairings": [{"item": string, "category": string|null, "note": string|null}],
-  "scores": [{"critic": string, "score": number|string, "year": number|null}],
-  "short_description_de": string|null,
-  "sources": [{"title": string, "url": string}],
-  "confidence": "high"|"medium"|"low",
-  "missing_fields": string[]
-}
-
-Regeln:
-- Keine Felder außerhalb des Schemas.
-- Fehlende Werte als null setzen.
-- "quantity" standardmäßig 1.
-- Zahlen als JSON-Zahl ausgeben (nicht als String).
-- Antwortsprache für Texte: Deutsch.
-`;
-  };
-
-  const handleGeneratePrompt = () => {
-    const query = aiInput.trim();
-    if (!query) return;
-    setGeneratedPrompt(buildPromptForWine(query));
-    setPromptCopied(false);
-  };
-
-  const handleCopyPrompt = async () => {
-    if (!generatedPrompt) return;
-    try {
-      await navigator.clipboard.writeText(generatedPrompt);
-      setPromptCopied(true);
-      setTimeout(() => setPromptCopied(false), 1600);
-    } catch {
-      alert('Prompt konnte nicht kopiert werden.');
-    }
-  };
-
-  const manualAdd = async () => {
-    const currentYear = new Date().getFullYear();
-    const normalizedTargetSubcellar = normalizeSubcellar(targetSubcellar);
-    await storageService.saveWine({
-      name: 'Neuer Wein',
-      vintage: currentYear,
-      region: 'Unbekannt',
-      category: 'Daily Drinker',
-      quantity: 1,
-      purchase_price: 0,
-      format: '0.75L',
-      drink_start: currentYear,
-      drink_end: currentYear + 10,
-      subcellar: normalizedTargetSubcellar || undefined,
-      wishlist: wishlistOnly
-    });
-    onWineUpdate();
-    setIsAiModalOpen(false);
-  };
-
   const createPocket = async () => {
     const normalizedName = normalizeSubcellar(newPocketName);
     if (!normalizedName || isPocketSaving) return;
@@ -578,6 +486,10 @@ Regeln:
     setDropTargetPocketId(null);
   };
 
+  // Whatever pocket the user is currently looking at pre-fills new entries.
+  const activePocketName =
+    subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter;
+
   const showPocketDashboard = !wishlistOnly && !presetView && !presetIssue && subcellarFilter === 'All';
   const allPocketBottleCount = pocketSummaries.find((item) => item.id === 'All')?.bottleCount ?? 0;
   const pocketDashboardEntries = pocketSummaries.filter((item) => item.id !== 'All');
@@ -602,12 +514,12 @@ Regeln:
             className="hidden"
           />
           <button
-            onClick={openJsonImportPicker}
+            onClick={() => setIsJsonModalOpen(true)}
             disabled={isJsonImporting}
             className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 disabled:opacity-50 uppercase tracking-wider text-[10px]"
           >
             {isJsonImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            JSON IMPORT
+            IMPORTIEREN
           </button>
           <button
             onClick={() => setIsScannerOpen(true)}
@@ -617,13 +529,12 @@ Regeln:
           </button>
           <button
             onClick={() => {
-              const mappedFromFilter = subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter;
-              setTargetSubcellar(mappedFromFilter);
-              setIsAiModalOpen(true);
+              setAddSeed(null);
+              setIsAddOpen(true);
             }}
             className="flex items-center gap-2 px-6 py-3.5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl transition-all shadow-premium uppercase tracking-wider text-[10px]"
           >
-            <Plus className="w-4 h-4" /> NEU ANLEGEN
+            <Plus className="w-4 h-4" /> WEIN HINZUFÜGEN
           </button>
         </div>
       </header>
@@ -772,116 +683,74 @@ Regeln:
         </div>
       )}
 
-      {isAiModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-burgundy/5 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-burgundy text-white rounded-2xl shadow-burgundy-glow"><Wand2 className="w-6 h-6" /></div>
-                <h3 className="font-serif text-2xl font-bold text-charcoal">Prompt für Weinrecherche</h3>
+      {isJsonModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[2rem] border border-burgundy/10 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h3 className="font-serif text-2xl text-charcoal">Daten importieren</h3>
+                <p className="text-sm text-stone-gray">
+                  Für Umzüge aus anderen Listen. Für einzelne Weine ist „Wein hinzufügen“ der schnellere Weg.
+                </p>
               </div>
-              <button onClick={() => setIsAiModalOpen(false)} className="p-2"><X /></button>
+              <button
+                type="button"
+                onClick={() => setIsJsonModalOpen(false)}
+                className="rounded-full p-2 text-stone-gray hover:bg-alabaster hover:text-charcoal"
+                aria-label="Schließen"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
-            <div className="p-10 space-y-10 overflow-y-auto">
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
-                    1) Wein eingeben
-                  </p>
-                  <div className="flex gap-4">
-                    <input
-                      type="text"
-                      placeholder="Weinname & Jahrgang..."
-                      value={aiInput}
-                      onChange={(e) => setAiInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleGeneratePrompt()}
-                      className="flex-1 px-6 py-4 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-serif"
-                    />
-                    <button
-                      onClick={handleGeneratePrompt}
-                      disabled={!aiInput.trim()}
-                      className="px-8 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]"
-                    >
-                      PROMPT ERSTELLEN
-                    </button>
-                  </div>
-                </div>
 
-                {generatedPrompt ? (
-                  <div className="space-y-3 rounded-2xl border border-burgundy/10 bg-alabaster/40 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
-                        2) Prompt kopieren
-                      </p>
-                      <button
-                        onClick={handleCopyPrompt}
-                        className="inline-flex items-center gap-2 rounded-xl border border-burgundy/25 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-burgundy hover:bg-burgundy/5"
-                      >
-                        {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                        {promptCopied ? 'Kopiert' : 'Kopieren'}
-                      </button>
-                    </div>
-                    <textarea
-                      readOnly
-                      value={generatedPrompt}
-                      rows={12}
-                      className="w-full px-4 py-3 bg-white border-2 border-burgundy/10 rounded-2xl font-mono text-xs text-charcoal"
-                    />
-                    <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-600">
-                      <p className="font-semibold text-stone-700">So gehst du vor:</p>
-                      <ol className="mt-2 list-decimal pl-4 space-y-1">
-                        <li>Prompt in ChatGPT oder ein anderes Tool einfügen.</li>
-                        <li>Nur JSON als Antwort erzeugen lassen.</li>
-                        <li>JSON unten einfügen und mit „JSON-Code importieren“ übernehmen.</li>
-                      </ol>
-                    </div>
-                  </div>
-                ) : null}
+            <label htmlFor="json-import-target" className="mb-1 block text-[10px] font-black uppercase tracking-widest text-stone-gray">
+              Pocket für den Import (optional)
+            </label>
+            <input
+              id="json-import-target"
+              list="subcellar-options"
+              type="text"
+              value={targetSubcellar}
+              onChange={(e) => setTargetSubcellar(e.target.value)}
+              placeholder={`${MAIN_CELLAR_LABEL} wenn leer`}
+              className="mb-4 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm focus:border-burgundy/30 focus:outline-none"
+            />
+            <datalist id="subcellar-options">
+              {availableSubcellars.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
 
-                <div className="flex items-center justify-center gap-4">
-                  <button onClick={manualAdd} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest">Manuell anlegen</button>
-                  <button onClick={openJsonImportPicker} disabled={isJsonImporting} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest disabled:opacity-50">
-                    {isJsonImporting ? 'Import läuft...' : 'JSON importieren'}
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest text-center">
-                    Unterkeller (optional)
-                  </p>
-                  <input
-                    list="subcellar-options"
-                    type="text"
-                    value={targetSubcellar}
-                    onChange={(e) => setTargetSubcellar(e.target.value)}
-                    placeholder={`${MAIN_CELLAR_LABEL} wenn leer`}
-                    className="w-full px-4 py-3 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 text-sm text-charcoal"
-                  />
-                  <datalist id="subcellar-options">
-                    {availableSubcellars.map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </div>
-                <div className="pt-2 border-t border-alabaster/80 space-y-3">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest text-center">
-                    Oder JSON-Code einfügen
-                  </p>
-                  <textarea
-                    value={jsonCodeInput}
-                    onChange={(e) => setJsonCodeInput(e.target.value)}
-                    placeholder='{"name":"...","vintage":2024,...} oder {"success":true,"data":{...}}'
-                    rows={6}
-                    className="w-full px-4 py-3 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-mono text-xs text-charcoal"
-                  />
-                  <button
-                    onClick={handleJsonCodeImport}
-                    disabled={isJsonImporting || !jsonCodeInput.trim()}
-                    className="w-full py-3 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]"
-                  >
-                    {isJsonImporting ? 'Import läuft...' : 'JSON-Code importieren'}
-                  </button>
-                </div>
-              </div>
+            <textarea
+              value={jsonCodeInput}
+              onChange={(e) => setJsonCodeInput(e.target.value)}
+              placeholder='{"name":"...","vintage":2024,...} oder [{...},{...}]'
+              rows={6}
+              aria-label="JSON-Daten"
+              className="w-full rounded-xl border border-stone-200 px-3 py-2.5 font-mono text-xs focus:border-burgundy/30 focus:outline-none"
+            />
+
+            {importError && (
+              <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{importError}</p>
+            )}
+
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={openJsonImportPicker}
+                disabled={isJsonImporting}
+                className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
+              >
+                Datei wählen
+              </button>
+              <button
+                type="button"
+                onClick={handleJsonCodeImport}
+                disabled={isJsonImporting || !jsonCodeInput.trim()}
+                className="flex-1 rounded-xl bg-burgundy px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light disabled:opacity-40"
+              >
+                {isJsonImporting ? 'Import läuft…' : 'Importieren'}
+              </button>
             </div>
           </div>
         </div>
@@ -957,7 +826,7 @@ Regeln:
           </p>
           {!(presetIssue || presetView || search || categoryFilter !== 'All' || statusFilter !== 'All') && (
             <button
-              onClick={() => setIsAiModalOpen(true)}
+              onClick={() => setIsAddOpen(true)}
               className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-burgundy px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-white shadow-premium transition-all hover:bg-burgundy-light"
             >
               <Plus className="h-4 w-4" /> Ersten Wein anlegen
@@ -989,24 +858,43 @@ Regeln:
         }}
       />
 
-      {/* Scanner */}
+      <AddWineDialog
+        open={isAddOpen}
+        wishlist={wishlistOnly}
+        defaultSubcellar={activePocketName}
+        subcellarOptions={availableSubcellars}
+        existingWines={wines}
+        seed={addSeed}
+        onClose={() => {
+          setIsAddOpen(false);
+          setAddSeed(null);
+        }}
+        onSaved={(message) => {
+          setIsAddOpen(false);
+          setAddSeed(null);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+        onRequestScan={() => {
+          setIsAddOpen(false);
+          setIsScannerOpen(true);
+        }}
+      />
+
+      {/* A scan does not open a form of its own any more - it seeds the one above. */}
       <ScannerOverlay
         open={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onResult={(result) => {
           setIsScannerOpen(false);
-          setScanResult(result);
-          setIsScanResultOpen(true);
+          setAddSeed({
+            name: result.name || (result.type === 'label' ? result.raw : ''),
+            producer: result.producer,
+            vintage: result.vintage,
+            barcode: result.type === 'barcode' ? result.raw : undefined
+          });
+          setIsAddOpen(true);
         }}
-      />
-      <ScanResultDialog
-        open={isScanResultOpen}
-        result={scanResult}
-        onClose={() => { setIsScanResultOpen(false); setScanResult(null); }}
-        onSaved={() => { setIsScanResultOpen(false); setScanResult(null); onWineUpdate(); }}
-        wishlist={wishlistOnly}
-        targetSubcellar={subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter}
-        existingWines={wines}
       />
     </div>
   );

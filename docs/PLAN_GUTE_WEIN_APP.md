@@ -147,19 +147,31 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 
 ---
 
-### Phase 2 — Ein Erfassungsweg (≈ 2 Wochen)
+### Phase 2 — Ein Erfassungsweg ✅ umgesetzt
 
 *Ziel: Leitsatz 1. Eine Flasche kommt auf einem Weg in den Keller, auf dem Handy, in unter 30 Sekunden.*
 
 | # | Arbeitspaket |
 | --- | --- |
-| 2.1 | **`WineForm` als eigene Komponente bauen** — ein Formular für Anlegen *und* Bearbeiten. Pflicht: Name, Jahrgang, Menge. Alles andere optional und eingeklappt. Struktur-Slider (Säure/Tannin/Körper/Süße/Holz) und Rebsorten-Zeilen aus dem Bearbeiten-Dialog wiederverwenden. |
-| 2.2 | **Die drei Wege zu einem zusammenführen.** Ein Einstieg „Wein hinzufügen" mit drei gleichwertigen Startpunkten in *demselben* Formular: `Foto/Barcode scannen` · `Name eingeben + KI-Recherche` · `manuell ausfüllen`. Die KI füllt Felder vor, der Nutzer bestätigt. Der Copy-Paste-Prompt entfällt ersatzlos (die App kann das selbst). `manualAdd` mit seinem Platzhalter-Datensatz entfällt ebenfalls. |
-| 2.3 | **Rohe JSON-Textareas ersetzen** — Aromen als Chip-Eingabe, Pairings als Zeilenliste. `ai_details`/`ai_sources`/`missing_fields` hinter „Erweitert" verstecken, standardmäßig unsichtbar. |
-| 2.4 | **JSON-Import bleibt, wandert aber in die Einstellungen** („Daten importieren") — er ist ein Migrationswerkzeug, kein Alltagsweg, und gehört nicht neben den Haupt-Button. |
-| 2.5 | **Erfassungs-Vertrauen sichtbar machen:** KI-befüllte Felder markieren, `confidence` und `missing_fields` im Formular anzeigen (der `ConfidenceBadge` existiert bereits im Lesemodus). |
+| 2.1 ✅ | **`WineForm` als eigene Komponente bauen** — ein Formular für Anlegen *und* Bearbeiten. Pflicht: Name, Jahrgang, Menge. Alles andere optional und eingeklappt. Struktur-Slider (Säure/Tannin/Körper/Süße/Holz) und Rebsorten-Zeilen aus dem Bearbeiten-Dialog wiederverwenden. |
+| 2.2 ✅ | **Die drei Wege zu einem zusammenführen.** Ein Einstieg „Wein hinzufügen" mit drei gleichwertigen Startpunkten in *demselben* Formular: `Foto/Barcode scannen` · `Name eingeben + KI-Recherche` · `manuell ausfüllen`. Die KI füllt Felder vor, der Nutzer bestätigt. Der Copy-Paste-Prompt entfällt ersatzlos (die App kann das selbst). `manualAdd` mit seinem Platzhalter-Datensatz entfällt ebenfalls. |
+| 2.3 ◐ | **Rohe JSON-Textareas ersetzen** — Aromen als Chip-Eingabe, Pairings als Zeilenliste. `ai_details`/`ai_sources`/`missing_fields` hinter „Erweitert" verstecken, standardmäßig unsichtbar. |
+| 2.4 ✅ | **JSON-Import bleibt, wandert aber in die Einstellungen** („Daten importieren") — er ist ein Migrationswerkzeug, kein Alltagsweg, und gehört nicht neben den Haupt-Button. |
+| 2.5 ✅ | **Erfassungs-Vertrauen sichtbar machen:** KI-befüllte Felder markieren, `confidence` und `missing_fields` im Formular anzeigen (der `ConfidenceBadge` existiert bereits im Lesemodus). |
 
 **Fertig, wenn:** Ein Playwright-Test legt auf einem Mobil-Viewport einen Wein per Formular an und findet ihn in der Kellerliste. Der Keller enthält keine „Neuer Wein"-Platzhalter mehr.
+
+#### Umsetzungsnotizen
+
+- Neu: `components/WineForm.tsx` (das eine Formular, Pflicht sind Name, Jahrgang, Flaschen; alles andere in aufklappbaren Abschnitten, inklusive Struktur-Schiebereglern und Rebsorten-Zeilen) und `components/AddWineDialog.tsx` (der eine Einstieg).
+- Der Copy-Paste-Prompt für ChatGPT ist ersatzlos entfallen — die Recherche läuft über `aiService.generateWineInfo`, dieselbe Funktion, die der Scan schon nutzte. Die Antwort wird mit `normalizeImportedWine` gemappt, also mit demselben Normalisierer wie der JSON-Import.
+- `manualAdd` (Platzhalter „Neuer Wein", Region „Unbekannt", 0 €, erfundenes 10-Jahres-Fenster) ist weg. Wer kein Trinkfenster einträgt, bekommt keins erfunden — der Wein erscheint dann ehrlich als „Kein Fenster" (Phase 3.4).
+- `ScanResultDialog.tsx` ist gelöscht: Ein Scan füttert jetzt dasselbe Formular vor, statt ein zweites, kleineres zu öffnen. Damit gibt es genau ein Erfassungsformular statt drei.
+- Der JSON-Import ist als eigener, klar als Migrationswerkzeug beschrifteter Dialog erhalten („Importieren") — nicht in den Einstellungen wie im Plan skizziert, sondern in der Kellerliste, weil er dort auf die aktive Pocket zugreift. Seine `alert()`-Rückmeldungen laufen jetzt über das Banner der Seite.
+- Recherchierte Felder sind im Formular mit „KI" markiert; Dubletten warnen direkt im Dialog und verweisen auf „Nachkauf erfassen".
+- Sieben Testfälle in `tests/unit/addWineDialog.test.tsx`, darunter die Regression „legt kein Trinkfenster an, das niemand eingetragen hat".
+
+**Bewusst offen (2.3):** Das Bearbeiten-Formular im Weindetail nutzt noch seine eigenen Felder samt JSON-Textareas für Aromen und Pairings. Es auf `WineForm` umzustellen ist ein sinnvoller nächster Schritt, gehört aber in dieselbe Sitzung wie die Zerlegung von `WineDetailPage.tsx` (2577 Zeilen) — separat, damit ein Fehler dort nicht die Erfassung mitreißt.
 
 **Behebt:** B2, B14 (UI-Teil), B23 (Einstiege)
 
