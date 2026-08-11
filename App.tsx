@@ -138,24 +138,6 @@ const App: React.FC = () => {
     };
   }, [fetchWines]);
 
-  const handleDrink = async (wine: Wine) => {
-    if (wine.quantity <= 0) return;
-
-    // Optimistic UI update
-    setWines(prev => prev.map(w =>
-      w.id === wine.id ? { ...w, quantity: w.quantity - 1 } : w
-    ));
-
-    try {
-      await storageService.consumeBottle(wine.id, 'detail');
-      await fetchWines();
-    } catch (err) {
-      console.error("Failed to record drink:", err);
-      // Rollback on error if necessary
-      await fetchWines();
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-alabaster flex items-center justify-center">
@@ -193,11 +175,7 @@ const App: React.FC = () => {
             <Route
               path="/inventory"
               element={
-                <Inventory
-                  wines={wines}
-                  onWineUpdate={fetchWines}
-                  onDrink={handleDrink}
-                />
+                <Inventory wines={wines} onWineUpdate={fetchWines} />
               }
             />
             <Route path="/timeline" element={<Timeline wines={wines} />} />
@@ -205,15 +183,10 @@ const App: React.FC = () => {
             <Route
               path="/wishlist"
               element={
-                <Inventory
-                  wines={wines}
-                  wishlistOnly
-                  onWineUpdate={fetchWines}
-                  onDrink={() => { }}
-                />
+                <Inventory wines={wines} wishlistOnly onWineUpdate={fetchWines} />
               }
             />
-            <Route path="/wine/:id" element={<WineDetail onDrink={handleDrink} />} />
+            <Route path="/wine/:id" element={<WineDetail onChanged={fetchWines} />} />
             <Route path="/trash" element={<Trash onUpdate={fetchWines} />} />
             <Route path="/stocktake" element={<Stocktake wines={wines} onUpdate={fetchWines} />} />
             <Route path="/settings" element={<Settings />} />

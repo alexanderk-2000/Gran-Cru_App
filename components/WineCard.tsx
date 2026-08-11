@@ -8,18 +8,18 @@ import { storageService } from '../services/storage.ts';
 
 interface WineCardProps {
   wine: Wine;
-  onDrink?: (wine: Wine) => void;
+  /** Opens the "bottle opened" dialog (stock + rating + note) owned by the page. */
+  onOpenBottle?: (wine: Wine) => void;
   onEdit?: (wine: Wine) => void;
   onUpdate?: () => void;
 }
 
-export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) => {
+export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onUpdate }) => {
   const status = getWineStatus(wine);
   const isReady = status === WineStatus.READY;
   const isEmpty = wine.quantity === 0;
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isDrinking, setIsDrinking] = useState(false);
   const normalizedTitle = (wine.name || '').replace(/\s+/g, ' ').trim() || 'Unbenannter Wein';
 
   const getTopBarClass = () => {
@@ -56,20 +56,11 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
     }
   };
 
-  const handleDrink = async (e: React.MouseEvent) => {
+  const handleOpenBottle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!onDrink || wine.quantity <= 0 || isDrinking) return;
-
-    try {
-      setIsDrinking(true);
-      await onDrink(wine);
-      if (onUpdate) onUpdate();
-    } catch (error: any) {
-      alert(error?.message || 'Trinkvorgang fehlgeschlagen.');
-    } finally {
-      setIsDrinking(false);
-    }
+    if (!onOpenBottle || wine.quantity <= 0) return;
+    onOpenBottle(wine);
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
@@ -191,12 +182,12 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
             Kaufen
           </Link>
           <button
-            onClick={handleDrink}
-            disabled={!onDrink || wine.quantity <= 0 || isDrinking}
+            onClick={handleOpenBottle}
+            disabled={!onOpenBottle || wine.quantity <= 0}
             className="py-2 bg-sage-light border border-sage/30 hover:bg-sage/10 text-sage text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <GlassWater className="w-3 h-3" />
-            {isDrinking ? '...Trinkt' : 'Trinken'}
+            Öffnen
           </button>
           <Link
             to={`/wine/${wine.id}`}

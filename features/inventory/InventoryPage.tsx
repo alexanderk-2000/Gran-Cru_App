@@ -6,6 +6,7 @@ import { WineCard } from '../../components/WineCard.tsx';
 import { ScannerOverlay } from '../../components/ScannerOverlay.tsx';
 import { ScanResultDialog } from '../../components/ScanResultDialog.tsx';
 import { PurchaseDialog } from '../../components/PurchaseDialog.tsx';
+import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
 import type { ScanResult } from '../../services/scanner.ts';
 import { Search, Plus, X, Loader2, Wand2, Upload, Copy, Check, ScanBarcode } from 'lucide-react';
 import { getBottleUnitValue, getWineFamily, getWineStatus, hasKnownPrice } from '../../utils.ts';
@@ -37,13 +38,11 @@ interface InventoryProps {
   wines: Wine[];
   wishlistOnly?: boolean;
   onWineUpdate: () => void;
-  onDrink: (wine: Wine) => void;
 }
 
 export const Inventory: React.FC<InventoryProps> = ({
   wines,
   wishlistOnly = false,
-  onDrink,
   onWineUpdate
 }) => {
   const location = useLocation();
@@ -70,6 +69,7 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [draggedWineId, setDraggedWineId] = useState<string | null>(null);
   const [dropTargetPocketId, setDropTargetPocketId] = useState<string | null>(null);
   const [isMovingWine, setIsMovingWine] = useState(false);
+  const [bottleToOpen, setBottleToOpen] = useState<Wine | null>(null);
   const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -930,7 +930,11 @@ Regeln:
                     onDragEnd={handleWineDragEnd}
                     className={`transition-opacity ${draggedWineId === wine.id ? 'opacity-50' : 'opacity-100'}`}
                   >
-                    <WineCard wine={wine} onDrink={onDrink} onUpdate={onWineUpdate} />
+                    <WineCard
+                      wine={wine}
+                      onOpenBottle={wishlistOnly ? undefined : setBottleToOpen}
+                      onUpdate={onWineUpdate}
+                    />
                   </div>
                 ))}
               </div>
@@ -955,6 +959,18 @@ Regeln:
           )}
         </div>
       )}
+
+      <OpenBottleDialog
+        open={bottleToOpen !== null}
+        wine={bottleToOpen}
+        source="dashboard"
+        onClose={() => setBottleToOpen(null)}
+        onSaved={(message) => {
+          setBottleToOpen(null);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+      />
 
       <PurchaseDialog
         open={isPurchaseOpen}

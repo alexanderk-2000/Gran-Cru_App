@@ -171,14 +171,22 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 
 | # | Arbeitspaket |
 | --- | --- |
-| 3.1 | **„Flasche öffnen"-Dialog.** Ein Vorgang: Datum · Bewertung (Sterne) · Notiz · optional Anlass · optional Foto. Schreibt in *einem* Schritt `inventory_event` **und** `tasting`. Das ist die Funktion, die aktuell komplett fehlt (B1) — höchster Einzelnutzen im ganzen Plan. |
-| 3.2 | **Notiz ohne Verbrauch ermöglichen** (Verkostung beim Händler, zweites Glas aus derselben Flasche). Entkoppelt Notiz von Bestandsabgang. |
+| 3.1 ✅ | **„Flasche öffnen"-Dialog.** Ein Vorgang: Datum · Bewertung (Sterne) · Notiz · optional Anlass · optional Foto. Schreibt in *einem* Schritt `inventory_event` **und** `tasting`. Das ist die Funktion, die aktuell komplett fehlt (B1) — höchster Einzelnutzen im ganzen Plan. |
+| 3.2 ✅ | **Notiz ohne Verbrauch ermöglichen** (Verkostung beim Händler, zweites Glas aus derselben Flasche). Entkoppelt Notiz von Bestandsabgang. |
 | 3.3 | **Bestandsmutationen in eine Postgres-Funktion verlegen.** `adjust_stock(wine_id, delta, type, source, note)` als `SECURITY INVOKER`-RPC: Menge ändern und Event schreiben in einer Transaktion. Client, Offline-Adapter und Queue-Replay rufen nur noch diese eine Funktion. Beseitigt die Lese-Rechne-Schreibe-Rennen und die manuellen Rollback-Schreibvorgänge. |
 | 3.4 | **Ein Reifemodell.** `getWineStatus` wird zu einer dünnen Hülle über `evaluateWineDrinkability`. Kellerliste, Karten, Dashboard und Zeitachse zeigen dann dieselbe Bewertung wie das Detail — inklusive Unsicherheitshinweis, wenn Struktur-Daten fehlen. |
 | 3.5 | **Trinkhistorie zur Genusshistorie ausbauen:** alle Event-Typen (Zugang, Abgang, Verlust, Korrektur, Umlagerung) mit Filter, verlinkt auf den Wein, mit Bewertung und Notiz in der Zeile. Das Dashboard-„Letzte Aktivitäten" nutzt dieselbe Quelle und stimmt dann mit seiner Beschriftung überein. |
 | 3.6 | **Globale Sync-Anzeige.** Ein Statuselement in Kopfzeile/Bottom-Bar: online/offline, ausstehende Änderungen, letzter Sync, Tippen → sofort synchronisieren. Ersetzt das statische „Safe & Secure"-Dekor. Die Daten dafür liefert `subscribeQueueSnapshot` bereits. |
 
 **Fertig, wenn:** Eine geöffnete Flasche taucht mit Bewertung und Notiz in der Historie und am Wein auf. Zwei gleichzeitige Bestandsänderungen führen nachweislich (Test) zum korrekten Endbestand. Ein Wein hat in Liste und Detail denselben Status.
+
+#### Umsetzungsnotizen zu 3.1/3.2
+
+- Neu: `components/OpenBottleDialog.tsx` — Bestand, Datum, Sterne und Notiz in einem Vorgang, erreichbar über „Öffnen" auf der Weinkarte und „Flasche öffnen" im Detail. Das Häkchen „Flasche vom Bestand abziehen" trennt Notiz und Verbrauch: Verkostung beim Händler oder ein zweites Glas gehen ohne Abgang, und bei Bestand 0 bleibt die Notiz möglich.
+- **Dabei gefundener Fehler in `addTasting`:** Die Funktion rief intern `adjustStock(-1)` auf und überschrieb ein übergebenes Datum mit „jetzt". Eine Notiz hätte damit zwingend eine Flasche verbraucht — verbucht als `adjustment`, nicht als `consume`, also unsichtbar in der Trinkhistorie, während der Bestand sank. Offline passierte das nicht, online schon. Jetzt schreibt `addTasting` nur die Notiz; der Verbrauch ist eine explizite Entscheidung des Aufrufers.
+- Ohne Bewertung wird `rating` weggelassen statt als `0` gesendet (die Tabelle erlaubt nur 1–5); die Notizliste blendet Sterne und Zitat entsprechend aus.
+- `App.tsx` reicht kein `onDrink` mehr durch; das Weindetail meldet über `onChanged` **jede** Änderung zurück (auch Nachkauf, Bearbeiten, Löschen — die aktualisierten die Kellerliste bisher gar nicht).
+- Testinfrastruktur: `vitest.config.ts` nimmt jetzt auch `.tsx` auf und lädt `tests/setup.ts` mit den jest-dom-Matchern (die Abhängigkeit war deklariert, aber nie eingebunden — es gab keine einzige Komponententests). Sechs Fälle in `tests/unit/openBottleDialog.test.tsx`.
 
 **Behebt:** B1, B6, B10, B11, B18 (Sync-Teil), B20
 

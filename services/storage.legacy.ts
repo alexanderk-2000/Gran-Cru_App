@@ -1132,11 +1132,28 @@ export const storageService = {
     return (data as Tasting[]) || [];
   },
 
+  /**
+   * Records a tasting note. Deliberately does NOT touch stock.
+   *
+   * It used to call adjustStock(-1) as a side effect, which made a note
+   * impossible without drinking a bottle (tasting at a merchant, a second
+   * glass from an already open bottle) and booked the bottle as an
+   * "adjustment" rather than a "consume" - so it silently reduced stock while
+   * never appearing in the drink history. The offline path never decremented
+   * at all, so online and offline disagreed. Callers now decide explicitly:
+   * consumeBottle() for the bottle, addTasting() for the memory.
+   *
+   * A caller-supplied `date` is respected (notes are often written a day
+   * later); only the fallback is "now".
+   */
   addTasting: async (tasting: Partial<Tasting>): Promise<Tasting> => {
     const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from('tastings').insert([{ ...tasting, user_id: user?.id, date: new Date().toISOString() }]).select().single();
+    const { data, error } = await supabase
+      .from('tastings')
+      .insert([{ ...tasting, user_id: user?.id, date: tasting.date || new Date().toISOString() }])
+      .select()
+      .single();
     if (error) throw error;
-    await storageService.adjustStock(tasting.wine_id!, -1);
     return data as Tasting;
   },
 

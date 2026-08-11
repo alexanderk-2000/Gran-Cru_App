@@ -113,7 +113,7 @@ export const DrinkHistory: React.FC = () => {
         <div className="py-24 bg-white rounded-[2.5rem] border border-burgundy/5 text-center">
           <GlassWater className="w-14 h-14 text-burgundy/20 mx-auto mb-4" />
           <h3 className="font-serif text-2xl text-charcoal mb-2">Noch keine Einträge</h3>
-          <p className="text-stone-gray text-sm">Sobald du „Flasche trinken“ nutzt, erscheinen die Events hier.</p>
+          <p className="text-stone-gray text-sm">Sobald du eine Flasche öffnest, erscheint sie hier.</p>
         </div>
       ) : (
         <div className="space-y-6">
