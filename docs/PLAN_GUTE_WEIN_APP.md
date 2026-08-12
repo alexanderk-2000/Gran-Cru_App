@@ -185,12 +185,26 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 | --- | --- |
 | 3.1 ✅ | **„Flasche öffnen"-Dialog.** Ein Vorgang: Datum · Bewertung (Sterne) · Notiz · optional Anlass · optional Foto. Schreibt in *einem* Schritt `inventory_event` **und** `tasting`. Das ist die Funktion, die aktuell komplett fehlt (B1) — höchster Einzelnutzen im ganzen Plan. |
 | 3.2 ✅ | **Notiz ohne Verbrauch ermöglichen** (Verkostung beim Händler, zweites Glas aus derselben Flasche). Entkoppelt Notiz von Bestandsabgang. |
-| 3.3 | **Bestandsmutationen in eine Postgres-Funktion verlegen.** `adjust_stock(wine_id, delta, type, source, note)` als `SECURITY INVOKER`-RPC: Menge ändern und Event schreiben in einer Transaktion. Client, Offline-Adapter und Queue-Replay rufen nur noch diese eine Funktion. Beseitigt die Lese-Rechne-Schreibe-Rennen und die manuellen Rollback-Schreibvorgänge. |
+| 3.3 ✅ | **Bestandsmutationen in eine Postgres-Funktion verlegen.** `adjust_stock(wine_id, delta, type, source, note)` als `SECURITY INVOKER`-RPC: Menge ändern und Event schreiben in einer Transaktion. Client, Offline-Adapter und Queue-Replay rufen nur noch diese eine Funktion. Beseitigt die Lese-Rechne-Schreibe-Rennen und die manuellen Rollback-Schreibvorgänge. |
 | 3.4 ✅ | **Ein Reifemodell.** `getWineStatus` wird zu einer dünnen Hülle über `evaluateWineDrinkability`. Kellerliste, Karten, Dashboard und Zeitachse zeigen dann dieselbe Bewertung wie das Detail — inklusive Unsicherheitshinweis, wenn Struktur-Daten fehlen. |
-| 3.5 | **Trinkhistorie zur Genusshistorie ausbauen:** alle Event-Typen (Zugang, Abgang, Verlust, Korrektur, Umlagerung) mit Filter, verlinkt auf den Wein, mit Bewertung und Notiz in der Zeile. Das Dashboard-„Letzte Aktivitäten" nutzt dieselbe Quelle und stimmt dann mit seiner Beschriftung überein. |
-| 3.6 | **Globale Sync-Anzeige.** Ein Statuselement in Kopfzeile/Bottom-Bar: online/offline, ausstehende Änderungen, letzter Sync, Tippen → sofort synchronisieren. Ersetzt das statische „Safe & Secure"-Dekor. Die Daten dafür liefert `subscribeQueueSnapshot` bereits. |
+| 3.5 ◐ | **Trinkhistorie zur Genusshistorie ausbauen:** alle Event-Typen (Zugang, Abgang, Verlust, Korrektur, Umlagerung) mit Filter, verlinkt auf den Wein, mit Bewertung und Notiz in der Zeile. Das Dashboard-„Letzte Aktivitäten" nutzt dieselbe Quelle und stimmt dann mit seiner Beschriftung überein. |
+| 3.6 ✅ | **Globale Sync-Anzeige.** Ein Statuselement in Kopfzeile/Bottom-Bar: online/offline, ausstehende Änderungen, letzter Sync, Tippen → sofort synchronisieren. Ersetzt das statische „Safe & Secure"-Dekor. Die Daten dafür liefert `subscribeQueueSnapshot` bereits. |
 
 **Fertig, wenn:** Eine geöffnete Flasche taucht mit Bewertung und Notiz in der Historie und am Wein auf. Zwei gleichzeitige Bestandsänderungen führen nachweislich (Test) zum korrekten Endbestand. Ein Wein hat in Liste und Detail denselben Status.
+
+#### Umsetzungsnotizen zu 3.3 und 3.6
+
+- **3.3:** Neue Migration `20260811000034_record_inventory_change_rpc.sql` mit `record_inventory_change(...)`: sperrt die Weinzeile per `FOR UPDATE`, ändert die Menge, rechnet bei einem Nachkauf den gewichteten Einstandspreis neu und schreibt das `inventory_event` — alles in einer Transaktion. `SECURITY INVOKER` bewusst beibehalten, damit RLS weiter mit den Rechten des Aufrufers greift; die Funktion gewährt also keinen Zugriff, den der Client nicht schon hatte.
+- `adjustStock`, `consumeBottle`, `recordPurchase` und `recordLoss` rufen jetzt diese eine Funktion. Ihre Signaturen sind unverändert, damit Offline-Adapter, Queue-Replay und alle UI-Aufrufe unberührt bleiben.
+- **Fallback mit Absicht:** Ist die Migration in der Datenbank noch nicht ausgerollt (PostgREST antwortet `PGRST202`), fällt der Client auf den alten Lese-Rechne-Schreibe-Pfad zurück und warnt einmal pro Sitzung auf der Konsole. Sonst wäre die App gegen eine nicht migrierte Datenbank schlicht kaputt. **Zum Scharfstellen muss `npm run db:push:remote` (bzw. `npm run db:push` lokal) laufen** — vorher bleibt das Rennen bestehen.
+- Sieben Testfälle in `tests/unit/inventoryRpc.test.ts`: dass jede Mutation genau einen RPC-Aufruf macht (und keine Tabellenzugriffe mehr), dass echte Datenbankfehler durchschlagen statt still in den Fallback zu rutschen, und dass der Fallback bei fehlender Funktion greift.
+- **3.6:** Neu `components/SyncStatus.tsx`, eingebaut in Seitenleiste und mobile Kopfzeile. Zeigt offline / überträgt / gesichert samt Zeitpunkt und Anzahl wartender Änderungen, mit „Jetzt synchronisieren" als Aktion. Ersetzt das statische Dekor „Cloud Sync — Safe & Secure", das dieselbe Aussage traf, egal ob zehn Änderungen in der Queue hingen.
+
+#### Umsetzungsnotizen zu 6.1
+
+- Neu `services/exportService.ts` plus Abschnitt „Sammlung exportieren" in den Einstellungen: CSV (eine Zeile je Wein, für Tabellenprogramme) und vollständiges JSON-Backup (Weine, Notizen, Bestandsereignisse, Anlässe, Pockets).
+- Die CSV nutzt Semikolon als Trennzeichen und beginnt mit einem BOM, damit Excel in deutscher Locale Spalten und Umlaute richtig liest. Werte, die mit `=`, `+`, `-` oder `@` beginnen, werden entschärft, damit ein Tabellenprogramm sie nicht als Formel ausführt.
+- Sechs Testfälle in `tests/unit/exportService.test.ts`.
 
 #### Umsetzungsnotizen zu 3.4
 
@@ -257,7 +271,7 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 
 | # | Arbeitspaket |
 | --- | --- |
-| 6.1 | **Export & Backup:** CSV und vollständiges JSON (Weine, Flaschen, Notizen, Events) in den Einstellungen. |
+| 6.1 ✅ | **Export & Backup:** CSV und vollständiges JSON (Weine, Flaschen, Notizen, Events) in den Einstellungen. |
 | 6.2 | **Bild-URLs reparieren.** Nicht die Signed URL speichern, sondern den Storage-Pfad; die URL beim Anzeigen erzeugen. Beseitigt das stille Ablaufen nach einem Jahr. Bestehende Einträge per Migration auf Pfade zurückführen. |
 | 6.3 | **Toast-System global.** Den vorhandenen `InlineToast` zu einem App-weiten Provider heben und alle 33 `alert()`/`confirm()`-Aufrufe ersetzen; Löschungen mit „Rückgängig"-Toast statt Bestätigungsdialog. |
 | 6.4 | **Einstellungen für Sammler.** Modellwahl als „Schnell / Ausgewogen / Gründlich", keine Terminalbefehle, keine `.env`-Pfade; Modellkatalog nur noch aus einer Quelle (Server). |

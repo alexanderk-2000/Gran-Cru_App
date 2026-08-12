@@ -10,7 +10,6 @@ import {
   X,
   CircleDot,
   CalendarDays,
-  ShieldCheck,
   LogOut,
   Sparkles,
   Trash2,
@@ -19,6 +18,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+import { SyncStatus } from './SyncStatus.tsx';
 import { UserProfile } from '../types.ts';
 
 const navGroups = [
@@ -76,9 +76,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <CircleDot className="text-burgundy w-6 h-6" />
           <h1 className="font-serif text-lg font-bold tracking-tight text-burgundy">Grand Cru</h1>
         </div>
-        <button onClick={() => setSidebarOpen(true)}>
-          <Menu className="text-burgundy" />
-        </button>
+        <div className="flex items-center gap-1">
+          <SyncStatus variant="compact" />
+          <button onClick={() => setSidebarOpen(true)} aria-label="Menü öffnen">
+            <Menu className="text-burgundy" />
+          </button>
+        </div>
       </header>
 
       {/* Sidebar Overlay for Mobile */}
@@ -162,13 +165,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </button>
           </div>
 
-          <div className="p-4 bg-alabaster-dark rounded-xl border border-burgundy/5 flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-burgundy" />
-            <div className="flex flex-col">
-              <span className="text-[10px] text-stone-gray uppercase tracking-widest font-bold">Cloud Sync</span>
-              <span className="text-xs text-charcoal font-medium">Safe & Secure</span>
-            </div>
-          </div>
+          <SyncStatus />
         </div>
       </aside>
 
