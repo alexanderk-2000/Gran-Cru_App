@@ -104,7 +104,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
             <div className="flex flex-col">
               <span className="font-serif text-xl font-bold text-burgundy leading-none">CRU</span>
-              <span className="text-[10px] tracking-[0.2em] text-stone-gray font-medium uppercase">Vault & Portfolio</span>
+              <span className="text-[11px] tracking-[0.2em] text-stone-gray font-medium uppercase">Private Weinsammlung</span>
             </div>
           </div>
           <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
@@ -116,7 +116,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <div className="space-y-5">
             {navGroups.map((group) => (
               <div key={group.title} className="space-y-1.5">
-                <p className="px-3 text-[10px] tracking-[0.12em] text-stone-gray/80 uppercase">{group.title}</p>
+                <p className="px-3 text-[11px] tracking-[0.12em] text-stone-gray/80 uppercase">{group.title}</p>
                 {group.items.map((item) => {
                   const isActive = location.pathname === item.path;
                   const Icon = item.icon;
@@ -146,7 +146,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <div className={`p-4 rounded-xl border flex flex-col gap-2 ${isGuest ? 'bg-gold/5 border-gold/10' : 'bg-alabaster border-burgundy/5'}`}>
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full animate-pulse ${isGuest ? 'bg-gold' : 'bg-sage'}`} />
-              <span className="text-[9px] font-black text-stone-gray uppercase tracking-widest">
+              <span className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
                 {isGuest ? 'Demo-Modus' : 'Verbunden als'}
               </span>
             </div>
@@ -158,7 +158,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
             <button
               onClick={handleLogout}
-              className="mt-2 flex items-center gap-2 text-[10px] font-black text-burgundy/60 hover:text-burgundy transition-colors uppercase tracking-widest"
+              className="mt-2 flex items-center gap-2 text-[11px] font-black text-burgundy/60 hover:text-burgundy transition-colors uppercase tracking-widest"
             >
               <LogOut className="w-3 h-3" />
               {isGuest ? 'Beenden' : 'Abmelden'}

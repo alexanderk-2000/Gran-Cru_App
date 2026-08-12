@@ -136,14 +136,14 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 type="button"
                 onClick={() => resolveConfirm(false)}
                 autoFocus
-                className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300"
+                className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300"
               >
                 {confirmState.cancelLabel || 'Abbrechen'}
               </button>
               <button
                 type="button"
                 onClick={() => resolveConfirm(true)}
-                className={`flex-1 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all ${
+                className={`flex-1 rounded-xl px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-all ${
                   confirmState.destructive ? 'bg-red-600 hover:bg-red-700' : 'bg-burgundy hover:bg-burgundy-light'
                 }`}
               >

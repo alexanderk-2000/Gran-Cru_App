@@ -153,7 +153,7 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
           <div>
             <label
               htmlFor="open-bottle-date"
-              className="mb-1 block text-[10px] font-black uppercase tracking-widest text-stone-gray"
+              className="mb-1 block text-[11px] font-black uppercase tracking-widest text-stone-gray"
             >
               Wann
             </label>
@@ -169,7 +169,7 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
           </div>
 
           <div>
-            <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-stone-gray">
+            <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-stone-gray">
               Bewertung
             </span>
             <div className="flex items-center gap-2">
@@ -192,7 +192,7 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
                 <button
                   type="button"
                   onClick={() => setRating(0)}
-                  className="ml-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-gray hover:text-burgundy"
+                  className="ml-1 text-[11px] font-black uppercase tracking-[0.14em] text-stone-gray hover:text-burgundy"
                 >
                   Zurücksetzen
                 </button>
@@ -203,7 +203,7 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
           <div>
             <label
               htmlFor="open-bottle-note"
-              className="mb-1 block text-[10px] font-black uppercase tracking-widest text-stone-gray"
+              className="mb-1 block text-[11px] font-black uppercase tracking-widest text-stone-gray"
             >
               Notiz
             </label>
@@ -226,7 +226,7 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
+            className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
           >
             Abbrechen
           </button>
@@ -234,7 +234,7 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
             type="button"
             onClick={() => void handleSave()}
             disabled={!canSave || isSaving}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <GlassWater className="h-4 w-4" />}
             {consume ? 'Öffnen & speichern' : 'Notiz speichern'}

@@ -253,7 +253,7 @@ export const AddWineDialog: React.FC<AddWineDialogProps> = ({
                     type="button"
                     onClick={() => void runResearch(researchQuery)}
                     disabled={busy || !researchQuery.trim()}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-burgundy px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light disabled:opacity-40"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-burgundy px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light disabled:opacity-40"
                   >
                     {isResearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                     Recherchieren
@@ -339,7 +339,7 @@ export const AddWineDialog: React.FC<AddWineDialogProps> = ({
             type="button"
             onClick={step === 'form' && !seed ? () => setStep('choose') : onClose}
             disabled={busy}
-            className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
+            className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
           >
             {step === 'form' && !seed ? 'Zurück' : 'Abbrechen'}
           </button>
@@ -348,7 +348,7 @@ export const AddWineDialog: React.FC<AddWineDialogProps> = ({
               type="button"
               onClick={() => void handleSave()}
               disabled={busy || !draft.name.trim()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {wishlist ? 'Auf die Wunschliste' : 'In den Keller'}

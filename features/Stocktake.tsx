@@ -91,7 +91,7 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
         <div className="flex flex-col gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
+            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[11px] font-black tracking-widest transition-all mb-4"
           >
             <ArrowLeft className="w-4 h-4" /> Zurück zum Keller
           </button>
@@ -103,7 +103,7 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
         <button
           onClick={handleApply}
           disabled={discrepancies.length === 0 || isApplying}
-          className="px-5 py-3 bg-burgundy text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-burgundy-light transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          className="px-5 py-3 bg-burgundy text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-burgundy-light transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {isApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           {discrepancies.length > 0 ? `${discrepancies.length} Korrektur(en) übernehmen` : 'Keine Abweichungen'}
@@ -137,7 +137,7 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
         {filteredWines.length > 0 ? (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-alabaster text-[10px] font-black uppercase tracking-widest text-stone-gray">
+              <tr className="border-b border-alabaster text-[11px] font-black uppercase tracking-widest text-stone-gray">
                 <th className="text-left px-6 py-4">Wein</th>
                 <th className="text-right px-6 py-4">Soll-Bestand</th>
                 <th className="text-right px-6 py-4">Gezählt</th>

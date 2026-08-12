@@ -521,14 +521,14 @@ export const Inventory: React.FC<InventoryProps> = ({
           <button
             onClick={() => setIsJsonModalOpen(true)}
             disabled={isJsonImporting}
-            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 disabled:opacity-50 uppercase tracking-wider text-[10px]"
+            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 disabled:opacity-50 uppercase tracking-wider text-[11px]"
           >
             {isJsonImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             IMPORTIEREN
           </button>
           <button
             onClick={() => setIsScannerOpen(true)}
-            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 uppercase tracking-wider text-[10px]"
+            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 uppercase tracking-wider text-[11px]"
           >
             <ScanBarcode className="w-4 h-4" /> SCANNEN
           </button>
@@ -537,7 +537,7 @@ export const Inventory: React.FC<InventoryProps> = ({
               setAddSeed(null);
               setIsAddOpen(true);
             }}
-            className="flex items-center gap-2 px-6 py-3.5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl transition-all shadow-premium uppercase tracking-wider text-[10px]"
+            className="flex items-center gap-2 px-6 py-3.5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl transition-all shadow-premium uppercase tracking-wider text-[11px]"
           >
             <Plus className="w-4 h-4" /> WEIN HINZUFÜGEN
           </button>
@@ -550,7 +550,7 @@ export const Inventory: React.FC<InventoryProps> = ({
           <button
             type="button"
             onClick={() => setFeedback(null)}
-            className="text-[10px] font-black uppercase tracking-[0.14em]"
+            className="text-[11px] font-black uppercase tracking-[0.14em]"
           >
             Schließen
           </button>
@@ -583,15 +583,15 @@ export const Inventory: React.FC<InventoryProps> = ({
       <section className="rounded-[1.8rem] border-2 border-burgundy/5 bg-white p-4 shadow-premium">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-stone-gray">Pockets</p>
-            <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">
-              {draggedWineId ? 'Jetzt auf eine Pocket ziehen' : 'Wie Unterkonten im Hauptkeller'}
+            <p className="text-[11px] font-black uppercase tracking-widest text-stone-gray">Pockets</p>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
+              {draggedWineId ? 'Jetzt auf eine Pocket ziehen' : 'Eigene Bereiche innerhalb deines Kellers'}
             </p>
           </div>
           <button
             type="button"
             onClick={() => setIsPocketModalOpen(true)}
-            className="inline-flex items-center gap-1 rounded-xl border border-burgundy/20 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy transition-all hover:border-burgundy/40 hover:bg-burgundy/5"
+            className="inline-flex items-center gap-1 rounded-xl border border-burgundy/20 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-burgundy transition-all hover:border-burgundy/40 hover:bg-burgundy/5"
           >
             <Plus className="h-3.5 w-3.5" />
             Pocket
@@ -648,7 +648,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <p className="mb-4 text-sm text-stone-gray">Lege eine Pocket wie ein Unterkonto an.</p>
+            <p className="mb-4 text-sm text-stone-gray">Lege einen eigenen Bereich deines Kellers an, z. B. ein Regal oder einen Kühlschrank.</p>
             <input
               type="text"
               value={newPocketName}
@@ -708,7 +708,7 @@ export const Inventory: React.FC<InventoryProps> = ({
               </button>
             </div>
 
-            <label htmlFor="json-import-target" className="mb-1 block text-[10px] font-black uppercase tracking-widest text-stone-gray">
+            <label htmlFor="json-import-target" className="mb-1 block text-[11px] font-black uppercase tracking-widest text-stone-gray">
               Pocket für den Import (optional)
             </label>
             <input
@@ -744,7 +744,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                 type="button"
                 onClick={openJsonImportPicker}
                 disabled={isJsonImporting}
-                className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
+                className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
               >
                 Datei wählen
               </button>
@@ -752,7 +752,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                 type="button"
                 onClick={handleJsonCodeImport}
                 disabled={isJsonImporting || !jsonCodeInput.trim()}
-                className="flex-1 rounded-xl bg-burgundy px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light disabled:opacity-40"
+                className="flex-1 rounded-xl bg-burgundy px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light disabled:opacity-40"
               >
                 {isJsonImporting ? 'Import läuft…' : 'Importieren'}
               </button>
@@ -779,11 +779,11 @@ export const Inventory: React.FC<InventoryProps> = ({
                   onClick={() => setSubcellarFilter(pocket.id)}
                   className="rounded-2xl border border-burgundy/10 bg-alabaster/50 p-5 text-left transition-all hover:border-burgundy/30 hover:bg-white"
                 >
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-gray">Pocket</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-stone-gray">Pocket</p>
                   <p className="mt-1 font-serif text-2xl text-charcoal">{pocket.label}</p>
                   <p className="mt-3 text-sm text-stone-gray">{pocket.wineCount} Weine · {pocket.bottleCount} Flaschen</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.12em] text-burgundy">{percentage}% vom Gesamtbestand</p>
-                  <span className="mt-4 inline-flex rounded-lg border border-burgundy/25 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy">
+                  <span className="mt-4 inline-flex rounded-lg border border-burgundy/25 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-burgundy">
                     Pocket öffnen
                   </span>
                 </button>
@@ -833,7 +833,7 @@ export const Inventory: React.FC<InventoryProps> = ({
           {!(presetIssue || presetView || search || categoryFilter !== 'All' || statusFilter !== 'All') && (
             <button
               onClick={() => setIsAddOpen(true)}
-              className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-burgundy px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-white shadow-premium transition-all hover:bg-burgundy-light"
+              className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-burgundy px-6 py-3.5 text-[11px] font-black uppercase tracking-wider text-white shadow-premium transition-all hover:bg-burgundy-light"
             >
               <Plus className="h-4 w-4" /> Ersten Wein anlegen
             </button>

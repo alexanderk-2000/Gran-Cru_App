@@ -97,7 +97,7 @@ export const MoveToPocketDialog: React.FC<MoveToPocketDialogProps> = ({
           </button>
         </div>
 
-        <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-stone-gray">
+        <p className="mb-3 text-[11px] font-black uppercase tracking-widest text-stone-gray">
           Aktuell: {currentPocket || MAIN_CELLAR_LABEL}
         </p>
 

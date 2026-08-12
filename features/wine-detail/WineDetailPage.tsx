@@ -1035,7 +1035,7 @@ const HeaderCard = memo(function HeaderCard({
                   </button>
                   <div className="text-center">
                     <p className="font-serif text-4xl leading-none text-stone-900">{wine.quantity}</p>
-                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">Flaschen</p>
+                    <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Flaschen</p>
                   </div>
                   <button
                     type="button"
@@ -1145,21 +1145,21 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Fenster-Fortschritt</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Fenster-Fortschritt</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">
             {metrics.windowProgressPercent !== null ? `${metrics.windowProgressPercent}%` : '—'}
           </p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Bis Peak</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Bis Peak</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">{peakTimingLabel}</p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Bis Fensterende</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Bis Fensterende</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">{endTimingLabel}</p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Fensterlänge</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Fensterlänge</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">
             {metrics.windowLengthYears !== null ? `${metrics.windowLengthYears} Jahre` : '—'}
           </p>
@@ -1167,7 +1167,7 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
       </div>
 
       <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Nächster Schritt</p>
+        <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Nächster Schritt</p>
         <p className="mt-1 text-sm text-stone-700">{metrics.nextAction}</p>
       </div>
 
@@ -1351,7 +1351,7 @@ const RatingsCard = memo(function RatingsCard({ ratings }: { ratings: Normalized
           <div key={`${rating.critic}-${rating.scoreLabel}`} className="rounded-2xl border border-stone-200 bg-stone-50/50 p-3 text-center">
             <p className="font-serif text-2xl text-stone-900">{rating.scoreLabel}</p>
             <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-stone-500">{rating.critic}</p>
-            {rating.year ? <p className="mt-0.5 text-[10px] text-stone-400">Jg. {rating.year}</p> : null}
+            {rating.year ? <p className="mt-0.5 text-[11px] text-stone-400">Jg. {rating.year}</p> : null}
           </div>
         ))}
       </div>
@@ -2561,7 +2561,7 @@ const StructureSlidersField = memo(function StructureSlidersField({
               onChange={(event) => onChange({ ...value, [key]: Number(event.target.value) })}
               className="w-full accent-[#5B1E2D] disabled:opacity-40"
             />
-            <div className="flex justify-between text-[10px] uppercase tracking-[0.1em] text-stone-400">
+            <div className="flex justify-between text-[11px] uppercase tracking-[0.1em] text-stone-400">
               <span>{lowLabel}</span>
               <span>{isSet ? current : '—'}</span>
               <span>{highLabel}</span>

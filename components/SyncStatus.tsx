@@ -122,7 +122,7 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ variant = 'bar' }) => {
         disabled={!canSync}
         title={label}
         aria-label={`Synchronisation: ${label}`}
-        className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${tone} disabled:opacity-70`}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold uppercase tracking-wider ${tone} disabled:opacity-70`}
       >
         <Icon className={`h-3.5 w-3.5 ${state === 'syncing' ? 'animate-spin' : ''}`} />
         {state !== 'synced' && <span>{pending > 0 || failed > 0 ? pending + failed : ''}</span>}
@@ -135,7 +135,7 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ variant = 'bar' }) => {
       <div className="flex items-center gap-3">
         <Icon className={`h-5 w-5 shrink-0 ${tone} ${state === 'syncing' ? 'animate-spin' : ''}`} />
         <div className="flex min-w-0 flex-col">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-stone-gray">Synchronisation</span>
+          <span className="text-[11px] font-bold uppercase tracking-widest text-stone-gray">Synchronisation</span>
           <span className={`truncate text-xs font-medium ${tone}`}>{label}</span>
         </div>
       </div>
@@ -154,7 +154,7 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ variant = 'bar' }) => {
         type="button"
         onClick={triggerSync}
         disabled={!canSync}
-        className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-burgundy/70 transition-colors hover:text-burgundy disabled:opacity-40"
+        className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-burgundy/70 transition-colors hover:text-burgundy disabled:opacity-40"
       >
         <RefreshCcw className={`h-3 w-3 ${snapshot.syncing ? 'animate-spin' : ''}`} />
         Jetzt synchronisieren

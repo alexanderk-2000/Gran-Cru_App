@@ -40,7 +40,7 @@ const MissingConfigScreen: React.FC = () => (
       </div>
       <h1 className="font-serif text-3xl text-burgundy mb-3">Konfiguration fehlt</h1>
       <p className="text-stone-gray leading-relaxed mb-6">
-        Die Verbindung zu Supabase konnte nicht hergestellt werden. Bitte stellen Sie sicher, dass die Umgebungsvariablen
+        Die Verbindung zu Supabase konnte nicht hergestellt werden. Bitte stelle sicher, dass die Umgebungsvariablen
         <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_URL</code>
         und
         <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_ANON_KEY</code>

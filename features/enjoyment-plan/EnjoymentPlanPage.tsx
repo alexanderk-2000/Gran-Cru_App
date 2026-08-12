@@ -689,7 +689,7 @@ export const EnjoymentPlan: React.FC = () => {
         <div className="flex flex-col gap-2">
           <h2 className="font-serif text-4xl font-bold text-charcoal">Anlass-Planung</h2>
           <p className="text-stone-gray font-medium tracking-wide">
-            Verwalten Sie Ihre Verkostungs-Termine und weisen Sie edle Tropfen zu.
+            Verwalte deine Verkostungs-Termine und weise edle Tropfen zu.
           </p>
         </div>
 
@@ -716,7 +716,7 @@ export const EnjoymentPlan: React.FC = () => {
           </div>
           <form onSubmit={handleSubmit} className="space-y-8">
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Titel der Serie</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Titel der Serie</label>
               <input
                 type="text"
                 value={title}
@@ -729,7 +729,7 @@ export const EnjoymentPlan: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Startdatum</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Startdatum</label>
                 <input
                   type="date"
                   value={startDate}
@@ -743,13 +743,13 @@ export const EnjoymentPlan: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Enddatum</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Enddatum</label>
                 <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full px-6 py-4 bg-alabaster border border-burgundy/5 rounded-2xl" required />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Immer trinken am (optional)</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Immer trinken am (optional)</label>
               <input
                 type="date"
                 value={drinkAnchorDate}
@@ -763,7 +763,7 @@ export const EnjoymentPlan: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Wiederholung</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Wiederholung</label>
                 <select value={repeatRule} onChange={(e) => setRepeatRule(e.target.value as RepeatRule)} className="w-full px-6 py-4 bg-alabaster border border-burgundy/5 rounded-2xl font-bold">
                   <option value="none">Keine (Einmalig)</option>
                   <option value="daily">Täglich</option>
@@ -773,13 +773,13 @@ export const EnjoymentPlan: React.FC = () => {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Intervall (Jede X-te Einheit)</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Intervall (Jede X-te Einheit)</label>
                 <input type="number" min="1" value={repeatInterval} onChange={(e) => setRepeatInterval(Math.max(1, Number(e.target.value || 1)))} className="w-full px-6 py-4 bg-alabaster border border-burgundy/5 rounded-2xl font-bold" />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Max. Wiederholungen (optional)</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Max. Wiederholungen (optional)</label>
               <input
                 type="number"
                 min="1"
@@ -801,14 +801,14 @@ export const EnjoymentPlan: React.FC = () => {
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <Clock className="w-12 h-12 text-burgundy animate-spin" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-stone-gray">Lade Termin-Instanzen...</p>
+          <p className="text-[11px] font-black uppercase tracking-widest text-stone-gray">Lade Termin-Instanzen...</p>
         </div>
       ) : (
         <div className="space-y-8 pb-40">
           <section className="bg-white border border-burgundy/10 rounded-[2.5rem] shadow-premium p-8">
             <div className="flex items-center justify-between gap-4 mb-6">
               <h3 className="font-serif text-2xl font-bold text-charcoal">Anlässe</h3>
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-gray">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-stone-gray">
                 {sortedOccasions.length} Serien
               </p>
             </div>
@@ -847,7 +847,7 @@ export const EnjoymentPlan: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setSelectedOccasionId((prev) => (prev === occasion.id ? null : occasion.id))}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+                            className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest ${
                               isActive
                                 ? 'bg-burgundy text-white'
                                 : 'bg-white border border-burgundy/20 text-burgundy hover:bg-burgundy/5'
@@ -892,7 +892,7 @@ export const EnjoymentPlan: React.FC = () => {
             {!selectedOccasion ? (
               <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[2.5rem] border border-burgundy/10 shadow-premium">
                 <CalendarDays className="w-14 h-14 text-burgundy/20 mb-4" />
-                <h3 className="text-xl font-serif text-charcoal mb-2">Wählen Sie einen Anlass</h3>
+                <h3 className="text-xl font-serif text-charcoal mb-2">Wähle einen Anlass</h3>
                 <p className="text-stone-gray text-sm">Die Terminliste wird erst nach Klick auf eine Serie angezeigt.</p>
               </div>
             ) : selectedOccasionInstances.length === 0 ? (
@@ -903,7 +903,7 @@ export const EnjoymentPlan: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4 mb-6">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-gray">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-stone-gray">
                   Termine für: {selectedOccasion.title}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -931,7 +931,7 @@ export const EnjoymentPlan: React.FC = () => {
           <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl border border-burgundy/5 overflow-hidden flex flex-col max-h-[92vh]">
             <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.18em] text-stone-gray font-black">Wein-Pool</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-stone-gray font-black">Wein-Pool</p>
                 <h3 className="font-serif text-2xl font-bold text-charcoal">{poolOccasion.title}</h3>
               </div>
               <button onClick={() => setShowPoolModal(false)} className="p-2"><X /></button>
@@ -1034,7 +1034,7 @@ export const EnjoymentPlan: React.FC = () => {
 
               <div className="space-y-3">
                 <div className="flex flex-col gap-3 rounded-xl border border-burgundy/10 bg-alabaster/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-gray">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-stone-gray">
                     Auswahl: {selectedVisibleCount} / {poolVisibleWines.length}
                   </p>
                   <div className="flex gap-2">
@@ -1042,7 +1042,7 @@ export const EnjoymentPlan: React.FC = () => {
                       type="button"
                       onClick={handleSelectAllVisible}
                       disabled={poolVisibleWines.length === 0 || allVisibleSelected}
-                      className="px-3 py-2 rounded-lg border border-burgundy/20 bg-white text-[10px] font-black uppercase tracking-widest text-burgundy disabled:opacity-40"
+                      className="px-3 py-2 rounded-lg border border-burgundy/20 bg-white text-[11px] font-black uppercase tracking-widest text-burgundy disabled:opacity-40"
                     >
                       Alle auswählen
                     </button>
@@ -1050,7 +1050,7 @@ export const EnjoymentPlan: React.FC = () => {
                       type="button"
                       onClick={handleClearVisibleSelection}
                       disabled={selectedVisibleCount === 0}
-                      className="px-3 py-2 rounded-lg border border-stone-300 bg-white text-[10px] font-black uppercase tracking-widest text-stone-700 disabled:opacity-40"
+                      className="px-3 py-2 rounded-lg border border-stone-300 bg-white text-[11px] font-black uppercase tracking-widest text-stone-700 disabled:opacity-40"
                     >
                       Auswahl aufheben
                     </button>
@@ -1127,14 +1127,14 @@ export const EnjoymentPlan: React.FC = () => {
             <div className="p-6 border-t border-alabaster flex justify-end gap-3">
               <button
                 onClick={() => setShowPoolModal(false)}
-                className="px-6 py-3 bg-white border border-burgundy/10 text-charcoal rounded-xl font-black uppercase tracking-widest text-[10px]"
+                className="px-6 py-3 bg-white border border-burgundy/10 text-charcoal rounded-xl font-black uppercase tracking-widest text-[11px]"
               >
                 Schließen
               </button>
               <button
                 onClick={handleAutoAssign}
                 disabled={assigning}
-                className="px-6 py-3 bg-burgundy text-white rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center gap-2 disabled:opacity-50"
+                className="px-6 py-3 bg-burgundy text-white rounded-xl font-black uppercase tracking-widest text-[11px] flex items-center gap-2 disabled:opacity-50"
               >
                 {assigning ? <Clock className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
                 Automatisch zuordnen
@@ -1182,7 +1182,7 @@ const InstanceCard: React.FC<{
     `}>
       <div className="flex justify-between items-start mb-6">
         <div>
-          <p className="text-[10px] font-black text-burgundy uppercase tracking-[0.2em] mb-1">
+          <p className="text-[11px] font-black text-burgundy uppercase tracking-[0.2em] mb-1">
             {new Date(instance.instance_date).toLocaleDateString('de-DE', { day: '2-digit', month: 'long' })}
           </p>
           <p className="text-xs font-bold text-stone-gray uppercase tracking-widest">
@@ -1216,7 +1216,7 @@ const InstanceCard: React.FC<{
 
       <h4 className="font-serif text-2xl font-bold text-charcoal leading-tight mb-2">{instance.occasion?.title}</h4>
       {instance.assignment_reason && (
-        <p className="text-[10px] text-stone-gray uppercase tracking-[0.14em] mb-6">
+        <p className="text-[11px] text-stone-gray uppercase tracking-[0.14em] mb-6">
           {instance.auto_assigned ? 'Auto' : 'Manuell'} · {instance.assignment_reason}
         </p>
       )}
@@ -1229,7 +1229,7 @@ const InstanceCard: React.FC<{
             <WineIcon className="w-5 h-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[8px] font-black uppercase tracking-widest text-stone-gray mb-0.5">Reservierter Wein</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-stone-gray mb-0.5">Reservierter Wein</p>
             {selectedWine ? (
               <p className="text-sm font-bold text-charcoal truncate"><span className="text-burgundy opacity-70">{selectedWine.vintage}</span> {selectedWine.name}</p>
             ) : (
@@ -1276,7 +1276,7 @@ const InstanceCard: React.FC<{
           !selectedWine && !isConsumed && (
             <button
               onClick={() => setIsAssigning(true)}
-              className="w-full py-3 bg-white border-2 border-dashed border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[10px] font-black rounded-xl uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+              className="w-full py-3 bg-white border-2 border-dashed border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[11px] font-black rounded-xl uppercase tracking-widest transition-all flex items-center justify-center gap-2"
             >
               <Plus className="w-3 h-3" /> Wein zuordnen
             </button>
@@ -1285,7 +1285,7 @@ const InstanceCard: React.FC<{
       </div>
 
       <div className="flex items-center justify-between pt-6 border-t border-alabaster">
-        <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${isConsumed ? 'text-sage' : isSkipped ? 'text-stone-gray' : 'text-stone-gray/60'}`}>
+        <div className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isConsumed ? 'text-sage' : isSkipped ? 'text-stone-gray' : 'text-stone-gray/60'}`}>
           <CheckCircle2 className="w-4 h-4" />
           {statusLabel}
         </div>
@@ -1293,7 +1293,7 @@ const InstanceCard: React.FC<{
         <div className="flex items-center gap-2">
           <button
             onClick={() => onStatusChange(instance, isSkipped ? 'planned' : 'skipped')}
-            className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+            className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
               isSkipped ? 'bg-alabaster text-stone-gray' : 'bg-white border border-burgundy/20 text-burgundy hover:bg-burgundy/5'
             }`}
           >
@@ -1301,7 +1301,7 @@ const InstanceCard: React.FC<{
           </button>
           <button
             onClick={() => onStatusChange(instance, isConsumed ? 'planned' : 'consumed')}
-            className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+            className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
               isConsumed ? 'bg-alabaster text-stone-gray' : 'bg-burgundy text-white hover:bg-burgundy-light shadow-lg'
             }`}
           >

@@ -191,7 +191,7 @@ interface WineFormProps {
   disabled?: boolean;
 }
 
-const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-widest text-stone-gray';
+const labelClass = 'mb-1 block text-[11px] font-black uppercase tracking-widest text-stone-gray';
 const inputClass =
   'w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm focus:border-burgundy/30 focus:outline-none disabled:opacity-50';
 
@@ -206,7 +206,7 @@ export const WineForm: React.FC<WineFormProps> = ({
 
   const aiMark = (field: string) =>
     aiFilled?.has(field) ? (
-      <span className="ml-2 rounded bg-burgundy/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-burgundy">
+      <span className="ml-2 rounded bg-burgundy/10 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-burgundy">
         KI
       </span>
     ) : null;
@@ -528,7 +528,7 @@ export const WineForm: React.FC<WineFormProps> = ({
               type="button"
               onClick={() => set('grapes', [...draft.grapes, { name: '', percentage: '' }])}
               disabled={disabled}
-              className="inline-flex items-center gap-1 rounded-xl border border-burgundy/20 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy"
+              className="inline-flex items-center gap-1 rounded-xl border border-burgundy/20 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-burgundy"
             >
               <Plus className="h-3.5 w-3.5" /> Rebsorte
             </button>

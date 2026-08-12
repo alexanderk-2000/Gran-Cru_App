@@ -173,7 +173,7 @@ export const DrinkHistory: React.FC = () => {
         <div className="flex flex-col gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
+            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[11px] font-black tracking-widest transition-all mb-4"
           >
             <ArrowLeft className="w-4 h-4" /> Zurück
           </button>
@@ -211,7 +211,7 @@ export const DrinkHistory: React.FC = () => {
                 type="button"
                 onClick={() => setFilter(option.id)}
                 aria-pressed={active}
-                className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition-all ${
+                className={`rounded-xl border px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] transition-all ${
                   active
                     ? 'border-burgundy/40 bg-burgundy/10 text-burgundy'
                     : 'border-stone-200 bg-white text-stone-600 hover:border-burgundy/20'
@@ -246,7 +246,7 @@ export const DrinkHistory: React.FC = () => {
           {grouped.map(([day, dayEntries]) => (
             <section key={day} className="bg-white rounded-[2rem] border border-burgundy/5 shadow-premium overflow-hidden">
               <div className="px-6 py-4 border-b border-alabaster bg-alabaster/40">
-                <p className="text-[10px] font-black uppercase tracking-widest text-stone-gray">{day}</p>
+                <p className="text-[11px] font-black uppercase tracking-widest text-stone-gray">{day}</p>
               </div>
 
               <div className="divide-y divide-alabaster">
@@ -260,7 +260,7 @@ export const DrinkHistory: React.FC = () => {
                       <div className="min-w-0">
                         <div className="mb-1 flex flex-wrap items-center gap-2">
                           <span
-                            className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${KIND_TONES[entry.kind]}`}
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${KIND_TONES[entry.kind]}`}
                           >
                             {KIND_LABELS[entry.kind]}
                           </span>

@@ -107,7 +107,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
   const getStatusBadge = () => {
     const label = maturity.label;
     const title = maturity.explanation;
-    const base = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tighter border';
+    const base = 'px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-tighter border';
 
     switch (status) {
       case WineStatus.READY:
@@ -164,7 +164,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
           <Link to={`/wine/${wine.id}`} className="flex-1 min-w-0 flex flex-col group/title">
             <span className="text-xs font-medium text-stone-gray uppercase tracking-widest mb-1">{wine.region}</span>
             {wine.subcellar ? (
-              <span className="mb-1 inline-flex w-fit rounded-full border border-burgundy/15 bg-burgundy/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-burgundy">
+              <span className="mb-1 inline-flex w-fit rounded-full border border-burgundy/15 bg-burgundy/5 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-burgundy">
                 {wine.subcellar}
               </span>
             ) : null}
@@ -188,7 +188,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
         <div className="mb-4 grid grid-cols-2 gap-4 border-y border-alabaster py-4">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-stone-gray">
-              <span className="text-[10px] font-black uppercase tracking-widest">Stock</span>
+              <span className="text-[11px] font-black uppercase tracking-widest">Stock</span>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -198,7 +198,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
               >
                 <Minus className="w-3 h-3" />
               </button>
-              <span className="text-sm font-bold text-charcoal">{wine.quantity} <span className="text-[10px] text-stone-gray font-normal">Fl.</span></span>
+              <span className="text-sm font-bold text-charcoal">{wine.quantity} <span className="text-[11px] text-stone-gray font-normal">Fl.</span></span>
               <button
                 onClick={(e) => handleAdjust(e, 1)}
                 disabled={isAdjusting}
@@ -209,7 +209,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
             </div>
           </div>
           <div className="flex flex-col gap-1 items-end">
-            <span className="text-[10px] font-black uppercase tracking-widest text-stone-gray">
+            <span className="text-[11px] font-black uppercase tracking-widest text-stone-gray">
               {hasKnownPrice(wine) && wine.market_price ? 'Marktwert' : 'Einstand'}
             </span>
             <span className="text-sm font-bold text-charcoal">{formatCurrency(getBottleUnitValue(wine))}</span>
@@ -223,7 +223,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
         <div className="mt-auto grid grid-cols-2 gap-2">
           <Link
             to={`/wine/${wine.id}?action=buy`}
-            className="flex-1 py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+            className="flex-1 py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2"
           >
             <ShoppingCart className="w-3 h-3" />
             Kaufen
@@ -231,21 +231,21 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
           <button
             onClick={handleOpenBottle}
             disabled={!onOpenBottle || wine.quantity <= 0}
-            className="py-2 bg-sage-light border border-sage/30 hover:bg-sage/10 text-sage text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+            className="py-2 bg-sage-light border border-sage/30 hover:bg-sage/10 text-sage text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <GlassWater className="w-3 h-3" />
             Öffnen
           </button>
           <Link
             to={`/wine/${wine.id}`}
-            className="px-4 py-2 bg-burgundy hover:bg-burgundy-light text-white text-[10px] font-black rounded-lg transition-colors flex items-center justify-center uppercase tracking-widest"
+            className="px-4 py-2 bg-burgundy hover:bg-burgundy-light text-white text-[11px] font-black rounded-lg transition-colors flex items-center justify-center uppercase tracking-widest"
           >
             Details
           </Link>
           <button
             onClick={handleMove}
             disabled={!onMove}
-            className="py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+            className="py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <MapPin className="w-3 h-3" />
             Verschieben
@@ -253,7 +253,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
           <button
             onClick={handleDelete}
             disabled={isDeleting}
-            className="col-span-2 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+            className="col-span-2 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <Trash2 className="w-3 h-3" />
             {isDeleting ? 'Löscht...' : 'Löschen'}

@@ -338,7 +338,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
       rows.push({
         id: 'all-clear',
         title: 'Keine akuten Alerts',
-        detail: 'Ihr Keller ist aktuell sauber priorisiert.',
+        detail: 'Dein Keller ist aktuell sauber priorisiert.',
         ctaLabel: 'Zur Übersicht',
         to: '/inventory'
       });
@@ -356,7 +356,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
             <WineIcon className="h-12 w-12 text-burgundy/25" />
             <h3 className="mt-4 font-serif text-3xl text-charcoal">Noch kein Wein erfasst</h3>
             <p className="mt-2 max-w-md text-sm text-stone-gray">
-              Legen Sie den ersten Wein an, damit Reifeprofil, Empfehlungen und Alerts automatisch erscheinen.
+              Leg den ersten Wein an, damit Reifeprofil, Empfehlungen und Alerts automatisch erscheinen.
             </p>
             <Link
               to="/inventory"
@@ -507,14 +507,14 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
               <h3 className="font-serif text-2xl text-charcoal">Empfohlene Öffnungen</h3>
               <p className="mt-1 text-sm text-stone-gray">Priorität für die nächsten 12 Monate.</p>
             </div>
-            <span className="rounded-full bg-alabaster px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-gray">
+            <span className="rounded-full bg-alabaster px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-stone-gray">
               Top {Math.max(5, recommendationRows.length)}
             </span>
           </div>
 
           {recommendationRows.length === 0 ? (
             <p className="rounded-2xl border border-stone-200 bg-alabaster/40 p-4 text-sm text-stone-gray">
-              Aktuell keine priorisierten Öffnungen. Prüfen Sie den Kellerstatus.
+              Aktuell keine priorisierten Öffnungen. Prüfe den Kellerstatus.
             </p>
           ) : (
             <ul className="space-y-3">
@@ -533,13 +533,13 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
                     <div className="flex shrink-0 gap-2">
                       <Link
                         to={`/wine/${row.wine.id}`}
-                        className="rounded-lg border border-burgundy/25 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-burgundy"
+                        className="rounded-lg border border-burgundy/25 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-burgundy"
                       >
                         Öffnen
                       </Link>
                       <Link
                         to="/genussplan"
-                        className="rounded-lg border border-stone-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-stone-700"
+                        className="rounded-lg border border-stone-300 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-stone-700"
                       >
                         Planen
                       </Link>
@@ -570,7 +570,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
                   </div>
                   <Link
                     to={alert.to}
-                    className="shrink-0 rounded-lg border border-stone-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-stone-700"
+                    className="shrink-0 rounded-lg border border-stone-300 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-stone-700"
                   >
                     {alert.ctaLabel}
                   </Link>
@@ -607,7 +607,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 
         <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
           <h3 className="font-serif text-2xl text-charcoal">Nächste Anlässe</h3>
-          <p className="mt-1 text-sm text-stone-gray">Geplante Termine aus Ihrer Anlass-Planung.</p>
+          <p className="mt-1 text-sm text-stone-gray">Geplante Termine aus deiner Anlass-Planung.</p>
           <div className="mt-4">
             {activitiesLoading ? (
               <p className="text-sm text-stone-gray">Anlässe werden geladen …</p>
@@ -641,20 +641,20 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 const DashboardHeader = () => (
   <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
     <div>
-      <h2 className="font-serif text-[2.1rem] leading-tight text-charcoal">Portfolio</h2>
-      <p className="mt-1 text-sm text-stone-gray">Private Kellerverwaltung</p>
+      <h2 className="font-serif text-[2.1rem] leading-tight text-charcoal">Dein Keller</h2>
+      <p className="mt-1 text-sm text-stone-gray">Bestand, Reife und Empfehlungen auf einen Blick.</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
       <Link
         to="/inventory"
-        className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white"
+        className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] text-white"
       >
         <Plus className="h-4 w-4" />
         Wein hinzufügen
       </Link>
       <Link
         to="/inventory?action=purchase"
-        className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-stone-700"
+        className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] text-stone-700"
       >
         <ShoppingCart className="h-4 w-4" />
         Nachkauf erfassen

@@ -118,7 +118,7 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
         <div className="flex flex-col gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
+            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[11px] font-black tracking-widest transition-all mb-4"
           >
             <ArrowLeft className="w-4 h-4" /> Zurück zum Keller
           </button>
@@ -128,7 +128,7 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
         <button
           onClick={handleEmptyTrash}
           disabled={deletedWines.length === 0 || isEmptyingTrash || loading}
-          className="px-5 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-5 py-3 bg-red-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isEmptyingTrash ? 'Leert...' : 'Papierkorb endgültig leeren'}
         </button>
@@ -177,14 +177,14 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
                   </div>
                 </div>
                 {wine.deleted_at && (
-                  <span className="shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 whitespace-nowrap">
+                  <span className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 whitespace-nowrap">
                     Läuft ab in {Math.max(0, getDaysRemaining(wine.deleted_at))} Tag(en)
                   </span>
                 )}
               </div>
 
               <div className="flex items-center justify-between pt-6 border-t border-alabaster">
-                <p className="text-[9px] font-black text-stone-gray/50 uppercase">Gelöscht am: {new Date(wine.deleted_at!).toLocaleDateString()}</p>
+                <p className="text-[10px] font-black text-stone-gray/50 uppercase">Gelöscht am: {new Date(wine.deleted_at!).toLocaleDateString()}</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleRestore(wine)} disabled={processingId === wine.id || isEmptyingTrash}

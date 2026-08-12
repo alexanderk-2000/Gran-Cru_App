@@ -169,7 +169,7 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
                 <button
                   type="button"
                   onClick={() => setSelectedId(null)}
-                  className="mt-2 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy"
+                  className="mt-2 text-[11px] font-black uppercase tracking-[0.14em] text-burgundy"
                 >
                   Anderen Wein wählen
                 </button>
@@ -177,7 +177,7 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
 
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-stone-gray">
+                  <span className="mb-1 block text-[11px] font-black uppercase tracking-widest text-stone-gray">
                     Flaschen
                   </span>
                   <input
@@ -190,7 +190,7 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-stone-gray">
+                  <span className="mb-1 block text-[11px] font-black uppercase tracking-widest text-stone-gray">
                     Preis je Flasche (€)
                   </span>
                   <input
@@ -220,7 +220,7 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
+            className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
           >
             Abbrechen
           </button>
@@ -228,7 +228,7 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
             type="button"
             onClick={() => void handleSave()}
             disabled={!selected || isSaving}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
             Nachkauf speichern
