@@ -7,6 +7,7 @@ import { ScannerOverlay } from '../../components/ScannerOverlay.tsx';
 import { PurchaseDialog } from '../../components/PurchaseDialog.tsx';
 import { AddWineDialog, type AddWineSeed } from '../../components/AddWineDialog.tsx';
 import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
+import { MoveToPocketDialog } from '../../components/MoveToPocketDialog.tsx';
 import { Search, Plus, X, Loader2, Upload, ScanBarcode } from 'lucide-react';
 import { getBottleUnitValue, getWineFamily, getWineStatus, hasKnownPrice } from '../../utils.ts';
 import { storageService } from '../../services/storage.ts';
@@ -73,6 +74,7 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [dropTargetPocketId, setDropTargetPocketId] = useState<string | null>(null);
   const [isMovingWine, setIsMovingWine] = useState(false);
   const [bottleToOpen, setBottleToOpen] = useState<Wine | null>(null);
+  const [wineToMove, setWineToMove] = useState<Wine | null>(null);
   const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -808,6 +810,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                     <WineCard
                       wine={wine}
                       onOpenBottle={wishlistOnly ? undefined : setBottleToOpen}
+                      onMove={wishlistOnly ? undefined : setWineToMove}
                       onUpdate={onWineUpdate}
                     />
                   </div>
@@ -842,6 +845,18 @@ export const Inventory: React.FC<InventoryProps> = ({
         onClose={() => setBottleToOpen(null)}
         onSaved={(message) => {
           setBottleToOpen(null);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+      />
+
+      <MoveToPocketDialog
+        open={wineToMove !== null}
+        wine={wineToMove}
+        pocketOptions={availableSubcellars}
+        onClose={() => setWineToMove(null)}
+        onMoved={(message) => {
+          setWineToMove(null);
           setFeedback(message);
           onWineUpdate();
         }}

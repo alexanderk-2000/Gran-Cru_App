@@ -3,18 +3,20 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wine, WineStatus } from '../types.ts';
 import { getBottleUnitValue, getWineMaturity, formatCurrency, hasKnownPrice } from '../utils.ts';
-import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater } from 'lucide-react';
+import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater, MapPin } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
 
 interface WineCardProps {
   wine: Wine;
   /** Opens the "bottle opened" dialog (stock + rating + note) owned by the page. */
   onOpenBottle?: (wine: Wine) => void;
+  /** Opens the "move to pocket" dialog owned by the page - the tap-based counterpart to drag-and-drop. */
+  onMove?: (wine: Wine) => void;
   onEdit?: (wine: Wine) => void;
   onUpdate?: () => void;
 }
 
-export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onUpdate }) => {
+export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, onUpdate }) => {
   const maturity = getWineMaturity(wine);
   const status = maturity.status;
   const isReady = status === WineStatus.READY;
@@ -62,6 +64,13 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onUpdate
     e.stopPropagation();
     if (!onOpenBottle || wine.quantity <= 0) return;
     onOpenBottle(wine);
+  };
+
+  const handleMove = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!onMove) return;
+    onMove(wine);
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
@@ -211,9 +220,17 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onUpdate
             Details
           </Link>
           <button
+            onClick={handleMove}
+            disabled={!onMove}
+            className="py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+          >
+            <MapPin className="w-3 h-3" />
+            Verschieben
+          </button>
+          <button
             onClick={handleDelete}
             disabled={isDeleting}
-            className="py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+            className="col-span-2 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <Trash2 className="w-3 h-3" />
             {isDeleting ? 'Löscht...' : 'Löschen'}

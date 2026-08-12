@@ -17,6 +17,8 @@ import {
 import { Badge } from '../../components/Badge.tsx';
 import { ImageUploader } from '../../components/ImageUploader.tsx';
 import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
+import { MoveToPocketDialog } from '../../components/MoveToPocketDialog.tsx';
+import { normalizeSubcellar } from '../../domain/wine/normalization.ts';
 import { storageService } from '../../services/storage.ts';
 import { imageStorageService, type ImageSlot } from '../../services/imageStorage.ts';
 import { evaluateWineDrinkability, formatCurrency } from '../../utils.ts';
@@ -965,7 +967,8 @@ const HeaderCard = memo(function HeaderCard({
   onOpenPurchase,
   onDelete,
   onDrink,
-  onAdjust
+  onAdjust,
+  onOpenMove
 }: {
   wine: Wine;
   isSaving: boolean;
@@ -975,6 +978,7 @@ const HeaderCard = memo(function HeaderCard({
   onDelete: () => void;
   onDrink: () => void;
   onAdjust: (delta: number) => void;
+  onOpenMove: () => void;
 }) {
   const disabled = isSaving;
 
@@ -1012,6 +1016,15 @@ const HeaderCard = memo(function HeaderCard({
                 >
                   <Plus className="h-4 w-4" />
                   Nachkauf
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenMove}
+                  disabled={disabled}
+                  className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-50"
+                >
+                  <MapPin className="h-4 w-4" />
+                  Verschieben
                 </button>
                 <button
                   type="button"
@@ -1729,6 +1742,19 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
   const [openBottleMode, setOpenBottleMode] = useState<{ consume: boolean } | null>(null);
   const openBottleDialog = useCallback((consume: boolean) => setOpenBottleMode({ consume }), []);
 
+  const [isMoveOpen, setIsMoveOpen] = useState(false);
+  const [pocketOptions, setPocketOptions] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    void storageService.getCellarPockets().then((pockets) => {
+      if (!active) return;
+      setPocketOptions(
+        pockets.map((pocket) => normalizeSubcellar(pocket.name)).filter((name) => name.length > 0)
+      );
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -2108,6 +2134,7 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
         onDelete={handleDelete}
         onDrink={() => openBottleDialog(true)}
         onAdjust={handleAdjustStock}
+        onOpenMove={() => setIsMoveOpen(true)}
       />
 
       <main className="mx-auto max-w-6xl px-6">
@@ -2193,6 +2220,18 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
         onClose={() => setOpenBottleMode(null)}
         onSaved={(message) => {
           setOpenBottleMode(null);
+          showToast(message, 'success');
+          void reloadWine();
+        }}
+      />
+
+      <MoveToPocketDialog
+        open={isMoveOpen}
+        wine={wine}
+        pocketOptions={pocketOptions}
+        onClose={() => setIsMoveOpen(false)}
+        onMoved={(message) => {
+          setIsMoveOpen(false);
           showToast(message, 'success');
           void reloadWine();
         }}

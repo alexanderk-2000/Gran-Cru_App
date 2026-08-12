@@ -241,7 +241,7 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 | # | Arbeitspaket |
 | --- | --- |
 | 4.1 | **Flaschen als Objekte (Modellentscheidung).** Neue Tabelle `bottles` (`wine_id`, `format`, `purchase_date`, `purchase_price`, `source`, `pocket_id`, `position`, `status`, `consumed_at`). `wines.quantity` bleibt als abgeleiteter, per Trigger gepflegter Wert erhalten, damit alle bestehenden Ansichten weiterlaufen. Migration: Für jeden Wein `quantity` Flaschen mit den heutigen Werten erzeugen. Löst B12 und B13 (Einstandspreis je Flasche statt Mittelwert) gemeinsam. |
-| 4.2 | **Mobile Pocket-Zuordnung.** „Verschieben nach…" als Aktion an Karte und Detail; Drag-&-Drop bleibt als Desktop-Komfort. Behebt, dass die Kernaktion im Keller auf dem Handy heute unmöglich ist. |
+| 4.2 ✅ | **Mobile Pocket-Zuordnung.** „Verschieben nach…" als Aktion an Karte und Detail; Drag-&-Drop bleibt als Desktop-Komfort. Behebt, dass die Kernaktion im Keller auf dem Handy heute unmöglich ist. |
 | 4.3 | **Bottom-Navigation für Mobil** (Keller · Hinzufügen · Genussplan · Historie) statt Hamburger-only. |
 | 4.4 | **Pocket-Ansicht mit Belegung** — Regale/Fächer als Raster, Flaschen einsortierbar; wenigstens Kapazität und Füllstand je Pocket. |
 | 4.5 | **Suche erweitern** um Rebsorte, Land, Appellation und Jahrgang (heute nur Name/Region/Produzent/Unterkeller, `InventoryPage.tsx:302`). |
@@ -252,6 +252,12 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 **Behebt:** B12, B13 (Teil), B17, B18, B19 (Teil)
 
 ---
+
+#### Umsetzungsnotizen zu 4.2
+
+- Neu `components/MoveToPocketDialog.tsx`: Liste der Pockets zum Antippen, aktuelle Pocket ist deaktiviert statt eines No-op-Klicks, Fehler werden angezeigt statt den Dialog stillschweigend zu schließen. Drag-and-Drop in der Kellerliste bleibt als Desktop-Komfort bestehen — das war die einzige Möglichkeit, eine Pocket zuzuweisen, und funktioniert auf Touch-Geräten nicht (kein `dragstart`-Event).
+- Eingebunden an zwei Stellen: als „Verschieben"-Aktion auf der Weinkarte (`components/WineCard.tsx`, Aktionsraster von 2×2 auf 2×3 erweitert) und als Button neben „Bearbeiten"/„Nachkauf"/„Löschen" im Weindetail-Kopf — dort gab es bislang überhaupt keinen Weg, die Pocket zu ändern, auch nicht auf dem Desktop.
+- Fünf Testfälle in `tests/unit/moveToPocketDialog.test.tsx`.
 
 ### Phase 5 — Mitdenken statt verwalten (≈ 2 Wochen)
 
