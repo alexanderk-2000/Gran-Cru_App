@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Category,
   Occasion,
@@ -23,6 +23,7 @@ import {
   X
 } from 'lucide-react';
 import { evaluateWineDrinkability } from '../../utils.ts';
+import { useToast, useConfirm } from '../../components/Feedback.tsx';
 
 const REPEAT_RULE_LABEL: Record<RepeatRule, string> = {
   none: 'Einmalig',
@@ -134,6 +135,8 @@ const categoryBonus = (wine: Wine, preferRare: boolean, preferDaily: boolean): n
 const byScoreDesc = (a: AssignmentEdge, b: AssignmentEdge) => b.totalScore - a.totalScore;
 
 export const EnjoymentPlan: React.FC = () => {
+  const showToast = useToast();
+  const confirm = useConfirm();
   const [instances, setInstances] = useState<OccasionInstance[]>([]);
   const [occasions, setOccasions] = useState<Occasion[]>([]);
   const [wines, setWines] = useState<Wine[]>([]);
@@ -168,7 +171,11 @@ export const EnjoymentPlan: React.FC = () => {
   const [assignmentNotice, setAssignmentNotice] = useState<string | null>(null);
   const [unassignedInstanceIds, setUnassignedInstanceIds] = useState<string[]>([]);
 
-  const loadData = async () => {
+  // Wrapped in useCallback (and listed as the effect's dependency) because it
+  // now closes over showToast - a context value the linter can't statically
+  // prove is stable, so leaving it a plain function made the mount effect
+  // below fail exhaustive-deps.
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [instData, wineData, occasionData] = await Promise.all([
@@ -184,15 +191,15 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Termine konnten nicht geladen werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const resetForm = () => {
     setEditingOccasionId(null);
@@ -253,7 +260,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Wein-Pool konnte nicht geladen werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
@@ -263,21 +270,21 @@ export const EnjoymentPlan: React.FC = () => {
     if (!title.trim() || !startDate || !endDate) {
       const message = 'Titel, Startdatum und Enddatum sind erforderlich.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
     if (new Date(startDate) > new Date(endDate)) {
       const message = 'Startdatum darf nicht nach Enddatum liegen.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
     if (!Number.isFinite(repeatInterval) || repeatInterval < 1) {
       const message = 'Intervall muss mindestens 1 sein.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
@@ -285,7 +292,7 @@ export const EnjoymentPlan: React.FC = () => {
     if (maxCountParsed !== null && (!Number.isFinite(maxCountParsed) || maxCountParsed < 1)) {
       const message = 'Max. Wiederholungen muss größer als 0 sein.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
@@ -309,7 +316,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Fehler beim Planen der Serie.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
@@ -323,7 +330,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Wein konnte nicht zugewiesen werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
@@ -335,12 +342,18 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Status konnte nicht aktualisiert werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
   const handleDeleteSeries = async (occasionId: string) => {
-    if (!window.confirm('Ganze Serie und alle nicht-konsumierten Instanzen löschen?')) return;
+    const confirmed = await confirm({
+      title: 'Serie löschen?',
+      description: 'Die ganze Serie und alle nicht-konsumierten Instanzen werden entfernt.',
+      confirmLabel: 'Löschen',
+      destructive: true
+    });
+    if (!confirmed) return;
     try {
       await storageService.deleteOccasion(occasionId);
       await loadData();
@@ -348,7 +361,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Serie konnte nicht gelöscht werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
@@ -579,7 +592,7 @@ export const EnjoymentPlan: React.FC = () => {
     if (selected.length === 0) {
       const message = 'Bitte mindestens einen Wein im Pool auswählen.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
@@ -634,7 +647,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Automatische Zuordnung fehlgeschlagen.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     } finally {
       setAssigning(false);
     }

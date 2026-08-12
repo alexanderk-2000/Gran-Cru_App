@@ -8,6 +8,7 @@ import { PurchaseDialog } from '../../components/PurchaseDialog.tsx';
 import { AddWineDialog, type AddWineSeed } from '../../components/AddWineDialog.tsx';
 import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
 import { MoveToPocketDialog } from '../../components/MoveToPocketDialog.tsx';
+import { useToast } from '../../components/Feedback.tsx';
 import { Search, Plus, X, Loader2, Upload, ScanBarcode } from 'lucide-react';
 import { getBottleUnitValue, getWineFamily, getWineStatus, hasKnownPrice } from '../../utils.ts';
 import { storageService } from '../../services/storage.ts';
@@ -50,6 +51,7 @@ export const Inventory: React.FC<InventoryProps> = ({
   onWineUpdate
 }) => {
   const location = useLocation();
+  const showToast = useToast();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<Category | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<WineStatus | 'All'>('All');
@@ -421,7 +423,7 @@ export const Inventory: React.FC<InventoryProps> = ({
     try {
       const created = await storageService.createCellarPocket(normalizedName);
       if (!created) {
-        alert('Pocket konnte nicht gespeichert werden. Bitte Datenbank-Migration ausführen.');
+        showToast('Pocket konnte nicht gespeichert werden. Bitte Datenbank-Migration ausführen.', 'error');
         return;
       }
       await refreshStoredPockets();
@@ -429,8 +431,9 @@ export const Inventory: React.FC<InventoryProps> = ({
       setTargetSubcellar(normalizedName);
       setNewPocketName('');
       setIsPocketModalOpen(false);
+      showToast(`Pocket "${normalizedName}" wurde angelegt.`, 'success');
     } catch (error: any) {
-      alert(error?.message || 'Pocket konnte nicht angelegt werden.');
+      showToast(error?.message || 'Pocket konnte nicht angelegt werden.', 'error');
     } finally {
       setIsPocketSaving(false);
     }
@@ -454,7 +457,7 @@ export const Inventory: React.FC<InventoryProps> = ({
       );
       await onWineUpdate();
     } catch (error: any) {
-      alert(error?.message || 'Verschieben in Pocket fehlgeschlagen.');
+      showToast(error?.message || 'Verschieben in Pocket fehlgeschlagen.', 'error');
     } finally {
       setIsMovingWine(false);
     }

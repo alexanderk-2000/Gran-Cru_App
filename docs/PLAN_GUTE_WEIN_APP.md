@@ -253,6 +253,17 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 
 ---
 
+#### Umsetzungsnotizen zu 6.3
+
+- Neu `components/Feedback.tsx`: `FeedbackProvider` mit `useToast()` (stapelbare, auto-verschwindende Hinweise, wie das bisherige `InlineToast` im Weindetail) und `useConfirm()` (Promise-basierter Ersatz für `window.confirm`, mit optionalem `destructive`-Stil für rote Bestätigungsbuttons). In `App.tsx` einmal um die gesamte Shell gelegt — auch um Lade-/Auth-/Offline-Bildschirme, nicht nur um die gerouteten Seiten.
+- Alle 27 gefundenen `alert()`/`window.confirm()`-Aufrufe ersetzt, verteilt über `WineCard.tsx`, `WineDetailPage.tsx` (dessen eigenes `InlineToast` samt lokalem State komplett entfernt und durch den globalen Hook ersetzt — gleiche Aufrufsignatur `showToast(text, tone)`, daher risikoarme Änderung in einer 2500+-Zeilen-Datei), `Trash.tsx`, `Stocktake.tsx`, `InventoryPage.tsx` und `EnjoymentPlanPage.tsx` (12 Fundstellen allein dort).
+- **Dabei gefunden:** Das Einbinden von `useToast()`/`useConfirm()` in `EnjoymentPlanPage.tsx` ließ ESLints `exhaustive-deps`-Regel anschlagen, weil `loadData()` jetzt einen Context-Wert (`showToast`) einfängt, den der Linter nicht als stabil erkennen kann. Behoben, indem `loadData` in `useCallback` gefasst und als Abhängigkeit des Mount-Effekts eingetragen wurde — dasselbe Muster, das `InventoryPage.tsx` für `refreshStoredPockets` schon nutzt.
+- Löschbestätigungen nutzen `destructive: true` (roter Button) statt der stillen `window.confirm`-Box; Aktionen wie Wiederherstellen, Pocket anlegen oder Verschieben geben jetzt zusätzlich eine Erfolgsmeldung, wo vorher gar keine Rückmeldung existierte.
+- **Bewusst nicht umgesetzt:** „Löschungen mit Rückgängig-Toast statt Bestätigungsdialog" aus dem ursprünglichen Plantext. Ein Bestätigungsdialog vor der Papierkorb-Verschiebung ist für harte Löschungen (endgültiges Löschen, Papierkorb leeren) weiterhin die sicherere Wahl; für die weichen Löschungen (in den Papierkorb) ist ein Rückgängig-Toast ein sinnvoller nächster Schritt, aber ein eigenständiger UX-Wechsel, der eine eigene Betrachtung verdient statt als Nebeneffekt dieser Umstellung zu passieren.
+- Sechs Testfälle in `tests/unit/feedback.test.tsx` (Toast-Anzeige, Auto-Dismiss, manuelles Schließen, Confirm-Auflösung in beide Richtungen, Fehler bei fehlendem Provider).
+
+#### Umsetzungsnotizen zu 4.2
+
 #### Umsetzungsnotizen zu 4.2
 
 - Neu `components/MoveToPocketDialog.tsx`: Liste der Pockets zum Antippen, aktuelle Pocket ist deaktiviert statt eines No-op-Klicks, Fehler werden angezeigt statt den Dialog stillschweigend zu schließen. Drag-and-Drop in der Kellerliste bleibt als Desktop-Komfort bestehen — das war die einzige Möglichkeit, eine Pocket zuzuweisen, und funktioniert auf Touch-Geräten nicht (kein `dragstart`-Event).
@@ -286,7 +297,7 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 | --- | --- |
 | 6.1 ✅ | **Export & Backup:** CSV und vollständiges JSON (Weine, Flaschen, Notizen, Events) in den Einstellungen. |
 | 6.2 | **Bild-URLs reparieren.** Nicht die Signed URL speichern, sondern den Storage-Pfad; die URL beim Anzeigen erzeugen. Beseitigt das stille Ablaufen nach einem Jahr. Bestehende Einträge per Migration auf Pfade zurückführen. |
-| 6.3 | **Toast-System global.** Den vorhandenen `InlineToast` zu einem App-weiten Provider heben und alle 33 `alert()`/`confirm()`-Aufrufe ersetzen; Löschungen mit „Rückgängig"-Toast statt Bestätigungsdialog. |
+| 6.3 ✅ | **Toast-System global.** Den vorhandenen `InlineToast` zu einem App-weiten Provider heben und alle 33 `alert()`/`confirm()`-Aufrufe ersetzen; Löschungen mit „Rückgängig"-Toast statt Bestätigungsdialog. |
 | 6.4 | **Einstellungen für Sammler.** Modellwahl als „Schnell / Ausgewogen / Gründlich", keine Terminalbefehle, keine `.env`-Pfade; Modellkatalog nur noch aus einer Quelle (Server). |
 | 6.5 | **Sprache und Ton vereinheitlichen** — durchgängig „du" oder „Sie", Bankmetaphern raus („Pockets/Unterkonten" → „Regale/Fächer", „flüssige Assets" → „Sammlung"). |
 | 6.6 | **Barrierefreiheit:** Fokus-Trap für alle Dialoge, `aria-live` für Status, Mindestschriftgrößen statt 10-px-Versalien als Standardbeschriftung. |

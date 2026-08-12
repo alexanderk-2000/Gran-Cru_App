@@ -5,6 +5,7 @@ import { Wine, WineStatus } from '../types.ts';
 import { getBottleUnitValue, getWineMaturity, formatCurrency, hasKnownPrice } from '../utils.ts';
 import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater, MapPin } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+import { useToast, useConfirm } from './Feedback.tsx';
 
 interface WineCardProps {
   wine: Wine;
@@ -17,6 +18,8 @@ interface WineCardProps {
 }
 
 export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, onUpdate }) => {
+  const showToast = useToast();
+  const confirmDelete = useConfirm();
   const maturity = getWineMaturity(wine);
   const status = maturity.status;
   const isReady = status === WineStatus.READY;
@@ -53,7 +56,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
       await storageService.adjustStock(wine.id, delta, 'dashboard');
       if (onUpdate) onUpdate();
     } catch (error: any) {
-      alert(error?.message || 'Bestand konnte nicht aktualisiert werden.');
+      showToast(error?.message || 'Bestand konnte nicht aktualisiert werden.', 'error');
     } finally {
       setIsAdjusting(false);
     }
@@ -77,14 +80,21 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
     e.preventDefault();
     e.stopPropagation();
     if (isDeleting) return;
-    if (!window.confirm(`Wein "${wine.name}" in den Papierkorb verschieben?`)) return;
+    const confirmed = await confirmDelete({
+      title: 'In den Papierkorb verschieben?',
+      description: `"${wine.name}" landet im Papierkorb und lässt sich dort wiederherstellen.`,
+      confirmLabel: 'Verschieben',
+      destructive: true
+    });
+    if (!confirmed) return;
 
     try {
       setIsDeleting(true);
       await storageService.softDeleteWine(wine.id, 'Aus Kartenansicht gelöscht');
+      showToast(`"${wine.name}" wurde in den Papierkorb verschoben.`, 'success');
       if (onUpdate) onUpdate();
     } catch (error: any) {
-      alert(error?.message || 'Löschen fehlgeschlagen.');
+      showToast(error?.message || 'Löschen fehlgeschlagen.', 'error');
     } finally {
       setIsDeleting(false);
     }

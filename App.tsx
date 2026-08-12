@@ -3,6 +3,7 @@ import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from 
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout.tsx';
 import { Auth } from './components/Auth.tsx';
+import { FeedbackProvider } from './components/Feedback.tsx';
 import { AlertCircle } from 'lucide-react';
 import { Wine, UserProfile } from './types.ts';
 import { storageService } from './services/storage.ts';
@@ -57,7 +58,18 @@ const MissingConfigScreen: React.FC = () => (
   </div>
 );
 
-const App: React.FC = () => {
+/**
+ * Toasts and confirm dialogs need to be available everywhere, including the
+ * loading/auth/offline screens App renders before any route exists - so the
+ * provider wraps the whole shell rather than sitting inside HashRouter.
+ */
+const App: React.FC = () => (
+  <FeedbackProvider>
+    <AppShell />
+  </FeedbackProvider>
+);
+
+const AppShell: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [wines, setWines] = useState<Wine[]>([]);
   const [loading, setLoading] = useState(true);

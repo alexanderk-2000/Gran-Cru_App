@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, ClipboardList, Loader2, Search } from 'lucide-react';
 import { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
+import { useConfirm } from '../components/Feedback.tsx';
 
 interface StocktakeProps {
   wines: Wine[];
@@ -11,6 +12,7 @@ interface StocktakeProps {
 
 export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const [search, setSearch] = useState('');
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [isApplying, setIsApplying] = useState(false);
@@ -55,7 +57,12 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
 
   const handleApply = async () => {
     if (discrepancies.length === 0 || isApplying) return;
-    if (!window.confirm(`${discrepancies.length} Abweichung(en) als Bestandskorrektur übernehmen?`)) return;
+    const confirmed = await confirm({
+      title: 'Korrekturen übernehmen?',
+      description: `${discrepancies.length} Abweichung(en) werden als Bestandskorrektur gespeichert.`,
+      confirmLabel: 'Übernehmen'
+    });
+    if (!confirmed) return;
 
     setIsApplying(true);
     setError(null);

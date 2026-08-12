@@ -18,6 +18,7 @@ import { Badge } from '../../components/Badge.tsx';
 import { ImageUploader } from '../../components/ImageUploader.tsx';
 import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
 import { MoveToPocketDialog } from '../../components/MoveToPocketDialog.tsx';
+import { useToast, useConfirm } from '../../components/Feedback.tsx';
 import { normalizeSubcellar } from '../../domain/wine/normalization.ts';
 import { storageService } from '../../services/storage.ts';
 import { imageStorageService, type ImageSlot } from '../../services/imageStorage.ts';
@@ -38,14 +39,6 @@ const TAB_ITEMS = [
 ] as const;
 
 type TabId = (typeof TAB_ITEMS)[number]['id'];
-type ToastTone = 'success' | 'error' | 'info';
-
-interface ToastMessage {
-  id: number;
-  tone: ToastTone;
-  text: string;
-}
-
 interface GrapeFormEntry {
   name: string;
   percentage: string;
@@ -829,39 +822,6 @@ const toneClass: Record<WindowMetrics['statusTone'], string> = {
   past: 'bg-rose-50 text-rose-700 border-rose-100',
   unknown: 'bg-stone-100 text-stone-500 border-stone-200'
 };
-
-const InlineToast = memo(function InlineToast({ message, onClose }: { message: ToastMessage | null; onClose: () => void }) {
-  useEffect(() => {
-    if (!message) return undefined;
-    const timer = window.setTimeout(onClose, 3600);
-    return () => window.clearTimeout(timer);
-  }, [message, onClose]);
-
-  if (!message) return null;
-
-  const colorClass =
-    message.tone === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      : message.tone === 'info'
-        ? 'border-stone-300 bg-white text-stone-700'
-        : 'border-rose-200 bg-rose-50 text-rose-700';
-
-  return (
-    <div className="fixed left-1/2 top-6 z-[80] w-[min(92vw,560px)] -translate-x-1/2">
-      <div className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.08)] ${colorClass}`}>
-        <p className="text-sm leading-5">{message.text}</p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-current/70 hover:bg-black/5"
-          aria-label="Hinweis schließen"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
-});
 
 const DetailSkeleton = memo(function DetailSkeleton() {
   return (
@@ -1730,11 +1690,8 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
     missing_fields_json: '[]'
   });
 
-  const [toast, setToast] = useState<ToastMessage | null>(null);
-
-  const showToast = useCallback((text: string, tone: ToastTone) => {
-    setToast({ id: Date.now(), text, tone });
-  }, []);
+  const showToast = useToast();
+  const confirmDelete = useConfirm();
 
   // Opening a bottle and writing a note are the same dialog with different
   // defaults: the header button pre-selects consumption, the notes timeline
@@ -1939,7 +1896,13 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
 
   const handleDelete = useCallback(async () => {
     if (!wine || !canMutate) return;
-    if (!window.confirm('Diesen Wein in den Papierkorb verschieben?')) return;
+    const confirmed = await confirmDelete({
+      title: 'In den Papierkorb verschieben?',
+      description: `"${wine.name}" landet im Papierkorb und lässt sich dort wiederherstellen.`,
+      confirmLabel: 'Verschieben',
+      destructive: true
+    });
+    if (!confirmed) return;
 
     setIsSaving(true);
     try {
@@ -1951,7 +1914,7 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
       showToast(normalizeError(error, 'Löschen fehlgeschlagen.'), 'error');
       setIsSaving(false);
     }
-  }, [wine, canMutate, navigate, showToast, onChanged]);
+  }, [wine, canMutate, navigate, showToast, onChanged, confirmDelete]);
 
   const handleSaveEdit = useCallback(async () => {
     if (!wine || !canMutate) return;
@@ -2083,17 +2046,13 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
 
   if (loading) {
     return (
-      <>
-        <InlineToast message={toast} onClose={() => setToast(null)} />
-        <DetailSkeleton />
-      </>
+      <DetailSkeleton />
     );
   }
 
   if (!wine || !metrics || !structureRows) {
     return (
       <div className="min-h-screen px-6 py-12" style={{ backgroundColor: LUXURY_BG }}>
-        <InlineToast message={toast} onClose={() => setToast(null)} />
         <div className="mx-auto max-w-3xl rounded-3xl border border-stone-200 bg-white p-8 text-center">
           <h2 className="font-serif text-2xl text-stone-900">Wein nicht gefunden</h2>
           <p className="mt-2 text-sm text-stone-500">Der Datensatz ist nicht verfügbar oder wurde gelöscht.</p>
@@ -2111,8 +2070,6 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
 
   return (
     <div className="min-h-screen pb-16" style={{ backgroundColor: LUXURY_BG }}>
-      <InlineToast key={toast?.id ?? 0} message={toast} onClose={() => setToast(null)} />
-
       {/* Hero wine image */}
       {heroImage && (
         <div className="relative w-full h-64 md:h-80 overflow-hidden">
