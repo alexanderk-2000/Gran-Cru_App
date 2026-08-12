@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { buildWineCsv } from '../../services/exportService.ts';
+import { buildWineCsv } from '../../domain/wine/csvExport.ts';
 import type { Wine } from '../../types.ts';
 
 const wine = (overrides: Partial<Wine> = {}): Wine =>
