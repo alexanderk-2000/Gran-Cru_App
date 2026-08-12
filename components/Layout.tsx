@@ -41,7 +41,7 @@ const navGroups = [
   },
   {
     title: 'Historie',
-    items: [{ path: '/drink-history', label: 'Trinkhistorie', icon: History }]
+    items: [{ path: '/drink-history', label: 'Kellerbuch', icon: History }]
   },
   {
     title: 'System',

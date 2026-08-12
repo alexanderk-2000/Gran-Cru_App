@@ -687,6 +687,34 @@ export const storageService = {
     return updatedWine as Wine;
   },
 
+  /**
+   * Every stock event, not just consumption - purchases, losses, stocktake
+   * corrections, transfers and soft deletes are all recorded but were visible
+   * nowhere. getConsumptionHistory() stays consume-only because the dashboard's
+   * "Zuletzt getrunken" list needs exactly that.
+   */
+  getInventoryEvents: async (): Promise<Array<{
+    id: string;
+    wine_id: string;
+    user_id: string;
+    type: string;
+    delta: number;
+    source: string;
+    note?: string | null;
+    created_at: string;
+    wines: { name: string; producer?: string; vintage?: number } | null;
+  }>> => {
+    const { data, error } = await supabase
+      .from('inventory_events')
+      .select('id,wine_id,user_id,type,delta,source,note,created_at,wines(name,producer,vintage)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return ((data || []) as any[]).map((row) => ({
+      ...row,
+      wines: Array.isArray(row.wines) ? row.wines[0] || null : row.wines
+    }));
+  },
+
   getConsumptionHistory: async (): Promise<Array<{
     id: string;
     wine_id: string;

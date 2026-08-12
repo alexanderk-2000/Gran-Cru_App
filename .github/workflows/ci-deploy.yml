@@ -22,7 +22,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # @supabase/supabase-js deprecates Node <= 20, and its realtime part
+          # throws there ("native WebSocket not found") the moment a module
+          # constructs a client - which made a test pass locally (Node 22) and
+          # fail only in CI. Matching the library's own requirement removes that
+          # whole class of environment-only failure.
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
@@ -52,7 +57,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # @supabase/supabase-js deprecates Node <= 20, and its realtime part
+          # throws there ("native WebSocket not found") the moment a module
+          # constructs a client - which made a test pass locally (Node 22) and
+          # fail only in CI. Matching the library's own requirement removes that
+          # whole class of environment-only failure.
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies

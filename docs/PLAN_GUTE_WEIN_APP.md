@@ -187,10 +187,17 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 | 3.2 ✅ | **Notiz ohne Verbrauch ermöglichen** (Verkostung beim Händler, zweites Glas aus derselben Flasche). Entkoppelt Notiz von Bestandsabgang. |
 | 3.3 ✅ | **Bestandsmutationen in eine Postgres-Funktion verlegen.** `adjust_stock(wine_id, delta, type, source, note)` als `SECURITY INVOKER`-RPC: Menge ändern und Event schreiben in einer Transaktion. Client, Offline-Adapter und Queue-Replay rufen nur noch diese eine Funktion. Beseitigt die Lese-Rechne-Schreibe-Rennen und die manuellen Rollback-Schreibvorgänge. |
 | 3.4 ✅ | **Ein Reifemodell.** `getWineStatus` wird zu einer dünnen Hülle über `evaluateWineDrinkability`. Kellerliste, Karten, Dashboard und Zeitachse zeigen dann dieselbe Bewertung wie das Detail — inklusive Unsicherheitshinweis, wenn Struktur-Daten fehlen. |
-| 3.5 ◐ | **Trinkhistorie zur Genusshistorie ausbauen:** alle Event-Typen (Zugang, Abgang, Verlust, Korrektur, Umlagerung) mit Filter, verlinkt auf den Wein, mit Bewertung und Notiz in der Zeile. Das Dashboard-„Letzte Aktivitäten" nutzt dieselbe Quelle und stimmt dann mit seiner Beschriftung überein. |
+| 3.5 ✅ | **Trinkhistorie zur Genusshistorie ausbauen:** alle Event-Typen (Zugang, Abgang, Verlust, Korrektur, Umlagerung) mit Filter, verlinkt auf den Wein, mit Bewertung und Notiz in der Zeile. Das Dashboard-„Letzte Aktivitäten" nutzt dieselbe Quelle und stimmt dann mit seiner Beschriftung überein. |
 | 3.6 ✅ | **Globale Sync-Anzeige.** Ein Statuselement in Kopfzeile/Bottom-Bar: online/offline, ausstehende Änderungen, letzter Sync, Tippen → sofort synchronisieren. Ersetzt das statische „Safe & Secure"-Dekor. Die Daten dafür liefert `subscribeQueueSnapshot` bereits. |
 
 **Fertig, wenn:** Eine geöffnete Flasche taucht mit Bewertung und Notiz in der Historie und am Wein auf. Zwei gleichzeitige Bestandsänderungen führen nachweislich (Test) zum korrekten Endbestand. Ein Wein hat in Liste und Detail denselben Status.
+
+#### Umsetzungsnotizen zu 3.5
+
+- Aus der „Trinkhistorie" wird das **Kellerbuch**: alle Ereignistypen (getrunken, Zugang, Korrektur, Verlust, Umlagerung) **plus** die neuen Verkostungsnotizen, nach Tagen gruppiert, mit Filterchips samt Anzahl und Link auf den Wein. Bewertungen erscheinen als Sterne, Notizen als Zitat, Ereignisnotizen (Verlustgrund, Umlagerung) als Randnotiz.
+- Neu `getInventoryEvents()` für alle Typen; `getConsumptionHistory()` bleibt bewusst auf `consume` beschränkt, weil das Dashboard genau diese Liste als „Zuletzt getrunken" zeigt.
+- **Dabei gefundene Inkonsistenz:** Der Offline-Adapter gab bei `getConsumptionHistory` *alle* Ereignistypen aus Dexie zurück, während der Server auf `type = 'consume'` filterte — derselbe Screen zeigte online und offline unterschiedliche Zeilen. Jetzt filtern beide Pfade gleich.
+- Die Notizen kommen über `getTastingsCreatedSince(null)` in einer Abfrage für alle Weine (die Funktion existierte schon für den Delta-Sync), nicht als eine Abfrage pro Wein.
 
 #### Umsetzungsnotizen zu 3.3 und 3.6
 
