@@ -262,6 +262,26 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 - **Bewusst nicht umgesetzt:** „Löschungen mit Rückgängig-Toast statt Bestätigungsdialog" aus dem ursprünglichen Plantext. Ein Bestätigungsdialog vor der Papierkorb-Verschiebung ist für harte Löschungen (endgültiges Löschen, Papierkorb leeren) weiterhin die sicherere Wahl; für die weichen Löschungen (in den Papierkorb) ist ein Rückgängig-Toast ein sinnvoller nächster Schritt, aber ein eigenständiger UX-Wechsel, der eine eigene Betrachtung verdient statt als Nebeneffekt dieser Umstellung zu passieren.
 - Sechs Testfälle in `tests/unit/feedback.test.tsx` (Toast-Anzeige, Auto-Dismiss, manuelles Schließen, Confirm-Auflösung in beide Richtungen, Fehler bei fehlendem Provider).
 
+#### Umsetzungsnotizen zu 6.2
+
+- `services/imageStorage.ts` speichert pro Foto-Slot jetzt ein reines Vorhanden-Flag (`ai_details.app.images.bottle = true`) statt der Signed URL selbst. Der Speicherpfad ist aus `(user_id, wine_id, slot)` vollständig deterministisch (`buildPath`), muss also gar nicht persistiert werden — beim Anzeigen wird immer frisch signiert.
+- **Rückwirkend repariert, ohne Migrationsskript:** Jeder Wahrheitswert im Slot gilt als „vorhanden, jetzt neu signieren" — auch die alten, irgendwann ablaufenden URL-Strings aus bestehenden Datensätzen. Damit funktionieren auch heute schon abgelaufene Fotos wieder, sobald sie das nächste Mal angezeigt werden, ohne dass jemand die Datenbank anfassen muss.
+- Neue Funktionen: `getImageFlags` (synchron, keine Netzwerkanfrage — reine Präsenzprüfung) und `resolveImageUrls` (asynchron, signiert nur die Slots mit gesetztem Flag, mit 30-Minuten-In-Memory-Cache gegen wiederholtes Signieren bei Re-Renders). `mergeImageUrl` → `setImagePresence`.
+- `WineDetailPage.tsx` und `WineCard.tsx` lösen die Anzeige-URL jetzt per `useEffect` auf, statt sie synchron aus dem Datensatz zu lesen — bei `WineCard` wird das ganz übersprungen, wenn kein Slot ein Flag gesetzt hat (der Normalfall für die meisten Weine).
+- Neun Testfälle in `tests/unit/imageStorage.test.ts`, darunter explizit die Rückwärtskompatibilität mit alten URL-Strings und dass ein fehlgeschlagenes Signieren die Seite nicht zum Absturz bringt.
+
+#### Umsetzungsnotizen zu 4.2
+
+#### Umsetzungsnotizen zu 4.2
+
+#### Umsetzungsnotizen zu 6.2
+
+- `services/imageStorage.ts` speichert pro Foto-Slot jetzt ein reines Vorhanden-Flag (`ai_details.app.images.bottle = true`) statt der Signed URL selbst. Der Speicherpfad ist aus `(user_id, wine_id, slot)` vollständig deterministisch (`buildPath`), muss also gar nicht persistiert werden — beim Anzeigen wird immer frisch signiert.
+- **Rückwirkend repariert, ohne Migrationsskript:** Jeder Wahrheitswert im Slot gilt als „vorhanden, jetzt neu signieren" — auch die alten, irgendwann ablaufenden URL-Strings aus bestehenden Datensätzen. Damit funktionieren auch heute schon abgelaufene Fotos wieder, sobald sie das nächste Mal angezeigt werden, ohne dass jemand die Datenbank anfassen muss.
+- Neue Funktionen: `getImageFlags` (synchron, keine Netzwerkanfrage — reine Präsenzprüfung) und `resolveImageUrls` (asynchron, signiert nur die Slots mit gesetztem Flag, mit 30-Minuten-In-Memory-Cache gegen wiederholtes Signieren bei Re-Renders). `mergeImageUrl` → `setImagePresence`.
+- `WineDetailPage.tsx` und `WineCard.tsx` lösen die Anzeige-URL jetzt per `useEffect` auf, statt sie synchron aus dem Datensatz zu lesen — bei `WineCard` wird das ganz übersprungen, wenn kein Slot ein Flag gesetzt hat (der Normalfall für die meisten Weine).
+- Neun Testfälle in `tests/unit/imageStorage.test.ts`, darunter explizit die Rückwärtskompatibilität mit alten URL-Strings und dass ein fehlgeschlagenes Signieren die Seite nicht zum Absturz bringt.
+
 #### Umsetzungsnotizen zu 4.2
 
 #### Umsetzungsnotizen zu 4.2
@@ -296,7 +316,7 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 | # | Arbeitspaket |
 | --- | --- |
 | 6.1 ✅ | **Export & Backup:** CSV und vollständiges JSON (Weine, Flaschen, Notizen, Events) in den Einstellungen. |
-| 6.2 | **Bild-URLs reparieren.** Nicht die Signed URL speichern, sondern den Storage-Pfad; die URL beim Anzeigen erzeugen. Beseitigt das stille Ablaufen nach einem Jahr. Bestehende Einträge per Migration auf Pfade zurückführen. |
+| 6.2 ✅ | **Bild-URLs reparieren.** Nicht die Signed URL speichern, sondern den Storage-Pfad; die URL beim Anzeigen erzeugen. Beseitigt das stille Ablaufen nach einem Jahr. Bestehende Einträge per Migration auf Pfade zurückführen. |
 | 6.3 ✅ | **Toast-System global.** Den vorhandenen `InlineToast` zu einem App-weiten Provider heben und alle 33 `alert()`/`confirm()`-Aufrufe ersetzen; Löschungen mit „Rückgängig"-Toast statt Bestätigungsdialog. |
 | 6.4 | **Einstellungen für Sammler.** Modellwahl als „Schnell / Ausgewogen / Gründlich", keine Terminalbefehle, keine `.env`-Pfade; Modellkatalog nur noch aus einer Quelle (Server). |
 | 6.5 | **Sprache und Ton vereinheitlichen** — durchgängig „du" oder „Sie", Bankmetaphern raus („Pockets/Unterkonten" → „Regale/Fächer", „flüssige Assets" → „Sammlung"). |

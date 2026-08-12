@@ -2020,16 +2020,31 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
     }
   }, [wine, canMutate, editForm, showToast, onChanged]);
 
-  const wineImages = useMemo<Record<ImageSlot, string | null>>(
-    () => (wine ? imageStorageService.getImagesFromWine(wine) : { bottle: null, label: null, case: null }),
-    [wine]
-  );
+  // ai_details only ever holds a presence flag per slot now (see
+  // services/imageStorage.ts), so the actual <img src> has to be resolved
+  // asynchronously - a fresh signed URL, not something read back verbatim.
+  const [wineImages, setWineImages] = useState<Record<ImageSlot, string | null>>({
+    bottle: null,
+    label: null,
+    case: null
+  });
+  useEffect(() => {
+    if (!wine) {
+      setWineImages({ bottle: null, label: null, case: null });
+      return;
+    }
+    let active = true;
+    void imageStorageService.resolveImageUrls(wine).then((resolved) => {
+      if (active) setWineImages(resolved);
+    });
+    return () => { active = false; };
+  }, [wine]);
   const heroImage = wineImages.bottle || wineImages.label || wineImages.case;
 
   const handleImageUpload = useCallback(async (slot: ImageSlot, file: File) => {
     if (!wine) return;
-    const url = await imageStorageService.upload(wine.id, slot, file);
-    const updatedDetails = imageStorageService.mergeImageUrl(wine.ai_details, slot, url);
+    await imageStorageService.upload(wine.id, slot, file);
+    const updatedDetails = imageStorageService.setImagePresence(wine.ai_details, slot, true);
     const updated = await storageService.saveWine({ ...wine, ai_details: updatedDetails, updated_at: new Date().toISOString() });
     setWine(updated);
     showToast('Bild hochgeladen.', 'success');
@@ -2038,7 +2053,7 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
   const handleImageDelete = useCallback(async (slot: ImageSlot) => {
     if (!wine) return;
     await imageStorageService.delete(wine.id, slot);
-    const updatedDetails = imageStorageService.mergeImageUrl(wine.ai_details, slot, null);
+    const updatedDetails = imageStorageService.setImagePresence(wine.ai_details, slot, false);
     const updated = await storageService.saveWine({ ...wine, ai_details: updatedDetails, updated_at: new Date().toISOString() });
     setWine(updated);
     showToast('Bild gelöscht.', 'success');

@@ -1,10 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wine, WineStatus } from '../types.ts';
 import { getBottleUnitValue, getWineMaturity, formatCurrency, hasKnownPrice } from '../utils.ts';
 import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater, MapPin } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+import { imageStorageService } from '../services/imageStorage.ts';
 import { useToast, useConfirm } from './Feedback.tsx';
 
 interface WineCardProps {
@@ -125,10 +126,22 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, 
     }
   };
 
-  const wineImage = (wine as any).ai_details?.app?.images?.bottle
-    || (wine as any).ai_details?.app?.images?.label
-    || (wine as any).ai_details?.app?.images?.case
-    || null;
+  // ai_details only stores a presence flag per photo slot (see
+  // services/imageStorage.ts) - never a URL - so the thumbnail is resolved to
+  // a fresh signed URL here instead of read off the wine record directly.
+  const [wineImage, setWineImage] = useState<string | null>(null);
+  useEffect(() => {
+    const flags = imageStorageService.getImageFlags(wine);
+    if (!flags.bottle && !flags.label && !flags.case) {
+      setWineImage(null);
+      return;
+    }
+    let active = true;
+    void imageStorageService.resolveImageUrls(wine).then((resolved) => {
+      if (active) setWineImage(resolved.bottle || resolved.label || resolved.case);
+    });
+    return () => { active = false; };
+  }, [wine]);
 
   return (
     <div className={`
