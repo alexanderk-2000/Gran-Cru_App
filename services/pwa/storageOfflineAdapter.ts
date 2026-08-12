@@ -35,7 +35,8 @@ const MAIN_READ_OPERATIONS = new Set([
   'getOccasionInstancesByOccasion',
   'getOccasionWinePool',
   'getTastings',
-  'getConsumptionHistory'
+  'getConsumptionHistory',
+  'getInventoryEvents'
 ]);
 
 const nowIso = () => new Date().toISOString();
@@ -143,7 +144,14 @@ const readLocalArray = async <T>(operation: string, args: unknown[], userId: str
         .equals(String(args[0] || ''))
         .filter((row) => row.user_id === userId)
         .toArray()) as T[];
-    case 'getConsumptionHistory':
+    case 'getConsumptionHistory': {
+      // Was returning *every* event type offline while the server filtered to
+      // 'consume' - the same screen showed different rows depending on
+      // connectivity.
+      const rows = await offlineDb.inventory_events.where('user_id').equals(userId).toArray();
+      return rows.filter((row) => row.type === 'consume') as T[];
+    }
+    case 'getInventoryEvents':
       return (await offlineDb.inventory_events.where('user_id').equals(userId).toArray()) as T[];
     default:
       return [];

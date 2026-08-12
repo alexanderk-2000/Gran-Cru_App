@@ -16,10 +16,15 @@ import {
 } from 'lucide-react';
 import { Badge } from '../../components/Badge.tsx';
 import { ImageUploader } from '../../components/ImageUploader.tsx';
+import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
+import { MoveToPocketDialog } from '../../components/MoveToPocketDialog.tsx';
+import { useToast, useConfirm } from '../../components/Feedback.tsx';
+import { normalizeSubcellar } from '../../domain/wine/normalization.ts';
 import { storageService } from '../../services/storage.ts';
 import { imageStorageService, type ImageSlot } from '../../services/imageStorage.ts';
 import { evaluateWineDrinkability, formatCurrency } from '../../utils.ts';
 import { BottleFormat, Category, CriticScore, Tasting, Wine, WineDetails, WineType } from '../../types.ts';
+import { WINE_CATEGORIES } from '../../constants.ts';
 
 const LUXURY_BG = '#FDFBF7';
 const ACCENT_BURGUNDY = '#5B1E2D';
@@ -34,14 +39,6 @@ const TAB_ITEMS = [
 ] as const;
 
 type TabId = (typeof TAB_ITEMS)[number]['id'];
-type ToastTone = 'success' | 'error' | 'info';
-
-interface ToastMessage {
-  id: number;
-  tone: ToastTone;
-  text: string;
-}
-
 interface GrapeFormEntry {
   name: string;
   percentage: string;
@@ -171,7 +168,7 @@ interface StructureRows {
   oak: number | null;
 }
 
-const CATEGORY_OPTIONS: Category[] = ['Genuss', 'Rarität', 'Daily Drinker'];
+const CATEGORY_OPTIONS: Category[] = WINE_CATEGORIES;
 const WINE_TYPE_OPTIONS: WineType[] = ['Rot', 'Weiß', 'Rosé', 'Schaumwein', 'Süßwein'];
 const FORMAT_OPTIONS: BottleFormat[] = ['0.375L', '0.75L', '1.5L (Magnum)', '3.0L (Double Magnum)', '6.0L (Imperial)'];
 
@@ -826,39 +823,6 @@ const toneClass: Record<WindowMetrics['statusTone'], string> = {
   unknown: 'bg-stone-100 text-stone-500 border-stone-200'
 };
 
-const InlineToast = memo(function InlineToast({ message, onClose }: { message: ToastMessage | null; onClose: () => void }) {
-  useEffect(() => {
-    if (!message) return undefined;
-    const timer = window.setTimeout(onClose, 3600);
-    return () => window.clearTimeout(timer);
-  }, [message, onClose]);
-
-  if (!message) return null;
-
-  const colorClass =
-    message.tone === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      : message.tone === 'info'
-        ? 'border-stone-300 bg-white text-stone-700'
-        : 'border-rose-200 bg-rose-50 text-rose-700';
-
-  return (
-    <div className="fixed left-1/2 top-6 z-[80] w-[min(92vw,560px)] -translate-x-1/2">
-      <div className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.08)] ${colorClass}`}>
-        <p className="text-sm leading-5">{message.text}</p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-current/70 hover:bg-black/5"
-          aria-label="Hinweis schließen"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
-});
-
 const DetailSkeleton = memo(function DetailSkeleton() {
   return (
     <div className="min-h-screen px-6 pb-14 pt-8" style={{ backgroundColor: LUXURY_BG }}>
@@ -963,7 +927,8 @@ const HeaderCard = memo(function HeaderCard({
   onOpenPurchase,
   onDelete,
   onDrink,
-  onAdjust
+  onAdjust,
+  onOpenMove
 }: {
   wine: Wine;
   isSaving: boolean;
@@ -973,6 +938,7 @@ const HeaderCard = memo(function HeaderCard({
   onDelete: () => void;
   onDrink: () => void;
   onAdjust: (delta: number) => void;
+  onOpenMove: () => void;
 }) {
   const disabled = isSaving;
 
@@ -1010,6 +976,15 @@ const HeaderCard = memo(function HeaderCard({
                 >
                   <Plus className="h-4 w-4" />
                   Nachkauf
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenMove}
+                  disabled={disabled}
+                  className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-50"
+                >
+                  <MapPin className="h-4 w-4" />
+                  Verschieben
                 </button>
                 <button
                   type="button"
@@ -1060,7 +1035,7 @@ const HeaderCard = memo(function HeaderCard({
                   </button>
                   <div className="text-center">
                     <p className="font-serif text-4xl leading-none text-stone-900">{wine.quantity}</p>
-                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">Flaschen</p>
+                    <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Flaschen</p>
                   </div>
                   <button
                     type="button"
@@ -1080,7 +1055,7 @@ const HeaderCard = memo(function HeaderCard({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
                   style={{ backgroundColor: ACCENT_BURGUNDY }}
                 >
-                  <GlassWater className="h-4 w-4" /> Flasche trinken
+                  <GlassWater className="h-4 w-4" /> Flasche öffnen
                 </button>
               </div>
             </div>
@@ -1170,21 +1145,21 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Fenster-Fortschritt</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Fenster-Fortschritt</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">
             {metrics.windowProgressPercent !== null ? `${metrics.windowProgressPercent}%` : '—'}
           </p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Bis Peak</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Bis Peak</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">{peakTimingLabel}</p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Bis Fensterende</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Bis Fensterende</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">{endTimingLabel}</p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Fensterlänge</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Fensterlänge</p>
           <p className="mt-1 text-sm font-semibold text-stone-800">
             {metrics.windowLengthYears !== null ? `${metrics.windowLengthYears} Jahre` : '—'}
           </p>
@@ -1192,7 +1167,7 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
       </div>
 
       <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Nächster Schritt</p>
+        <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Nächster Schritt</p>
         <p className="mt-1 text-sm text-stone-700">{metrics.nextAction}</p>
       </div>
 
@@ -1376,7 +1351,7 @@ const RatingsCard = memo(function RatingsCard({ ratings }: { ratings: Normalized
           <div key={`${rating.critic}-${rating.scoreLabel}`} className="rounded-2xl border border-stone-200 bg-stone-50/50 p-3 text-center">
             <p className="font-serif text-2xl text-stone-900">{rating.scoreLabel}</p>
             <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-stone-500">{rating.critic}</p>
-            {rating.year ? <p className="mt-0.5 text-[10px] text-stone-400">Jg. {rating.year}</p> : null}
+            {rating.year ? <p className="mt-0.5 text-[11px] text-stone-400">Jg. {rating.year}</p> : null}
           </div>
         ))}
       </div>
@@ -1509,12 +1484,15 @@ const NotesTimeline = memo(function NotesTimeline({ tastings, onCreateNote, disa
           disabled={disabled}
           className="rounded-full border border-stone-300 px-4 py-2 text-xs uppercase tracking-[0.16em] text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-50"
         >
-          Flasche trinken
+          Notiz erfassen
         </button>
       </div>
 
       {tastings.length === 0 ? (
-        <p className="text-sm text-stone-500">Noch keine Verkostungen vorhanden.</p>
+        <p className="text-sm text-stone-500">
+          Noch keine Verkostung notiert. Beim Öffnen einer Flasche - oder jederzeit über
+          „Notiz erfassen“ - hältst du hier Bewertung und Eindruck fest.
+        </p>
       ) : (
         <ol className="space-y-5">
           {tastings.map((tasting) => (
@@ -1523,16 +1501,20 @@ const NotesTimeline = memo(function NotesTimeline({ tastings, onCreateNote, disa
                 <time className="text-xs uppercase tracking-[0.16em] text-stone-500">
                   {new Date(tasting.date).toLocaleDateString('de-DE')}
                 </time>
-                <div className="flex items-center gap-0.5" aria-label={`Bewertung ${tasting.rating} von 5`}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={`${tasting.id}-${star}`}
-                      className={`h-3.5 w-3.5 ${star <= tasting.rating ? 'fill-current text-[color:#C8A24A]' : 'text-stone-300'}`}
-                    />
-                  ))}
-                </div>
+                {tasting.rating > 0 && (
+                  <div className="flex items-center gap-0.5" aria-label={`Bewertung ${tasting.rating} von 5`}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={`${tasting.id}-${star}`}
+                        className={`h-3.5 w-3.5 ${star <= tasting.rating ? 'fill-current text-[color:#C8A24A]' : 'text-stone-300'}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              <p className="font-serif text-base leading-relaxed text-stone-800">“{tasting.note}”</p>
+              {tasting.note ? (
+                <p className="font-serif text-base leading-relaxed text-stone-800">“{tasting.note}”</p>
+              ) : null}
             </li>
           ))}
         </ol>
@@ -1654,7 +1636,7 @@ const Dialog = memo(function Dialog({
   );
 });
 
-export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrink }) => {
+export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1708,10 +1690,26 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
     missing_fields_json: '[]'
   });
 
-  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const showToast = useToast();
+  const confirmDelete = useConfirm();
 
-  const showToast = useCallback((text: string, tone: ToastTone) => {
-    setToast({ id: Date.now(), text, tone });
+  // Opening a bottle and writing a note are the same dialog with different
+  // defaults: the header button pre-selects consumption, the notes timeline
+  // does not (a note must not require drinking a bottle).
+  const [openBottleMode, setOpenBottleMode] = useState<{ consume: boolean } | null>(null);
+  const openBottleDialog = useCallback((consume: boolean) => setOpenBottleMode({ consume }), []);
+
+  const [isMoveOpen, setIsMoveOpen] = useState(false);
+  const [pocketOptions, setPocketOptions] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    void storageService.getCellarPockets().then((pockets) => {
+      if (!active) return;
+      setPocketOptions(
+        pockets.map((pocket) => normalizeSubcellar(pocket.name)).filter((name) => name.length > 0)
+      );
+    }).catch(() => undefined);
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -1752,6 +1750,20 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
       active = false;
     };
   }, [id, navigate, showToast]);
+
+  // Every mutation on this page also changes the cellar list the app keeps in
+  // memory. Only drinking used to report back, so a purchase or an edit left
+  // the list stale until a reload.
+  const reloadWine = useCallback(async () => {
+    if (!id) return;
+    const [loadedWine, history] = await Promise.all([
+      storageService.getWineById(id),
+      storageService.getTastings(id)
+    ]);
+    if (loadedWine) setWine(loadedWine);
+    setTastings(history);
+    onChanged?.();
+  }, [id, onChanged]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1842,6 +1854,7 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
         const updated = await storageService.adjustStock(wine.id, delta, 'detail');
         if (updated) {
           setWine(updated as Wine);
+          onChanged?.();
         }
       } catch (error) {
         showToast(normalizeError(error, 'Bestand konnte nicht aktualisiert werden.'), 'error');
@@ -1849,7 +1862,7 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
         setIsSaving(false);
       }
     },
-    [wine, canMutate, showToast]
+    [wine, canMutate, showToast, onChanged]
   );
 
   const handleRegisterPurchase = useCallback(async () => {
@@ -1872,28 +1885,36 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
         setIsPurchaseModalOpen(false);
         setPurchaseQty(1);
         showToast('Nachkauf gespeichert.', 'success');
+        onChanged?.();
       }
     } catch (error) {
       showToast(normalizeError(error, 'Nachkauf konnte nicht gespeichert werden.'), 'error');
     } finally {
       setIsSaving(false);
     }
-  }, [wine, canMutate, purchaseQty, purchasePrice, showToast]);
+  }, [wine, canMutate, purchaseQty, purchasePrice, showToast, onChanged]);
 
   const handleDelete = useCallback(async () => {
     if (!wine || !canMutate) return;
-    if (!window.confirm('Diesen Wein in den Papierkorb verschieben?')) return;
+    const confirmed = await confirmDelete({
+      title: 'In den Papierkorb verschieben?',
+      description: `"${wine.name}" landet im Papierkorb und lässt sich dort wiederherstellen.`,
+      confirmLabel: 'Verschieben',
+      destructive: true
+    });
+    if (!confirmed) return;
 
     setIsSaving(true);
     try {
       await storageService.softDeleteWine(wine.id, 'Manuell gelöscht');
       showToast('Wein wurde in den Papierkorb verschoben.', 'success');
+      onChanged?.();
       navigate('/inventory');
     } catch (error) {
       showToast(normalizeError(error, 'Löschen fehlgeschlagen.'), 'error');
       setIsSaving(false);
     }
-  }, [wine, canMutate, navigate, showToast]);
+  }, [wine, canMutate, navigate, showToast, onChanged, confirmDelete]);
 
   const handleSaveEdit = useCallback(async () => {
     if (!wine || !canMutate) return;
@@ -1991,23 +2012,39 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
       setWine(updated);
       setIsEditModalOpen(false);
       showToast('Wein wurde gespeichert.', 'success');
+      onChanged?.();
     } catch (error) {
       showToast(normalizeError(error, 'Speichern fehlgeschlagen.'), 'error');
     } finally {
       setIsSaving(false);
     }
-  }, [wine, canMutate, editForm, showToast]);
+  }, [wine, canMutate, editForm, showToast, onChanged]);
 
-  const wineImages = useMemo<Record<ImageSlot, string | null>>(
-    () => (wine ? imageStorageService.getImagesFromWine(wine) : { bottle: null, label: null, case: null }),
-    [wine]
-  );
+  // ai_details only ever holds a presence flag per slot now (see
+  // services/imageStorage.ts), so the actual <img src> has to be resolved
+  // asynchronously - a fresh signed URL, not something read back verbatim.
+  const [wineImages, setWineImages] = useState<Record<ImageSlot, string | null>>({
+    bottle: null,
+    label: null,
+    case: null
+  });
+  useEffect(() => {
+    if (!wine) {
+      setWineImages({ bottle: null, label: null, case: null });
+      return;
+    }
+    let active = true;
+    void imageStorageService.resolveImageUrls(wine).then((resolved) => {
+      if (active) setWineImages(resolved);
+    });
+    return () => { active = false; };
+  }, [wine]);
   const heroImage = wineImages.bottle || wineImages.label || wineImages.case;
 
   const handleImageUpload = useCallback(async (slot: ImageSlot, file: File) => {
     if (!wine) return;
-    const url = await imageStorageService.upload(wine.id, slot, file);
-    const updatedDetails = imageStorageService.mergeImageUrl(wine.ai_details, slot, url);
+    await imageStorageService.upload(wine.id, slot, file);
+    const updatedDetails = imageStorageService.setImagePresence(wine.ai_details, slot, true);
     const updated = await storageService.saveWine({ ...wine, ai_details: updatedDetails, updated_at: new Date().toISOString() });
     setWine(updated);
     showToast('Bild hochgeladen.', 'success');
@@ -2016,7 +2053,7 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
   const handleImageDelete = useCallback(async (slot: ImageSlot) => {
     if (!wine) return;
     await imageStorageService.delete(wine.id, slot);
-    const updatedDetails = imageStorageService.mergeImageUrl(wine.ai_details, slot, null);
+    const updatedDetails = imageStorageService.setImagePresence(wine.ai_details, slot, false);
     const updated = await storageService.saveWine({ ...wine, ai_details: updatedDetails, updated_at: new Date().toISOString() });
     setWine(updated);
     showToast('Bild gelöscht.', 'success');
@@ -2024,17 +2061,13 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
 
   if (loading) {
     return (
-      <>
-        <InlineToast message={toast} onClose={() => setToast(null)} />
-        <DetailSkeleton />
-      </>
+      <DetailSkeleton />
     );
   }
 
   if (!wine || !metrics || !structureRows) {
     return (
       <div className="min-h-screen px-6 py-12" style={{ backgroundColor: LUXURY_BG }}>
-        <InlineToast message={toast} onClose={() => setToast(null)} />
         <div className="mx-auto max-w-3xl rounded-3xl border border-stone-200 bg-white p-8 text-center">
           <h2 className="font-serif text-2xl text-stone-900">Wein nicht gefunden</h2>
           <p className="mt-2 text-sm text-stone-500">Der Datensatz ist nicht verfügbar oder wurde gelöscht.</p>
@@ -2052,8 +2085,6 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
 
   return (
     <div className="min-h-screen pb-16" style={{ backgroundColor: LUXURY_BG }}>
-      <InlineToast key={toast?.id ?? 0} message={toast} onClose={() => setToast(null)} />
-
       {/* Hero wine image */}
       {heroImage && (
         <div className="relative w-full h-64 md:h-80 overflow-hidden">
@@ -2073,8 +2104,9 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
         onOpenEdit={openEditModal}
         onOpenPurchase={() => setIsPurchaseModalOpen(true)}
         onDelete={handleDelete}
-        onDrink={() => onDrink(wine)}
+        onDrink={() => openBottleDialog(true)}
         onAdjust={handleAdjustStock}
+        onOpenMove={() => setIsMoveOpen(true)}
       />
 
       <main className="mx-auto max-w-6xl px-6">
@@ -2145,12 +2177,37 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
           </section>
 
           <section id="section-notes" className="scroll-mt-24">
-            <NotesTimeline tastings={tastings} onCreateNote={() => onDrink(wine)} disabled={!canMutate || wine.quantity <= 0} />
+            <NotesTimeline tastings={tastings} onCreateNote={() => openBottleDialog(false)} disabled={!canMutate} />
           </section>
         </div>
       </main>
 
       <SourceFooter sources={sources} />
+
+      <OpenBottleDialog
+        open={openBottleMode !== null}
+        wine={wine}
+        source="detail"
+        defaultConsume={openBottleMode?.consume ?? true}
+        onClose={() => setOpenBottleMode(null)}
+        onSaved={(message) => {
+          setOpenBottleMode(null);
+          showToast(message, 'success');
+          void reloadWine();
+        }}
+      />
+
+      <MoveToPocketDialog
+        open={isMoveOpen}
+        wine={wine}
+        pocketOptions={pocketOptions}
+        onClose={() => setIsMoveOpen(false)}
+        onMoved={(message) => {
+          setIsMoveOpen(false);
+          showToast(message, 'success');
+          void reloadWine();
+        }}
+      />
 
       <Dialog open={isPurchaseModalOpen} title="Nachkauf" onClose={() => setIsPurchaseModalOpen(false)}>
         <div className="space-y-5">
@@ -2504,7 +2561,7 @@ const StructureSlidersField = memo(function StructureSlidersField({
               onChange={(event) => onChange({ ...value, [key]: Number(event.target.value) })}
               className="w-full accent-[#5B1E2D] disabled:opacity-40"
             />
-            <div className="flex justify-between text-[10px] uppercase tracking-[0.1em] text-stone-400">
+            <div className="flex justify-between text-[11px] uppercase tracking-[0.1em] text-stone-400">
               <span>{lowLabel}</span>
               <span>{isSet ? current : '—'}</span>
               <span>{highLabel}</span>

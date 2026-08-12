@@ -4,11 +4,15 @@ import { useLocation } from 'react-router-dom';
 import { Wine, Category, WineStatus } from '../../types.ts';
 import { WineCard } from '../../components/WineCard.tsx';
 import { ScannerOverlay } from '../../components/ScannerOverlay.tsx';
-import { ScanResultDialog } from '../../components/ScanResultDialog.tsx';
-import type { ScanResult } from '../../services/scanner.ts';
-import { Search, Plus, X, Loader2, Wand2, Upload, Copy, Check, ScanBarcode } from 'lucide-react';
-import { getWineFamily, getWineStatus } from '../../utils.ts';
+import { PurchaseDialog } from '../../components/PurchaseDialog.tsx';
+import { AddWineDialog, type AddWineSeed } from '../../components/AddWineDialog.tsx';
+import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
+import { MoveToPocketDialog } from '../../components/MoveToPocketDialog.tsx';
+import { useToast } from '../../components/Feedback.tsx';
+import { Search, Plus, X, Loader2, Upload, ScanBarcode } from 'lucide-react';
+import { getBottleUnitValue, getWineFamily, getWineStatus, hasKnownPrice } from '../../utils.ts';
 import { storageService } from '../../services/storage.ts';
+import { WINE_CATEGORIES } from '../../constants.ts';
 import { parseJsonInput } from '../../domain/wine/jsonParsers.ts';
 import {
   getImportCandidates,
@@ -22,21 +26,32 @@ import { loadInventoryViewPreferences, saveInventoryViewPreferences, type Invent
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
 
+type IssueFilter = 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon' | 'no-window';
+
+const ISSUE_META: Record<IssueFilter, { title: string; subtitle: string }> = {
+  'missing-price': { title: 'Ohne Preis', subtitle: 'Weine ohne Einstands- oder Marktpreis.' },
+  duplicates: { title: 'Mögliche Dubletten', subtitle: 'Positionen, die doppelt erfasst sein könnten.' },
+  'low-stock': { title: 'Letzte Flasche', subtitle: 'Weine mit nur noch einer Flasche im Keller.' },
+  'ending-soon': { title: 'Fensterende in Sicht', subtitle: 'Trinkfenster endet dieses oder nächstes Jahr.' },
+  'no-window': {
+    title: 'Ohne Trinkfenster',
+    subtitle: 'Weine, für die sich die Reife nicht bestimmen lässt – Start-, End- oder Peak-Jahr ergänzen.'
+  }
+};
+
 interface InventoryProps {
   wines: Wine[];
   wishlistOnly?: boolean;
   onWineUpdate: () => void;
-  onAddBottle: (wine: Partial<Wine>) => void;
-  onDrink: (wine: Wine) => void;
 }
 
 export const Inventory: React.FC<InventoryProps> = ({
   wines,
   wishlistOnly = false,
-  onDrink,
   onWineUpdate
 }) => {
   const location = useLocation();
+  const showToast = useToast();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<Category | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<WineStatus | 'All'>('All');
@@ -46,11 +61,11 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [preferencesHydrated, setPreferencesHydrated] = useState(false);
 
   // Add wine modal states
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-  const [aiInput, setAiInput] = useState('');
-  const [generatedPrompt, setGeneratedPrompt] = useState('');
-  const [promptCopied, setPromptCopied] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addSeed, setAddSeed] = useState<AddWineSeed | null>(null);
   const [isJsonImporting, setIsJsonImporting] = useState(false);
+  const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [jsonCodeInput, setJsonCodeInput] = useState('');
   const [targetSubcellar, setTargetSubcellar] = useState('');
   const [storedPocketNames, setStoredPocketNames] = useState<string[]>([]);
@@ -60,9 +75,11 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [draggedWineId, setDraggedWineId] = useState<string | null>(null);
   const [dropTargetPocketId, setDropTargetPocketId] = useState<string | null>(null);
   const [isMovingWine, setIsMovingWine] = useState(false);
+  const [bottleToOpen, setBottleToOpen] = useState<Wine | null>(null);
+  const [wineToMove, setWineToMove] = useState<Wine | null>(null);
+  const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [isScanResultOpen, setIsScanResultOpen] = useState(false);
   const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const presetView = useMemo(() => {
@@ -72,6 +89,21 @@ export const Inventory: React.FC<InventoryProps> = ({
     return null;
   }, [location.search]);
 
+  // Dashboard alerts link here with ?issue=… so their "Anzeigen" button lands
+  // on exactly the affected bottles instead of the unfiltered cellar list.
+  const presetIssue = useMemo<IssueFilter | null>(() => {
+    const issue = new URLSearchParams(location.search).get('issue');
+    const allowed = new Set<IssueFilter>(['missing-price', 'duplicates', 'low-stock', 'ending-soon', 'no-window']);
+    if (issue && allowed.has(issue as IssueFilter)) return issue as IssueFilter;
+    return null;
+  }, [location.search]);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('action') === 'purchase') {
+      setIsPurchaseOpen(true);
+    }
+  }, [location.search]);
+
   const presetMeta = useMemo(() => {
     if (wishlistOnly) {
       return {
@@ -79,6 +111,7 @@ export const Inventory: React.FC<InventoryProps> = ({
         subtitle: 'Geplante Ergänzungen.'
       };
     }
+    if (presetIssue) return ISSUE_META[presetIssue];
     switch (presetView) {
       case 'ready':
         return { title: 'Trinkbereit', subtitle: 'Flaschen im aktiven Trinkfenster.' };
@@ -95,9 +128,9 @@ export const Inventory: React.FC<InventoryProps> = ({
       case 'fortified':
         return { title: 'Portwein', subtitle: 'Segmentliste Fortified/Portwein.' };
       default:
-        return { title: 'Hauptkeller', subtitle: 'Verwaltung Ihrer flüssigen Assets.' };
+        return { title: 'Hauptkeller', subtitle: 'Deine Sammlung im Überblick.' };
     }
-  }, [presetView, wishlistOnly]);
+  }, [presetIssue, presetView, wishlistOnly]);
 
   const refreshStoredPockets = useCallback(async () => {
     try {
@@ -204,6 +237,7 @@ export const Inventory: React.FC<InventoryProps> = ({
 
   const importWinesFromJsonText = async (jsonText: string) => {
     setIsJsonImporting(true);
+    setImportError(null);
     try {
       const parsed = parseJsonInput(jsonText);
       const candidates = getImportCandidates(parsed);
@@ -253,24 +287,18 @@ export const Inventory: React.FC<InventoryProps> = ({
       }
 
       await onWineUpdate();
-      setIsAiModalOpen(false);
-      setAiInput('');
+      setIsJsonModalOpen(false);
       setJsonCodeInput('');
-      setGeneratedPrompt('');
-      setPromptCopied(false);
 
-      if (failed > 0 || invalid > 0 || duplicateSkipped > 0) {
-        const parts = [`${saved} Wein(e) importiert`];
-        if (invalid > 0) parts.push(`${invalid} Eintrag/Einträge waren ungültig`);
-        if (duplicateSkipped > 0) parts.push(`${duplicateSkipped} Eintrag/Einträge übersprungen (bereits im Keller)`);
-        if (failed > 0) parts.push(`${failed} Eintrag/Einträge konnten nicht gespeichert werden`);
-        alert(`${parts.join(', ')}.`);
-      } else {
-        alert(`${saved} Wein(e) erfolgreich importiert und global verfügbar.`);
-      }
+      const parts = [`${saved} Wein(e) importiert`];
+      if (invalid > 0) parts.push(`${invalid} ungültig`);
+      if (duplicateSkipped > 0) parts.push(`${duplicateSkipped} übersprungen (bereits im Keller)`);
+      if (failed > 0) parts.push(`${failed} nicht speicherbar`);
+      setFeedback(`${parts.join(' · ')}.`);
     } catch (error: any) {
       console.error('JSON import failed:', error);
-      alert(`JSON-Import fehlgeschlagen: ${error?.message || 'Ungültige Datei.'}\n\nTipp: Nur JSON einfügen oder den generierten Prompt nutzen und die Antwort 1:1 kopieren.`);
+      setFeedback(null);
+      setImportError(error?.message || 'Die Datei enthält kein gültiges JSON.');
     } finally {
       setIsJsonImporting(false);
     }
@@ -289,9 +317,47 @@ export const Inventory: React.FC<InventoryProps> = ({
     await importWinesFromJsonText(jsonCodeInput);
   };
 
+  const duplicateWineIds = useMemo(() => {
+    if (presetIssue !== 'duplicates') return new Set<string>();
+    const inventory = wines.filter((wine) => wine.wishlist === wishlistOnly);
+    const ids = new Set<string>();
+    for (const wine of inventory) {
+      if (ids.has(wine.id)) continue;
+      const matches = findLikelyDuplicates(wine, inventory, { excludeId: wine.id });
+      if (matches.length > 0) {
+        ids.add(wine.id);
+        for (const match of matches) ids.add(match.id);
+      }
+    }
+    return ids;
+  }, [presetIssue, wines, wishlistOnly]);
+
+  const matchesIssue = useCallback(
+    (wine: Wine): boolean => {
+      if (!presetIssue) return true;
+      const currentYear = new Date().getFullYear();
+      switch (presetIssue) {
+        case 'missing-price':
+          return !hasKnownPrice(wine);
+        case 'duplicates':
+          return duplicateWineIds.has(wine.id);
+        case 'low-stock':
+          return (wine.quantity || 0) > 0 && (wine.quantity || 0) <= 1;
+        case 'ending-soon':
+          return typeof wine.drink_end === 'number' && wine.drink_end <= currentYear + 1;
+        case 'no-window':
+          return getWineStatus(wine) === WineStatus.UNKNOWN;
+        default:
+          return true;
+      }
+    },
+    [duplicateWineIds, presetIssue]
+  );
+
   const filteredWines = useMemo(() => {
     return wines.filter(wine => {
       if (wine.wishlist !== wishlistOnly) return false;
+      if (!matchesIssue(wine)) return false;
       if (presetView === 'ready' && getWineStatus(wine) !== WineStatus.READY) return false;
       if (presetView === 'holding' && getWineStatus(wine) !== WineStatus.HOLD) return false;
       if (presetView === 'past' && getWineStatus(wine) !== WineStatus.PAST_PEAK) return false;
@@ -303,10 +369,15 @@ export const Inventory: React.FC<InventoryProps> = ({
         wine.region.toLowerCase().includes(search.toLowerCase()) ||
         wine.producer?.toLowerCase().includes(search.toLowerCase()) ||
         wine.subcellar?.toLowerCase().includes(search.toLowerCase());
-      const matchesCategory = categoryFilter === 'All' || wine.category === categoryFilter;
-      const matchesStatus = statusFilter === 'All' || getWineStatus(wine) === statusFilter;
+      // An issue view answers a question the dashboard asked ("which bottles
+      // have no price?"). Persisted category/status/pocket filters from an
+      // earlier visit would silently hide part of that answer, so they are
+      // bypassed here - the search box still applies.
+      const matchesCategory = presetIssue !== null || categoryFilter === 'All' || wine.category === categoryFilter;
+      const matchesStatus = presetIssue !== null || statusFilter === 'All' || getWineStatus(wine) === statusFilter;
       const normalizedWineSubcellar = normalizeSubcellar(wine.subcellar);
       const matchesSubcellar =
+        presetIssue !== null ||
         subcellarFilter === 'All' ||
         (subcellarFilter === MAIN_CELLAR_FILTER
           ? normalizedWineSubcellar.length === 0
@@ -314,11 +385,11 @@ export const Inventory: React.FC<InventoryProps> = ({
       return matchesSearch && matchesCategory && matchesStatus && matchesSubcellar;
     }).sort((a, b) => {
       if (sort === 'vintage-desc') return b.vintage - a.vintage || a.name.localeCompare(b.name, 'de');
-      if (sort === 'value-desc') return (b.market_price ?? b.purchase_price) - (a.market_price ?? a.purchase_price) || a.name.localeCompare(b.name, 'de');
+      if (sort === 'value-desc') return getBottleUnitValue(b) - getBottleUnitValue(a) || a.name.localeCompare(b.name, 'de');
       if (sort === 'quantity-desc') return b.quantity - a.quantity || a.name.localeCompare(b.name, 'de');
       return a.name.localeCompare(b.name, 'de');
     });
-  }, [wines, search, categoryFilter, statusFilter, subcellarFilter, wishlistOnly, presetView, sort]);
+  }, [wines, search, categoryFilter, statusFilter, subcellarFilter, wishlistOnly, presetView, presetIssue, matchesIssue, sort]);
 
   const groupedWines = useMemo(() => {
     const groups = new Map<string, Wine[]>();
@@ -344,90 +415,6 @@ export const Inventory: React.FC<InventoryProps> = ({
       }));
   }, [filteredWines]);
 
-  const buildPromptForWine = (wineQuery: string): string => {
-    const target = wineQuery.trim();
-    return `Du bist ein Wein-Daten-Assistent. Erzeuge nur valides JSON ohne Markdown und ohne Zusatztext.
-
-Suche nach diesem Wein:
-"${target}"
-
-Liefere exakt dieses Schema:
-{
-  "name": string,
-  "producer": string|null,
-  "vintage": number|null,
-  "country": string|null,
-  "region": string|null,
-  "appellation": string|null,
-  "vineyard": string|null,
-  "wine_type": string|null,
-  "format": string|null,
-  "quantity": number,
-  "purchase_price": number,
-  "market_price": number|null,
-  "drink_start": number|null,
-  "peak_year": number|null,
-  "drink_end": number|null,
-  "alcohol_percent": number|null,
-  "closure_type": string|null,
-  "grapes": [{"name": string, "percentage": number|null}],
-  "aromas": [{"tag": string, "intensity": number|null}],
-  "structure": {"acidity": number|null, "tannin": number|null, "body": number|null, "sweetness": number|null, "oak": number|null},
-  "pairings": [{"item": string, "category": string|null, "note": string|null}],
-  "scores": [{"critic": string, "score": number|string, "year": number|null}],
-  "short_description_de": string|null,
-  "sources": [{"title": string, "url": string}],
-  "confidence": "high"|"medium"|"low",
-  "missing_fields": string[]
-}
-
-Regeln:
-- Keine Felder außerhalb des Schemas.
-- Fehlende Werte als null setzen.
-- "quantity" standardmäßig 1.
-- Zahlen als JSON-Zahl ausgeben (nicht als String).
-- Antwortsprache für Texte: Deutsch.
-`;
-  };
-
-  const handleGeneratePrompt = () => {
-    const query = aiInput.trim();
-    if (!query) return;
-    setGeneratedPrompt(buildPromptForWine(query));
-    setPromptCopied(false);
-  };
-
-  const handleCopyPrompt = async () => {
-    if (!generatedPrompt) return;
-    try {
-      await navigator.clipboard.writeText(generatedPrompt);
-      setPromptCopied(true);
-      setTimeout(() => setPromptCopied(false), 1600);
-    } catch {
-      alert('Prompt konnte nicht kopiert werden.');
-    }
-  };
-
-  const manualAdd = async () => {
-    const currentYear = new Date().getFullYear();
-    const normalizedTargetSubcellar = normalizeSubcellar(targetSubcellar);
-    await storageService.saveWine({
-      name: 'Neuer Wein',
-      vintage: currentYear,
-      region: 'Unbekannt',
-      category: 'Daily Drinker',
-      quantity: 1,
-      purchase_price: 0,
-      format: '0.75L',
-      drink_start: currentYear,
-      drink_end: currentYear + 10,
-      subcellar: normalizedTargetSubcellar || undefined,
-      wishlist: wishlistOnly
-    });
-    onWineUpdate();
-    setIsAiModalOpen(false);
-  };
-
   const createPocket = async () => {
     const normalizedName = normalizeSubcellar(newPocketName);
     if (!normalizedName || isPocketSaving) return;
@@ -436,7 +423,7 @@ Regeln:
     try {
       const created = await storageService.createCellarPocket(normalizedName);
       if (!created) {
-        alert('Pocket konnte nicht gespeichert werden. Bitte Datenbank-Migration ausführen.');
+        showToast('Pocket konnte nicht gespeichert werden. Bitte Datenbank-Migration ausführen.', 'error');
         return;
       }
       await refreshStoredPockets();
@@ -444,8 +431,9 @@ Regeln:
       setTargetSubcellar(normalizedName);
       setNewPocketName('');
       setIsPocketModalOpen(false);
+      showToast(`Pocket "${normalizedName}" wurde angelegt.`, 'success');
     } catch (error: any) {
-      alert(error?.message || 'Pocket konnte nicht angelegt werden.');
+      showToast(error?.message || 'Pocket konnte nicht angelegt werden.', 'error');
     } finally {
       setIsPocketSaving(false);
     }
@@ -469,7 +457,7 @@ Regeln:
       );
       await onWineUpdate();
     } catch (error: any) {
-      alert(error?.message || 'Verschieben in Pocket fehlgeschlagen.');
+      showToast(error?.message || 'Verschieben in Pocket fehlgeschlagen.', 'error');
     } finally {
       setIsMovingWine(false);
     }
@@ -503,7 +491,11 @@ Regeln:
     setDropTargetPocketId(null);
   };
 
-  const showPocketDashboard = !wishlistOnly && !presetView && subcellarFilter === 'All';
+  // Whatever pocket the user is currently looking at pre-fills new entries.
+  const activePocketName =
+    subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter;
+
+  const showPocketDashboard = !wishlistOnly && !presetView && !presetIssue && subcellarFilter === 'All';
   const allPocketBottleCount = pocketSummaries.find((item) => item.id === 'All')?.bottleCount ?? 0;
   const pocketDashboardEntries = pocketSummaries.filter((item) => item.id !== 'All');
 
@@ -527,31 +519,43 @@ Regeln:
             className="hidden"
           />
           <button
-            onClick={openJsonImportPicker}
+            onClick={() => setIsJsonModalOpen(true)}
             disabled={isJsonImporting}
-            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 disabled:opacity-50 uppercase tracking-wider text-[10px]"
+            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 disabled:opacity-50 uppercase tracking-wider text-[11px]"
           >
             {isJsonImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            JSON IMPORT
+            IMPORTIEREN
           </button>
           <button
             onClick={() => setIsScannerOpen(true)}
-            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 uppercase tracking-wider text-[10px]"
+            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 uppercase tracking-wider text-[11px]"
           >
             <ScanBarcode className="w-4 h-4" /> SCANNEN
           </button>
           <button
             onClick={() => {
-              const mappedFromFilter = subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter;
-              setTargetSubcellar(mappedFromFilter);
-              setIsAiModalOpen(true);
+              setAddSeed(null);
+              setIsAddOpen(true);
             }}
-            className="flex items-center gap-2 px-6 py-3.5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl transition-all shadow-premium uppercase tracking-wider text-[10px]"
+            className="flex items-center gap-2 px-6 py-3.5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl transition-all shadow-premium uppercase tracking-wider text-[11px]"
           >
-            <Plus className="w-4 h-4" /> NEU ANLEGEN
+            <Plus className="w-4 h-4" /> WEIN HINZUFÜGEN
           </button>
         </div>
       </header>
+
+      {feedback && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-sage/30 bg-sage-light px-4 py-3 text-sm text-sage">
+          <span>{feedback}</span>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="text-[11px] font-black uppercase tracking-[0.14em]"
+          >
+            Schließen
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-4 p-4 bg-white border-2 border-burgundy/5 rounded-[2rem] shadow-premium">
         <div className="flex-1 relative">
@@ -562,8 +566,16 @@ Regeln:
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <FilterSelect label="Kategorie" value={categoryFilter} onChange={setCategoryFilter} options={[{ label: 'Alle Kategorien', value: 'All' }, { label: 'Genuss', value: 'Genuss' }, { label: 'Investment', value: 'Investment' }, { label: 'Rarität', value: 'Rarität' }]} />
-          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }]} />
+          <FilterSelect
+            label="Kategorie"
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={[
+              { label: 'Alle Kategorien', value: 'All' as const },
+              ...WINE_CATEGORIES.map((category) => ({ label: category, value: category }))
+            ]}
+          />
+          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }, { label: 'Kein Fenster', value: WineStatus.UNKNOWN }]} />
           <FilterSelect label="Sortierung" value={sort} onChange={setSort} options={[{ label: 'Name A–Z', value: 'name-asc' }, { label: 'Neuester Jahrgang', value: 'vintage-desc' }, { label: 'Höchster Wert', value: 'value-desc' }, { label: 'Meiste Flaschen', value: 'quantity-desc' }]} />
         </div>
       </div>
@@ -571,15 +583,15 @@ Regeln:
       <section className="rounded-[1.8rem] border-2 border-burgundy/5 bg-white p-4 shadow-premium">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-stone-gray">Pockets</p>
-            <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">
-              {draggedWineId ? 'Jetzt auf eine Pocket ziehen' : 'Wie Unterkonten im Hauptkeller'}
+            <p className="text-[11px] font-black uppercase tracking-widest text-stone-gray">Pockets</p>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
+              {draggedWineId ? 'Jetzt auf eine Pocket ziehen' : 'Eigene Bereiche innerhalb deines Kellers'}
             </p>
           </div>
           <button
             type="button"
             onClick={() => setIsPocketModalOpen(true)}
-            className="inline-flex items-center gap-1 rounded-xl border border-burgundy/20 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy transition-all hover:border-burgundy/40 hover:bg-burgundy/5"
+            className="inline-flex items-center gap-1 rounded-xl border border-burgundy/20 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-burgundy transition-all hover:border-burgundy/40 hover:bg-burgundy/5"
           >
             <Plus className="h-3.5 w-3.5" />
             Pocket
@@ -636,7 +648,7 @@ Regeln:
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <p className="mb-4 text-sm text-stone-gray">Lege eine Pocket wie ein Unterkonto an.</p>
+            <p className="mb-4 text-sm text-stone-gray">Lege einen eigenen Bereich deines Kellers an, z. B. ein Regal oder einen Kühlschrank.</p>
             <input
               type="text"
               value={newPocketName}
@@ -676,116 +688,74 @@ Regeln:
         </div>
       )}
 
-      {isAiModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-burgundy/5 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-burgundy text-white rounded-2xl shadow-burgundy-glow"><Wand2 className="w-6 h-6" /></div>
-                <h3 className="font-serif text-2xl font-bold text-charcoal">Prompt für Weinrecherche</h3>
+      {isJsonModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[2rem] border border-burgundy/10 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h3 className="font-serif text-2xl text-charcoal">Daten importieren</h3>
+                <p className="text-sm text-stone-gray">
+                  Für Umzüge aus anderen Listen. Für einzelne Weine ist „Wein hinzufügen“ der schnellere Weg.
+                </p>
               </div>
-              <button onClick={() => setIsAiModalOpen(false)} className="p-2"><X /></button>
+              <button
+                type="button"
+                onClick={() => setIsJsonModalOpen(false)}
+                className="rounded-full p-2 text-stone-gray hover:bg-alabaster hover:text-charcoal"
+                aria-label="Schließen"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
-            <div className="p-10 space-y-10 overflow-y-auto">
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
-                    1) Wein eingeben
-                  </p>
-                  <div className="flex gap-4">
-                    <input
-                      type="text"
-                      placeholder="Weinname & Jahrgang..."
-                      value={aiInput}
-                      onChange={(e) => setAiInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleGeneratePrompt()}
-                      className="flex-1 px-6 py-4 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-serif"
-                    />
-                    <button
-                      onClick={handleGeneratePrompt}
-                      disabled={!aiInput.trim()}
-                      className="px-8 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]"
-                    >
-                      PROMPT ERSTELLEN
-                    </button>
-                  </div>
-                </div>
 
-                {generatedPrompt ? (
-                  <div className="space-y-3 rounded-2xl border border-burgundy/10 bg-alabaster/40 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
-                        2) Prompt kopieren
-                      </p>
-                      <button
-                        onClick={handleCopyPrompt}
-                        className="inline-flex items-center gap-2 rounded-xl border border-burgundy/25 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-burgundy hover:bg-burgundy/5"
-                      >
-                        {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                        {promptCopied ? 'Kopiert' : 'Kopieren'}
-                      </button>
-                    </div>
-                    <textarea
-                      readOnly
-                      value={generatedPrompt}
-                      rows={12}
-                      className="w-full px-4 py-3 bg-white border-2 border-burgundy/10 rounded-2xl font-mono text-xs text-charcoal"
-                    />
-                    <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-600">
-                      <p className="font-semibold text-stone-700">So gehst du vor:</p>
-                      <ol className="mt-2 list-decimal pl-4 space-y-1">
-                        <li>Prompt in ChatGPT oder ein anderes Tool einfügen.</li>
-                        <li>Nur JSON als Antwort erzeugen lassen.</li>
-                        <li>JSON unten einfügen und mit „JSON-Code importieren“ übernehmen.</li>
-                      </ol>
-                    </div>
-                  </div>
-                ) : null}
+            <label htmlFor="json-import-target" className="mb-1 block text-[11px] font-black uppercase tracking-widest text-stone-gray">
+              Pocket für den Import (optional)
+            </label>
+            <input
+              id="json-import-target"
+              list="subcellar-options"
+              type="text"
+              value={targetSubcellar}
+              onChange={(e) => setTargetSubcellar(e.target.value)}
+              placeholder={`${MAIN_CELLAR_LABEL} wenn leer`}
+              className="mb-4 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm focus:border-burgundy/30 focus:outline-none"
+            />
+            <datalist id="subcellar-options">
+              {availableSubcellars.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
 
-                <div className="flex items-center justify-center gap-4">
-                  <button onClick={manualAdd} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest">Manuell anlegen</button>
-                  <button onClick={openJsonImportPicker} disabled={isJsonImporting} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest disabled:opacity-50">
-                    {isJsonImporting ? 'Import läuft...' : 'JSON importieren'}
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest text-center">
-                    Unterkeller (optional)
-                  </p>
-                  <input
-                    list="subcellar-options"
-                    type="text"
-                    value={targetSubcellar}
-                    onChange={(e) => setTargetSubcellar(e.target.value)}
-                    placeholder={`${MAIN_CELLAR_LABEL} wenn leer`}
-                    className="w-full px-4 py-3 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 text-sm text-charcoal"
-                  />
-                  <datalist id="subcellar-options">
-                    {availableSubcellars.map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </div>
-                <div className="pt-2 border-t border-alabaster/80 space-y-3">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest text-center">
-                    Oder JSON-Code einfügen
-                  </p>
-                  <textarea
-                    value={jsonCodeInput}
-                    onChange={(e) => setJsonCodeInput(e.target.value)}
-                    placeholder='{"name":"...","vintage":2024,...} oder {"success":true,"data":{...}}'
-                    rows={6}
-                    className="w-full px-4 py-3 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-mono text-xs text-charcoal"
-                  />
-                  <button
-                    onClick={handleJsonCodeImport}
-                    disabled={isJsonImporting || !jsonCodeInput.trim()}
-                    className="w-full py-3 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]"
-                  >
-                    {isJsonImporting ? 'Import läuft...' : 'JSON-Code importieren'}
-                  </button>
-                </div>
-              </div>
+            <textarea
+              value={jsonCodeInput}
+              onChange={(e) => setJsonCodeInput(e.target.value)}
+              placeholder='{"name":"...","vintage":2024,...} oder [{...},{...}]'
+              rows={6}
+              aria-label="JSON-Daten"
+              className="w-full rounded-xl border border-stone-200 px-3 py-2.5 font-mono text-xs focus:border-burgundy/30 focus:outline-none"
+            />
+
+            {importError && (
+              <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{importError}</p>
+            )}
+
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={openJsonImportPicker}
+                disabled={isJsonImporting}
+                className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
+              >
+                Datei wählen
+              </button>
+              <button
+                type="button"
+                onClick={handleJsonCodeImport}
+                disabled={isJsonImporting || !jsonCodeInput.trim()}
+                className="flex-1 rounded-xl bg-burgundy px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light disabled:opacity-40"
+              >
+                {isJsonImporting ? 'Import läuft…' : 'Importieren'}
+              </button>
             </div>
           </div>
         </div>
@@ -809,11 +779,11 @@ Regeln:
                   onClick={() => setSubcellarFilter(pocket.id)}
                   className="rounded-2xl border border-burgundy/10 bg-alabaster/50 p-5 text-left transition-all hover:border-burgundy/30 hover:bg-white"
                 >
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-gray">Pocket</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-stone-gray">Pocket</p>
                   <p className="mt-1 font-serif text-2xl text-charcoal">{pocket.label}</p>
                   <p className="mt-3 text-sm text-stone-gray">{pocket.wineCount} Weine · {pocket.bottleCount} Flaschen</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.12em] text-burgundy">{percentage}% vom Gesamtbestand</p>
-                  <span className="mt-4 inline-flex rounded-lg border border-burgundy/25 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy">
+                  <span className="mt-4 inline-flex rounded-lg border border-burgundy/25 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-burgundy">
                     Pocket öffnen
                   </span>
                 </button>
@@ -840,7 +810,12 @@ Regeln:
                     onDragEnd={handleWineDragEnd}
                     className={`transition-opacity ${draggedWineId === wine.id ? 'opacity-50' : 'opacity-100'}`}
                   >
-                    <WineCard wine={wine} onDrink={onDrink} onUpdate={onWineUpdate} />
+                    <WineCard
+                      wine={wine}
+                      onOpenBottle={wishlistOnly ? undefined : setBottleToOpen}
+                      onMove={wishlistOnly ? undefined : setWineToMove}
+                      onUpdate={onWineUpdate}
+                    />
                   </div>
                 ))}
               </div>
@@ -848,30 +823,96 @@ Regeln:
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-32 bg-white rounded-[3rem] border-2 border-dashed border-burgundy/10">
+        <div className="flex flex-col items-center justify-center py-32 bg-white rounded-[3rem] border-2 border-dashed border-burgundy/10 text-center px-6">
           <Search className="w-16 h-16 text-burgundy/10 mb-6" />
-          <p className="text-stone-gray max-w-sm mx-auto">Starten Sie Ihre Kollektion.</p>
+          <p className="text-stone-gray max-w-sm mx-auto">
+            {presetIssue || presetView || search || categoryFilter !== 'All' || statusFilter !== 'All'
+              ? 'Keine Weine passen zu dieser Auswahl.'
+              : 'Noch kein Wein im Keller. Leg den ersten an – scannen, recherchieren oder von Hand.'}
+          </p>
+          {!(presetIssue || presetView || search || categoryFilter !== 'All' || statusFilter !== 'All') && (
+            <button
+              onClick={() => setIsAddOpen(true)}
+              className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-burgundy px-6 py-3.5 text-[11px] font-black uppercase tracking-wider text-white shadow-premium transition-all hover:bg-burgundy-light"
+            >
+              <Plus className="h-4 w-4" /> Ersten Wein anlegen
+            </button>
+          )}
         </div>
       )}
 
-      {/* Scanner */}
+      <OpenBottleDialog
+        open={bottleToOpen !== null}
+        wine={bottleToOpen}
+        source="dashboard"
+        onClose={() => setBottleToOpen(null)}
+        onSaved={(message) => {
+          setBottleToOpen(null);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+      />
+
+      <MoveToPocketDialog
+        open={wineToMove !== null}
+        wine={wineToMove}
+        pocketOptions={availableSubcellars}
+        onClose={() => setWineToMove(null)}
+        onMoved={(message) => {
+          setWineToMove(null);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+      />
+
+      <PurchaseDialog
+        open={isPurchaseOpen}
+        wines={wines}
+        onClose={() => setIsPurchaseOpen(false)}
+        onSaved={(message) => {
+          setIsPurchaseOpen(false);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+      />
+
+      <AddWineDialog
+        open={isAddOpen}
+        wishlist={wishlistOnly}
+        defaultSubcellar={activePocketName}
+        subcellarOptions={availableSubcellars}
+        existingWines={wines}
+        seed={addSeed}
+        onClose={() => {
+          setIsAddOpen(false);
+          setAddSeed(null);
+        }}
+        onSaved={(message) => {
+          setIsAddOpen(false);
+          setAddSeed(null);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+        onRequestScan={() => {
+          setIsAddOpen(false);
+          setIsScannerOpen(true);
+        }}
+      />
+
+      {/* A scan does not open a form of its own any more - it seeds the one above. */}
       <ScannerOverlay
         open={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onResult={(result) => {
           setIsScannerOpen(false);
-          setScanResult(result);
-          setIsScanResultOpen(true);
+          setAddSeed({
+            name: result.name || (result.type === 'label' ? result.raw : ''),
+            producer: result.producer,
+            vintage: result.vintage,
+            barcode: result.type === 'barcode' ? result.raw : undefined
+          });
+          setIsAddOpen(true);
         }}
-      />
-      <ScanResultDialog
-        open={isScanResultOpen}
-        result={scanResult}
-        onClose={() => { setIsScanResultOpen(false); setScanResult(null); }}
-        onSaved={() => { setIsScanResultOpen(false); setScanResult(null); onWineUpdate(); }}
-        wishlist={wishlistOnly}
-        targetSubcellar={subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter}
-        existingWines={wines}
       />
     </div>
   );

@@ -3,6 +3,7 @@ import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from 
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout.tsx';
 import { Auth } from './components/Auth.tsx';
+import { FeedbackProvider } from './components/Feedback.tsx';
 import { AlertCircle } from 'lucide-react';
 import { Wine, UserProfile } from './types.ts';
 import { storageService } from './services/storage.ts';
@@ -39,7 +40,7 @@ const MissingConfigScreen: React.FC = () => (
       </div>
       <h1 className="font-serif text-3xl text-burgundy mb-3">Konfiguration fehlt</h1>
       <p className="text-stone-gray leading-relaxed mb-6">
-        Die Verbindung zu Supabase konnte nicht hergestellt werden. Bitte stellen Sie sicher, dass die Umgebungsvariablen
+        Die Verbindung zu Supabase konnte nicht hergestellt werden. Bitte stelle sicher, dass die Umgebungsvariablen
         <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_URL</code>
         und
         <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_ANON_KEY</code>
@@ -57,7 +58,18 @@ const MissingConfigScreen: React.FC = () => (
   </div>
 );
 
-const App: React.FC = () => {
+/**
+ * Toasts and confirm dialogs need to be available everywhere, including the
+ * loading/auth/offline screens App renders before any route exists - so the
+ * provider wraps the whole shell rather than sitting inside HashRouter.
+ */
+const App: React.FC = () => (
+  <FeedbackProvider>
+    <AppShell />
+  </FeedbackProvider>
+);
+
+const AppShell: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [wines, setWines] = useState<Wine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,24 +150,6 @@ const App: React.FC = () => {
     };
   }, [fetchWines]);
 
-  const handleDrink = async (wine: Wine) => {
-    if (wine.quantity <= 0) return;
-
-    // Optimistic UI update
-    setWines(prev => prev.map(w =>
-      w.id === wine.id ? { ...w, quantity: w.quantity - 1 } : w
-    ));
-
-    try {
-      await storageService.consumeBottle(wine.id, 'detail');
-      await fetchWines();
-    } catch (err) {
-      console.error("Failed to record drink:", err);
-      // Rollback on error if necessary
-      await fetchWines();
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-alabaster flex items-center justify-center">
@@ -193,12 +187,7 @@ const App: React.FC = () => {
             <Route
               path="/inventory"
               element={
-                <Inventory
-                  wines={wines}
-                  onWineUpdate={fetchWines}
-                  onAddBottle={() => { }}
-                  onDrink={handleDrink}
-                />
+                <Inventory wines={wines} onWineUpdate={fetchWines} />
               }
             />
             <Route path="/timeline" element={<Timeline wines={wines} />} />
@@ -206,16 +195,10 @@ const App: React.FC = () => {
             <Route
               path="/wishlist"
               element={
-                <Inventory
-                  wines={wines}
-                  wishlistOnly
-                  onWineUpdate={fetchWines}
-                  onAddBottle={() => { }}
-                  onDrink={() => { }}
-                />
+                <Inventory wines={wines} wishlistOnly onWineUpdate={fetchWines} />
               }
             />
-            <Route path="/wine/:id" element={<WineDetail onDrink={handleDrink} />} />
+            <Route path="/wine/:id" element={<WineDetail onChanged={fetchWines} />} />
             <Route path="/trash" element={<Trash onUpdate={fetchWines} />} />
             <Route path="/stocktake" element={<Stocktake wines={wines} onUpdate={fetchWines} />} />
             <Route path="/settings" element={<Settings />} />

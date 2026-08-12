@@ -51,7 +51,7 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
                 if (!cancelled) {
                     setError(
                         err?.name === 'NotAllowedError'
-                            ? 'Kamera-Zugriff verweigert. Bitte erlauben Sie den Kamerastand in den Browsereinstellungen.'
+                            ? 'Kamera-Zugriff verweigert. Bitte erlaube den Kamerazugriff in den Browsereinstellungen.'
                             : 'Kamera konnte nicht gestartet werden.'
                     );
                 }
@@ -112,7 +112,7 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
                 if (value) {
                     onResult(parseBarcodeResult(value));
                 } else {
-                    setError('Kein Barcode erkannt. Versuchen Sie es erneut oder wechseln Sie zum Etikett-Modus.');
+                    setError('Kein Barcode erkannt. Versuche es erneut oder wechsle zum Etikett-Modus.');
                 }
             }
         } catch (err: any) {
@@ -203,9 +203,9 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
                 <p className="text-sm text-white/60">
                     {mode === 'barcode'
                         ? (isBarcodeSupported()
-                            ? 'Halten Sie den Barcode ins Feld — automatische Erkennung aktiv'
-                            : 'BarcodeDetector nicht verfügbar — tippen Sie auf den Auslöser')
-                        : 'Fotografieren Sie das Etikett für AI-Erkennung'}
+                            ? 'Halte den Barcode ins Feld — automatische Erkennung aktiv'
+                            : 'Automatische Erkennung nicht verfügbar — tippe auf den Auslöser')
+                        : 'Fotografiere das Etikett für die KI-Erkennung'}
                 </p>
 
                 {/* Capture button */}

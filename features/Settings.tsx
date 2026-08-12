@@ -8,6 +8,8 @@ import { getSyncStateSnapshot } from '../services/pwa/offlineDb.ts';
 import { subscribeQueueSnapshot } from '../services/pwa/aiQueue.ts';
 import { runSyncCycle } from '../services/pwa/syncEngine.ts';
 import { storageService } from '../services/storage.ts';
+import { checkApiHealth } from '../services/apiHealth.ts';
+import { exportService } from '../services/exportService.ts';
 
 export const Settings: React.FC = () => {
     const [, setSettings] = useState<UserSettings | null>(null);
@@ -18,6 +20,7 @@ export const Settings: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+    const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null);
     const [installState, setInstallState] = useState<InstallPromptState>({
         canPromptInstall: false,
         isInstalled: false,
@@ -40,6 +43,8 @@ export const Settings: React.FC = () => {
         syncing: false
     });
     const [installFeedback, setInstallFeedback] = useState<string | null>(null);
+    const [exportState, setExportState] = useState<'idle' | 'csv' | 'json'>('idle');
+    const [exportMessage, setExportMessage] = useState<string | null>(null);
 
     const geminiModels = [
         { id: 'gemini-pro-latest', name: 'Gemini Pro (Latest)', description: 'Höchste Qualität für Recherche' },
@@ -97,16 +102,9 @@ export const Settings: React.FC = () => {
     };
 
     const checkServerStatus = async () => {
-        try {
-            const response = await fetch('/api/health');
-            if (response.ok) {
-                setServerStatus('online');
-            } else {
-                setServerStatus('offline');
-            }
-        } catch {
-            setServerStatus('offline');
-        }
+        const health = await checkApiHealth();
+        setServerStatus(health.online ? 'online' : 'offline');
+        setKeyConfigured(health.online ? health.openrouterConfigured : null);
     };
 
     const handleSave = async () => {
@@ -127,6 +125,23 @@ export const Settings: React.FC = () => {
             setTimeout(() => setSaveStatus('idle'), 3000);
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleExport = async (format: 'csv' | 'json') => {
+        setExportState(format);
+        setExportMessage(null);
+        try {
+            const summary = format === 'csv' ? await exportService.exportCsv() : await exportService.exportJson();
+            setExportMessage(
+                format === 'csv'
+                    ? `${summary.wines} Weine exportiert.`
+                    : `${summary.wines} Weine, ${summary.tastings} Notizen und ${summary.events} Bestandsereignisse exportiert.`
+            );
+        } catch (error) {
+            setExportMessage((error as Error)?.message || 'Export fehlgeschlagen.');
+        } finally {
+            setExportState('idle');
         }
     };
 
@@ -190,18 +205,34 @@ export const Settings: React.FC = () => {
                         </span>
                     </div>
 
+                    {serverStatus === 'online' && keyConfigured === false && (
+                        <div className="mt-6 bg-gold/5 p-6 rounded-2xl border border-gold/20">
+                            <div className="flex items-start gap-3">
+                                <AlertCircle className="w-5 h-5 text-gold shrink-0 mt-0.5" />
+                                <div className="text-sm">
+                                    <p className="font-bold text-charcoal mb-1">Kein KI-Schlüssel hinterlegt</p>
+                                    <p className="text-stone-gray">
+                                        Der Server läuft, aber ohne OpenRouter-Schlüssel. Recherche, Etikett-Scan und
+                                        Anlass-Vorschläge bleiben deshalb ohne Ergebnis.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {serverStatus === 'offline' && (
                         <div className="mt-6 bg-red-50 p-6 rounded-2xl border border-red-200">
                             <div className="flex items-start gap-3">
                                 <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                                 <div className="text-sm">
-                                    <p className="font-bold text-red-800 mb-2">Server nicht gestartet</p>
+                                    <p className="font-bold text-red-800 mb-2">KI-Funktionen nicht verfügbar</p>
                                     <p className="text-red-700 mb-3">
-                                        Der API-Server muss für KI-Funktionen laufen. Starte ihn mit:
+                                        Recherche, Etikett-Scan und Anlass-Vorschläge brauchen den API-Dienst. Alles
+                                        andere - Keller, Bestand, Planung - funktioniert davon unabhängig weiter.
                                     </p>
-                                    <code className="bg-red-100 px-3 py-2 rounded-lg block font-mono text-xs">
-                                        cd server && npm install && npm run dev
-                                    </code>
+                                    <p className="text-red-700">
+                                        In der lokalen Entwicklung startet ihn <code className="bg-red-100 px-1.5 py-0.5 rounded font-mono text-xs">npm run server</code>.
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -231,6 +262,55 @@ export const Settings: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                </section>
+
+                {/* Export / Backup */}
+                <section className="bg-white rounded-[2.5rem] border border-burgundy/5 p-10 shadow-premium mb-8">
+                    <div className="flex items-center gap-4 mb-8 pb-6 border-b border-alabaster">
+                        <div className="p-3 bg-burgundy/5 rounded-2xl text-burgundy">
+                            <Download className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h2 className="font-serif text-2xl font-bold text-charcoal">Sammlung exportieren</h2>
+                            <p className="text-sm text-stone-gray mt-1">Deine Daten gehören dir - jederzeit herausholbar</p>
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-burgundy/10 bg-alabaster/40 p-5">
+                            <p className="font-bold text-charcoal">Kellerliste (CSV)</p>
+                            <p className="mt-1 mb-4 text-sm text-stone-gray">
+                                Eine Zeile je Wein, direkt in Excel oder Numbers zu öffnen.
+                            </p>
+                            <button
+                                onClick={() => void handleExport('csv')}
+                                disabled={exportState === 'csv'}
+                                className="inline-flex items-center gap-2 rounded-xl border border-burgundy/20 px-4 py-2.5 text-xs font-bold text-burgundy transition-all hover:bg-burgundy/5 disabled:opacity-50"
+                            >
+                                {exportState === 'csv' ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                CSV herunterladen
+                            </button>
+                        </div>
+
+                        <div className="rounded-2xl border border-burgundy/10 bg-alabaster/40 p-5">
+                            <p className="font-bold text-charcoal">Vollständiges Backup (JSON)</p>
+                            <p className="mt-1 mb-4 text-sm text-stone-gray">
+                                Weine, Notizen, Bestandsereignisse, Anlässe und Pockets - verlustfrei.
+                            </p>
+                            <button
+                                onClick={() => void handleExport('json')}
+                                disabled={exportState === 'json'}
+                                className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2.5 text-xs font-bold text-white transition-all hover:bg-burgundy-light disabled:opacity-50"
+                            >
+                                {exportState === 'json' ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                Backup herunterladen
+                            </button>
+                        </div>
+                    </div>
+
+                    {exportMessage && (
+                        <p className="mt-4 text-sm text-stone-gray">{exportMessage}</p>
+                    )}
                 </section>
 
                 {/* PWA Status / Install / Sync */}

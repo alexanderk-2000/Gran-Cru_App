@@ -10,7 +10,6 @@ import {
   X,
   CircleDot,
   CalendarDays,
-  ShieldCheck,
   LogOut,
   Sparkles,
   Trash2,
@@ -19,6 +18,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+import { SyncStatus } from './SyncStatus.tsx';
 import { UserProfile } from '../types.ts';
 
 const navGroups = [
@@ -41,7 +41,7 @@ const navGroups = [
   },
   {
     title: 'Historie',
-    items: [{ path: '/drink-history', label: 'Trinkhistorie', icon: History }]
+    items: [{ path: '/drink-history', label: 'Kellerbuch', icon: History }]
   },
   {
     title: 'System',
@@ -76,9 +76,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <CircleDot className="text-burgundy w-6 h-6" />
           <h1 className="font-serif text-lg font-bold tracking-tight text-burgundy">Grand Cru</h1>
         </div>
-        <button onClick={() => setSidebarOpen(true)}>
-          <Menu className="text-burgundy" />
-        </button>
+        <div className="flex items-center gap-1">
+          <SyncStatus variant="compact" />
+          <button onClick={() => setSidebarOpen(true)} aria-label="Menü öffnen">
+            <Menu className="text-burgundy" />
+          </button>
+        </div>
       </header>
 
       {/* Sidebar Overlay for Mobile */}
@@ -101,7 +104,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
             <div className="flex flex-col">
               <span className="font-serif text-xl font-bold text-burgundy leading-none">CRU</span>
-              <span className="text-[10px] tracking-[0.2em] text-stone-gray font-medium uppercase">Vault & Portfolio</span>
+              <span className="text-[11px] tracking-[0.2em] text-stone-gray font-medium uppercase">Private Weinsammlung</span>
             </div>
           </div>
           <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
@@ -113,7 +116,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <div className="space-y-5">
             {navGroups.map((group) => (
               <div key={group.title} className="space-y-1.5">
-                <p className="px-3 text-[10px] tracking-[0.12em] text-stone-gray/80 uppercase">{group.title}</p>
+                <p className="px-3 text-[11px] tracking-[0.12em] text-stone-gray/80 uppercase">{group.title}</p>
                 {group.items.map((item) => {
                   const isActive = location.pathname === item.path;
                   const Icon = item.icon;
@@ -143,7 +146,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <div className={`p-4 rounded-xl border flex flex-col gap-2 ${isGuest ? 'bg-gold/5 border-gold/10' : 'bg-alabaster border-burgundy/5'}`}>
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full animate-pulse ${isGuest ? 'bg-gold' : 'bg-sage'}`} />
-              <span className="text-[9px] font-black text-stone-gray uppercase tracking-widest">
+              <span className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
                 {isGuest ? 'Demo-Modus' : 'Verbunden als'}
               </span>
             </div>
@@ -155,20 +158,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
             <button
               onClick={handleLogout}
-              className="mt-2 flex items-center gap-2 text-[10px] font-black text-burgundy/60 hover:text-burgundy transition-colors uppercase tracking-widest"
+              className="mt-2 flex items-center gap-2 text-[11px] font-black text-burgundy/60 hover:text-burgundy transition-colors uppercase tracking-widest"
             >
               <LogOut className="w-3 h-3" />
               {isGuest ? 'Beenden' : 'Abmelden'}
             </button>
           </div>
 
-          <div className="p-4 bg-alabaster-dark rounded-xl border border-burgundy/5 flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-burgundy" />
-            <div className="flex flex-col">
-              <span className="text-[10px] text-stone-gray uppercase tracking-widest font-bold">Cloud Sync</span>
-              <span className="text-xs text-charcoal font-medium">Safe & Secure</span>
-            </div>
-          </div>
+          <SyncStatus />
         </div>
       </aside>
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, ClipboardList, Loader2, Search } from 'lucide-react';
 import { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
+import { useConfirm } from '../components/Feedback.tsx';
 
 interface StocktakeProps {
   wines: Wine[];
@@ -11,6 +12,7 @@ interface StocktakeProps {
 
 export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const [search, setSearch] = useState('');
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [isApplying, setIsApplying] = useState(false);
@@ -55,7 +57,12 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
 
   const handleApply = async () => {
     if (discrepancies.length === 0 || isApplying) return;
-    if (!window.confirm(`${discrepancies.length} Abweichung(en) als Bestandskorrektur übernehmen?`)) return;
+    const confirmed = await confirm({
+      title: 'Korrekturen übernehmen?',
+      description: `${discrepancies.length} Abweichung(en) werden als Bestandskorrektur gespeichert.`,
+      confirmLabel: 'Übernehmen'
+    });
+    if (!confirmed) return;
 
     setIsApplying(true);
     setError(null);
@@ -84,7 +91,7 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
         <div className="flex flex-col gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
+            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[11px] font-black tracking-widest transition-all mb-4"
           >
             <ArrowLeft className="w-4 h-4" /> Zurück zum Keller
           </button>
@@ -96,7 +103,7 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
         <button
           onClick={handleApply}
           disabled={discrepancies.length === 0 || isApplying}
-          className="px-5 py-3 bg-burgundy text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-burgundy-light transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          className="px-5 py-3 bg-burgundy text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-burgundy-light transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {isApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           {discrepancies.length > 0 ? `${discrepancies.length} Korrektur(en) übernehmen` : 'Keine Abweichungen'}
@@ -130,7 +137,7 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
         {filteredWines.length > 0 ? (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-alabaster text-[10px] font-black uppercase tracking-widest text-stone-gray">
+              <tr className="border-b border-alabaster text-[11px] font-black uppercase tracking-widest text-stone-gray">
                 <th className="text-left px-6 py-4">Wein</th>
                 <th className="text-right px-6 py-4">Soll-Bestand</th>
                 <th className="text-right px-6 py-4">Gezählt</th>

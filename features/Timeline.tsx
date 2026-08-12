@@ -1,9 +1,18 @@
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Wine } from '../types.ts';
 
 export const Timeline: React.FC<{ wines: Wine[] }> = ({ wines }) => {
   const currentYear = new Date().getFullYear();
+
+  // A wine without both window years would render a bar at NaN pixels. It is
+  // listed separately instead of silently disappearing behind an invisible bar.
+  const cellarWines = wines.filter((wine) => !wine.wishlist);
+  const hasWindow = (wine: Wine): boolean =>
+    Number.isFinite(wine.drink_start) && Number.isFinite(wine.drink_end) && wine.drink_start <= wine.drink_end;
+  const winesWithWindow = cellarWines.filter(hasWindow);
+  const winesWithoutWindow = cellarWines.filter((wine) => !hasWindow(wine));
   const startYear = currentYear - 5;
   const endYear = currentYear + 35;
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
@@ -12,8 +21,20 @@ export const Timeline: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     <div className="space-y-8 animate-in slide-in-from-bottom duration-700">
       <header className="flex flex-col gap-2">
         <h2 className="font-serif text-4xl font-bold text-charcoal">Reife-Horizont</h2>
-        <p className="text-stone-gray font-medium tracking-wide">Dynamische Visualisierung der optimalen Trinkfenster Ihrer Weine.</p>
+        <p className="text-stone-gray font-medium tracking-wide">Dynamische Visualisierung der optimalen Trinkfenster deiner Weine.</p>
       </header>
+
+      {winesWithoutWindow.length > 0 && (
+        <div className="rounded-2xl border border-stone-200 bg-white px-5 py-4 text-sm text-stone-gray">
+          {winesWithoutWindow.length} Wein(e) ohne belastbares Trinkfenster erscheinen hier nicht:{' '}
+          {winesWithoutWindow.slice(0, 3).map((wine) => `${wine.vintage} ${wine.name}`).join(', ')}
+          {winesWithoutWindow.length > 3 ? ' …' : ''}
+          {'. '}
+          <Link to="/inventory?issue=no-window" className="font-bold text-burgundy">
+            Fenster ergänzen
+          </Link>
+        </div>
+      )}
 
       <div className="bg-white border border-burgundy/5 rounded-3xl overflow-hidden shadow-premium">
         <div className="overflow-x-auto p-8">
@@ -38,14 +59,14 @@ export const Timeline: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 
             {/* Wine Tracks */}
             <div className="space-y-6">
-              {wines.filter(w => !w.wishlist).map((wine) => {
+              {winesWithWindow.map((wine) => {
                 const startPos = Math.max(0, (wine.drink_start - startYear) * 80);
                 const width = Math.max(20, (wine.drink_end - wine.drink_start + 1) * 80);
 
                 return (
                   <div key={wine.id} className="relative h-12 flex items-center group">
                     <div className="sticky left-0 z-20 pointer-events-none">
-                      <div className="bg-white/80 backdrop-blur border border-burgundy/5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-charcoal w-40 whitespace-nowrap overflow-hidden text-ellipsis shadow-sm">
+                      <div className="bg-white/80 backdrop-blur border border-burgundy/5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-charcoal w-40 whitespace-nowrap overflow-hidden text-ellipsis shadow-sm">
                         {wine.vintage} {wine.name}
                       </div>
                     </div>
@@ -61,7 +82,7 @@ export const Timeline: React.FC<{ wines: Wine[] }> = ({ wines }) => {
                       style={{ left: `${startPos}px`, width: `${width}px` }}
                     >
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                         <span className="text-[9px] font-black text-charcoal whitespace-nowrap px-2">
+                         <span className="text-[10px] font-black text-charcoal whitespace-nowrap px-2">
                            {wine.drink_start} - {wine.drink_end}
                          </span>
                       </div>

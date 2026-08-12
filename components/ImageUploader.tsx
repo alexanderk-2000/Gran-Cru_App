@@ -155,7 +155,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                         {/* Replace hint */}
                         <div className="absolute bottom-2 left-1/2 -translate-x-1/2">
                             <span className="px-2 py-1 bg-white/80 backdrop-blur rounded-full
-                text-[9px] font-bold uppercase tracking-widest text-stone-600
+                text-[10px] font-bold uppercase tracking-widest text-stone-600
                 opacity-0 hover:opacity-100 transition-opacity">
                                 Ersetzen
                             </span>
@@ -168,7 +168,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                         ) : (
                             <Camera className="w-8 h-8" />
                         )}
-                        <span className="text-[10px] font-bold uppercase tracking-widest">
+                        <span className="text-[11px] font-bold uppercase tracking-widest">
                             {isDragOver ? 'Ablegen' : 'Hochladen'}
                         </span>
                     </div>
@@ -192,13 +192,13 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             </div>
 
             {/* Label */}
-            <span className="text-[10px] font-bold uppercase tracking-widest text-stone-gray">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-stone-gray">
                 {label}
             </span>
 
             {/* Error */}
             {error && (
-                <span className="text-[10px] text-red-500 font-medium">{error}</span>
+                <span className="text-[11px] text-red-500 font-medium">{error}</span>
             )}
         </div>
     );

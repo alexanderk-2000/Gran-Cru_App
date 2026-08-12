@@ -11,8 +11,16 @@ import {
   Wine as WineIcon
 } from 'lucide-react';
 import { OccasionInstance, Wine, WineStatus } from '../types.ts';
-import { formatCurrency, getWineFamily, getWineStatus, type WineFamily } from '../utils.ts';
+import {
+  formatCurrency,
+  getWineFamily,
+  getWinePositionValue,
+  getWineStatus,
+  hasKnownPrice,
+  type WineFamily
+} from '../utils.ts';
 import { storageService } from '../services/storage.ts';
+import { findLikelyDuplicates } from '../domain/wine/duplicateDetection.ts';
 
 interface RecommendationRow {
   wine: Wine;
@@ -33,19 +41,17 @@ const ratio = (value: number, total: number): number => (total <= 0 ? 0 : value 
 
 const toPercent = (value: number): string => `${Math.round(value * 100)}%`;
 
-const normalizeKey = (value: string): string =>
-  value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-
 const buildWindowText = (wine: Wine): string => `${wine.drink_start ?? '—'}–${wine.drink_end ?? '—'}`;
 
 const viewPath = (view: 'ready' | 'holding' | 'past' | 'red' | 'white' | 'sparkling' | 'fortified'): string =>
   `/inventory?view=${view}`;
+
+/**
+ * Alerts used to link to the unfiltered cellar list, leaving the user to find
+ * the affected bottles themselves. These land on a pre-filtered list instead.
+ */
+const issuePath = (issue: 'missing-price' | 'duplicates' | 'low-stock' | 'ending-soon' | 'no-window'): string =>
+  `/inventory?issue=${issue}`;
 
 const familyLabel: Record<Exclude<WineFamily, 'unknown'>, string> = {
   red: 'Rot',
@@ -115,55 +121,45 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     [inventory]
   );
 
-  const readyBottles = useMemo(
-    () =>
-      inventory.reduce((sum, wine) => {
-        const qty = Math.max(0, wine.quantity || 0);
-        if (qty === 0) return sum;
-        const status = getWineStatus(wine);
-        const entersThisYear = typeof wine.drink_start === 'number' && wine.drink_start === currentYear;
-        return status === WineStatus.READY || entersThisYear ? sum + qty : sum;
-      }, 0),
-    [inventory, currentYear]
-  );
+  // Counted per bucket instead of deriving "holding" as a remainder: with the
+  // shared maturity model a wine can now also be "Kein Fenster", which the old
+  // subtraction would have silently filed under "Lagernd".
+  const maturityBottles = useMemo(() => {
+    const buckets = { ready: 0, holding: 0, pastPeak: 0, unknown: 0 };
+    for (const wine of inventory) {
+      const qty = Math.max(0, wine.quantity || 0);
+      if (qty === 0) continue;
+      switch (getWineStatus(wine)) {
+        case WineStatus.READY:
+          buckets.ready += qty;
+          break;
+        case WineStatus.HOLD:
+          buckets.holding += qty;
+          break;
+        case WineStatus.PAST_PEAK:
+          buckets.pastPeak += qty;
+          break;
+        default:
+          buckets.unknown += qty;
+      }
+    }
+    return buckets;
+  }, [inventory]);
 
-  const pastPeakBottles = useMemo(
-    () =>
-      inventory.reduce((sum, wine) => {
-        const qty = Math.max(0, wine.quantity || 0);
-        if (qty === 0) return sum;
-        return getWineStatus(wine) === WineStatus.PAST_PEAK ? sum + qty : sum;
-      }, 0),
-    [inventory]
-  );
-
-  const holdingBottles = Math.max(0, totalBottles - readyBottles - pastPeakBottles);
+  const readyBottles = maturityBottles.ready;
+  const pastPeakBottles = maturityBottles.pastPeak;
+  const holdingBottles = maturityBottles.holding;
+  const unknownWindowBottles = maturityBottles.unknown;
 
   const overripeShare = ratio(pastPeakBottles, Math.max(1, totalBottles));
   const overripeRiskLabel = overripeShare < 0.1 ? 'niedrig' : overripeShare < 0.25 ? 'mittel' : 'hoch';
   const overripeRiskTone =
     overripeRiskLabel === 'niedrig' ? 'text-sage' : overripeRiskLabel === 'mittel' ? 'text-gold-dim' : 'text-burgundy';
 
-  const pricedWineCount = useMemo(
-    () =>
-      inventory.filter((wine) => {
-        const market = typeof wine.market_price === 'number' && wine.market_price > 0;
-        const purchase = typeof wine.purchase_price === 'number' && wine.purchase_price > 0;
-        return market || purchase;
-      }).length,
-    [inventory]
-  );
+  const pricedWineCount = useMemo(() => inventory.filter(hasKnownPrice).length, [inventory]);
 
   const marketValue = useMemo(
-    () =>
-      inventory.reduce((sum, wine) => {
-        const qty = Math.max(0, wine.quantity || 0);
-        if (qty === 0) return sum;
-        const market = typeof wine.market_price === 'number' && wine.market_price > 0 ? wine.market_price : null;
-        const purchase = typeof wine.purchase_price === 'number' && wine.purchase_price > 0 ? wine.purchase_price : null;
-        const unit = market ?? purchase;
-        return unit ? sum + unit * qty : sum;
-      }, 0),
+    () => inventory.reduce((sum, wine) => sum + getWinePositionValue(wine), 0),
     [inventory]
   );
 
@@ -260,7 +256,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
         id: 'window-now',
         title: 'Trinkfenster erreicht',
         detail: `${enteringWindowBottles} Flaschen erreichen dieses Jahr ihr Fenster.`,
-        ctaLabel: 'Beheben',
+        ctaLabel: 'Anzeigen',
         to: viewPath('ready')
       });
     }
@@ -274,44 +270,56 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     if (endSoonBottles > 0) {
       rows.push({
         id: 'window-end',
-        title: 'Überreif in ≤ 12 Monaten',
-        detail: `${endSoonBottles} Flaschen nähern sich dem Fensterende.`,
-        ctaLabel: 'Beheben',
-        to: viewPath('past')
+        title: 'Fensterende in Sicht',
+        detail: `${endSoonBottles} Flaschen erreichen dieses oder nächstes Jahr das Fensterende.`,
+        ctaLabel: 'Anzeigen',
+        to: issuePath('ending-soon')
       });
     }
 
     const missingPriceBottles = inventory.reduce((sum, wine) => {
       const qty = Math.max(0, wine.quantity || 0);
       if (!qty) return sum;
-      const hasPrice =
-        (typeof wine.purchase_price === 'number' && wine.purchase_price > 0) ||
-        (typeof wine.market_price === 'number' && wine.market_price > 0);
-      return hasPrice ? sum : sum + qty;
+      return hasKnownPrice(wine) ? sum : sum + qty;
     }, 0);
     if (missingPriceBottles > 0) {
       rows.push({
         id: 'missing-price',
         title: 'Preis fehlt',
         detail: `${missingPriceBottles} Flaschen ohne Preisbasis.`,
-        ctaLabel: 'Beheben',
-        to: '/inventory'
+        ctaLabel: 'Anzeigen',
+        to: issuePath('missing-price')
       });
     }
 
-    const keyCount = new Map<string, number>();
+    // Uses the same detection as the import guard (domain/wine/duplicateDetection),
+    // so the dashboard cannot warn about pairs the import would have accepted.
+    const duplicateWineIds = new Set<string>();
     for (const wine of inventory) {
-      const key = `${normalizeKey(wine.producer || '')}::${normalizeKey(wine.name || '')}::${wine.vintage || 'nv'}`;
-      keyCount.set(key, (keyCount.get(key) || 0) + 1);
+      if (duplicateWineIds.has(wine.id)) continue;
+      const matches = findLikelyDuplicates(wine, inventory, { excludeId: wine.id });
+      if (matches.length > 0) {
+        duplicateWineIds.add(wine.id);
+        for (const match of matches) duplicateWineIds.add(match.id);
+      }
     }
-    const duplicateGroups = [...keyCount.values()].filter((count) => count > 1).length;
-    if (duplicateGroups > 0) {
+    if (duplicateWineIds.size > 0) {
       rows.push({
         id: 'duplicate',
-        title: 'Duplikat erkannt',
-        detail: `${duplicateGroups} doppelte Weinposition(en) erkannt.`,
-        ctaLabel: 'Beheben',
-        to: '/inventory'
+        title: 'Mögliche Dublette',
+        detail: `${duplicateWineIds.size} Weinpositionen sehen doppelt erfasst aus.`,
+        ctaLabel: 'Anzeigen',
+        to: issuePath('duplicates')
+      });
+    }
+
+    if (unknownWindowBottles > 0) {
+      rows.push({
+        id: 'no-window',
+        title: 'Trinkfenster fehlt',
+        detail: `${unknownWindowBottles} Flaschen haben kein belastbares Trinkfenster.`,
+        ctaLabel: 'Anzeigen',
+        to: issuePath('no-window')
       });
     }
 
@@ -321,8 +329,8 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
         id: 'low-stock',
         title: 'Bestand niedrig',
         detail: `${lowStockWines} Wein(e) nur noch mit 1 Flasche.`,
-        ctaLabel: 'Beheben',
-        to: '/inventory'
+        ctaLabel: 'Anzeigen',
+        to: issuePath('low-stock')
       });
     }
 
@@ -330,14 +338,14 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
       rows.push({
         id: 'all-clear',
         title: 'Keine akuten Alerts',
-        detail: 'Ihr Keller ist aktuell sauber priorisiert.',
+        detail: 'Dein Keller ist aktuell sauber priorisiert.',
         ctaLabel: 'Zur Übersicht',
         to: '/inventory'
       });
     }
 
     return rows.slice(0, 6);
-  }, [inventory, currentYear]);
+  }, [inventory, currentYear, unknownWindowBottles]);
 
   if (inventory.length === 0) {
     return (
@@ -348,7 +356,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
             <WineIcon className="h-12 w-12 text-burgundy/25" />
             <h3 className="mt-4 font-serif text-3xl text-charcoal">Noch kein Wein erfasst</h3>
             <p className="mt-2 max-w-md text-sm text-stone-gray">
-              Legen Sie den ersten Wein an, damit Reifeprofil, Empfehlungen und Alerts automatisch erscheinen.
+              Leg den ersten Wein an, damit Reifeprofil, Empfehlungen und Alerts automatisch erscheinen.
             </p>
             <Link
               to="/inventory"
@@ -363,7 +371,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     );
   }
 
-  const maturityTotal = Math.max(1, readyBottles + holdingBottles + pastPeakBottles);
+  const maturityTotal = Math.max(1, readyBottles + holdingBottles + pastPeakBottles + unknownWindowBottles);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -373,11 +381,11 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
         <KpiCard icon={Layers3} label="Gesamtbestand (Flaschen)" value={`${totalBottles} Fl.`} />
         <KpiCard
           icon={ShoppingCart}
-          label="Marktwert"
+          label="Kellerwert"
           value={pricedWineCount > 0 ? formatCurrency(marketValue) : '—'}
-          subline={pricedWineCount > 0 ? undefined : 'Preise fehlen'}
+          subline={pricedWineCount > 0 ? 'Marktpreis, sonst Einstand' : 'Preise fehlen'}
         />
-        <KpiCard icon={CheckCircle2} label="Trinkbereit (nächste 90 Tage)" value={`${readyBottles} Fl.`} accent="text-sage" />
+        <KpiCard icon={CheckCircle2} label="Trinkbereit" value={`${readyBottles} Fl.`} accent="text-sage" />
         <KpiCard
           icon={AlertTriangle}
           label="Überreif-Risiko"
@@ -426,6 +434,16 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
             <SegmentLinkCard to={viewPath('holding')} label="Lagernd" value={`${holdingBottles} Fl.`} tone="text-gold-dim" share={toPercent(ratio(holdingBottles, maturityTotal))} />
             <SegmentLinkCard to={viewPath('past')} label="Überreif" value={`${pastPeakBottles} Fl.`} tone="text-burgundy" share={toPercent(ratio(pastPeakBottles, maturityTotal))} />
           </div>
+
+          {unknownWindowBottles > 0 ? (
+            <p className="mt-4 text-xs text-stone-500">
+              {unknownWindowBottles} Flaschen ohne belastbares Trinkfenster sind hier nicht eingeordnet - sie
+              zählten früher stillschweigend als trinkbereit.{' '}
+              <Link to={issuePath('no-window')} className="font-bold text-burgundy">
+                Anzeigen
+              </Link>
+            </p>
+          ) : null}
         </article>
 
         <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
@@ -489,14 +507,14 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
               <h3 className="font-serif text-2xl text-charcoal">Empfohlene Öffnungen</h3>
               <p className="mt-1 text-sm text-stone-gray">Priorität für die nächsten 12 Monate.</p>
             </div>
-            <span className="rounded-full bg-alabaster px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-gray">
+            <span className="rounded-full bg-alabaster px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-stone-gray">
               Top {Math.max(5, recommendationRows.length)}
             </span>
           </div>
 
           {recommendationRows.length === 0 ? (
             <p className="rounded-2xl border border-stone-200 bg-alabaster/40 p-4 text-sm text-stone-gray">
-              Aktuell keine priorisierten Öffnungen. Prüfen Sie den Kellerstatus.
+              Aktuell keine priorisierten Öffnungen. Prüfe den Kellerstatus.
             </p>
           ) : (
             <ul className="space-y-3">
@@ -515,13 +533,13 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
                     <div className="flex shrink-0 gap-2">
                       <Link
                         to={`/wine/${row.wine.id}`}
-                        className="rounded-lg border border-burgundy/25 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-burgundy"
+                        className="rounded-lg border border-burgundy/25 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-burgundy"
                       >
                         Öffnen
                       </Link>
                       <Link
                         to="/genussplan"
-                        className="rounded-lg border border-stone-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-stone-700"
+                        className="rounded-lg border border-stone-300 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-stone-700"
                       >
                         Planen
                       </Link>
@@ -552,7 +570,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
                   </div>
                   <Link
                     to={alert.to}
-                    className="shrink-0 rounded-lg border border-stone-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-stone-700"
+                    className="shrink-0 rounded-lg border border-stone-300 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-stone-700"
                   >
                     {alert.ctaLabel}
                   </Link>
@@ -565,8 +583,8 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <h3 className="font-serif text-2xl text-charcoal">Letzte Aktivitäten</h3>
-          <p className="mt-1 text-sm text-stone-gray">Zuletzt hinzugefügt oder getrunken.</p>
+          <h3 className="font-serif text-2xl text-charcoal">Zuletzt getrunken</h3>
+          <p className="mt-1 text-sm text-stone-gray">Die letzten geöffneten Flaschen.</p>
           <div className="mt-4">
             {activitiesLoading ? (
               <p className="text-sm text-stone-gray">Aktivitäten werden geladen …</p>
@@ -589,7 +607,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 
         <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
           <h3 className="font-serif text-2xl text-charcoal">Nächste Anlässe</h3>
-          <p className="mt-1 text-sm text-stone-gray">Geplante Termine aus Ihrer Anlass-Planung.</p>
+          <p className="mt-1 text-sm text-stone-gray">Geplante Termine aus deiner Anlass-Planung.</p>
           <div className="mt-4">
             {activitiesLoading ? (
               <p className="text-sm text-stone-gray">Anlässe werden geladen …</p>
@@ -623,23 +641,23 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 const DashboardHeader = () => (
   <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
     <div>
-      <h2 className="font-serif text-[2.1rem] leading-tight text-charcoal">Portfolio</h2>
-      <p className="mt-1 text-sm text-stone-gray">Private Kellerverwaltung</p>
+      <h2 className="font-serif text-[2.1rem] leading-tight text-charcoal">Dein Keller</h2>
+      <p className="mt-1 text-sm text-stone-gray">Bestand, Reife und Empfehlungen auf einen Blick.</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
       <Link
         to="/inventory"
-        className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white"
+        className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] text-white"
       >
         <Plus className="h-4 w-4" />
         Wein hinzufügen
       </Link>
       <Link
-        to="/inventory"
-        className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-stone-700"
+        to="/inventory?action=purchase"
+        className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] text-stone-700"
       >
         <ShoppingCart className="h-4 w-4" />
-        Einkauf erfassen
+        Nachkauf erfassen
       </Link>
     </div>
   </header>

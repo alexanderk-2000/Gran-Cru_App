@@ -9,7 +9,7 @@ const ensureAuthenticated = async (page: import('@playwright/test').Page) => {
   const demoButton = page.getByRole('button', { name: /Demo-Modus nutzen/i });
   if (await demoButton.isVisible()) {
     await demoButton.click();
-    await expect(page.getByRole('heading', { name: /^Portfolio$|Hauptkeller|Wunschliste/i })).toBeVisible({
+    await expect(page.getByRole('heading', { name: /^Dein Keller$|Hauptkeller|Wunschliste/i })).toBeVisible({
       timeout: 30_000
     });
   }

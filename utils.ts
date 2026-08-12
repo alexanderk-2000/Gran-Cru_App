@@ -1,13 +1,39 @@
 
 
 import { Wine, WineStatus, PortfolioStats } from './types.ts';
+import { getWineMaturity } from './domain/wine/drinkability.ts';
 
-export const getWineStatus = (wine: Wine): WineStatus => {
-  const currentYear = new Date().getFullYear();
-  if (currentYear < wine.drink_start) return WineStatus.HOLD;
-  if (currentYear > wine.drink_end) return WineStatus.PAST_PEAK;
-  return WineStatus.READY;
+/**
+ * The app's single maturity verdict, coarsened to the three-plus-one buckets
+ * lists and badges use. Delegates to the drinkability model in
+ * `domain/wine/drinkability.ts` - this used to be an independent
+ * `currentYear`-in-window comparison, which is why the same bottle could read
+ * differently in the cellar list than on its own page.
+ */
+export const getWineStatus = (wine: Wine): WineStatus => getWineMaturity(wine).status;
+
+/**
+ * The value of one bottle: current market price where known, purchase price
+ * otherwise.
+ *
+ * This used to be decided per screen - portfolio stats counted purchase price
+ * only, while the dashboard and the "highest value" sort already preferred the
+ * market price - so the same cellar was worth different amounts depending on
+ * where you looked. Every value calculation goes through here now.
+ */
+export const getBottleUnitValue = (wine: Pick<Wine, 'market_price' | 'purchase_price'>): number => {
+  if (typeof wine.market_price === 'number' && wine.market_price > 0) return wine.market_price;
+  if (typeof wine.purchase_price === 'number' && wine.purchase_price > 0) return wine.purchase_price;
+  return 0;
 };
+
+/** Total value of a wine position (unit value × bottles on hand). */
+export const getWinePositionValue = (wine: Pick<Wine, 'market_price' | 'purchase_price' | 'quantity'>): number =>
+  getBottleUnitValue(wine) * Math.max(0, wine.quantity || 0);
+
+/** True when neither a market nor a purchase price is known. */
+export const hasKnownPrice = (wine: Pick<Wine, 'market_price' | 'purchase_price'>): boolean =>
+  getBottleUnitValue(wine) > 0;
 
 export const calculatePortfolioStats = (wines: Wine[]): PortfolioStats => {
   const currentYear = new Date().getFullYear();
@@ -16,10 +42,10 @@ export const calculatePortfolioStats = (wines: Wine[]): PortfolioStats => {
 
   const stats = inventory.reduce((acc, wine) => {
     acc.totalBottles += wine.quantity;
-    acc.totalValue += wine.purchase_price * wine.quantity;
+    acc.totalValue += getWinePositionValue(wine);
 
     if (wine.category === 'Investment') {
-      acc.investmentValue += wine.purchase_price * wine.quantity;
+      acc.investmentValue += getWinePositionValue(wine);
     }
 
     const status = getWineStatus(wine);
@@ -114,6 +140,10 @@ export const extractVintageFromQuery = (query: string): number | null => {
 export {
   calculateDrinkability,
   evaluateWineDrinkability,
+  evaluateStoredWine,
+  getWineMaturity,
+  DRINKABILITY_STATUS_LABELS,
+  type WineMaturity,
   type DrinkabilityResult,
   type DrinkabilityStatus,
   type DrinkabilityUncertainty,

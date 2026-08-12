@@ -4,7 +4,7 @@ Grand Cru Vault ist eine React/Vite-Anwendung zur Verwaltung eines Weinkellers m
 
 ## Voraussetzungen
 
-- Node.js 20+
+- Node.js 22+ (`@supabase/supabase-js` unterstützt Node 20 nicht mehr)
 - npm 10+
 - Supabase CLI (optional für lokale DB-Workflows)
 - API Key für OpenRouter (für AI-Endpunkte - Gemini/GPT/Nemotron laufen alle darüber)
