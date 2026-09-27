@@ -25,6 +25,7 @@ import {
 import { evaluateWineDrinkability } from '../../utils.ts';
 import { useToast, useConfirm } from '../../components/Feedback.tsx';
 import { useFocusTrap } from '../../hooks/useFocusTrap.ts';
+import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
 
 const REPEAT_RULE_LABEL: Record<RepeatRule, string> = {
   none: 'Einmalig',
@@ -172,6 +173,8 @@ export const EnjoymentPlan: React.FC = () => {
   const [assigning, setAssigning] = useState(false);
   const [assignmentNotice, setAssignmentNotice] = useState<string | null>(null);
   const [unassignedInstanceIds, setUnassignedInstanceIds] = useState<string[]>([]);
+
+  const [instanceToConsume, setInstanceToConsume] = useState<OccasionInstance | null>(null);
 
   // Wrapped in useCallback (and listed as the effect's dependency) because it
   // now closes over showToast - a context value the linter can't statically
@@ -345,6 +348,35 @@ export const EnjoymentPlan: React.FC = () => {
       const message = err?.message || 'Status konnte nicht aktualisiert werden.';
       setError(message);
       showToast(message, 'error');
+    }
+  };
+
+  // "Getrunken" used to just flip instance.status - the bottle count never
+  // moved, no event or note was written, and the wine's own history had no
+  // idea the occasion ever happened. With a wine assigned, this opens the
+  // same dialog every other "I opened this bottle" moment in the app uses;
+  // the instance only switches to "Genossen" once that save succeeds.
+  // Without an assigned wine there is nothing to decrement, so it falls back
+  // to the plain status flip.
+  const handleRequestConsume = (instance: OccasionInstance) => {
+    if (instance.wine_id) {
+      setInstanceToConsume(instance);
+      return;
+    }
+    void handleStatusUpdate(instance, 'consumed');
+  };
+
+  const handleConsumeSaved = async (message: string) => {
+    if (!instanceToConsume) return;
+    const instance = instanceToConsume;
+    setInstanceToConsume(null);
+    try {
+      await storageService.updateInstanceStatus(instance.id, 'consumed');
+      await loadData();
+      showToast(`${message} Anlass als genossen vermerkt.`, 'success');
+    } catch (err: any) {
+      const errorMessage = err?.message || 'Status konnte nicht aktualisiert werden.';
+      showToast(errorMessage, 'error');
     }
   };
 
@@ -916,6 +948,7 @@ export const EnjoymentPlan: React.FC = () => {
                       wines={wines.filter((wine) => wine.quantity > 0)}
                       onAssign={handleAssignWine}
                       onStatusChange={handleStatusUpdate}
+                      onRequestConsume={handleRequestConsume}
                       onEditSeries={(occasion) => openEditForm(occasion)}
                       onDeleteSeries={handleDeleteSeries}
                       onOpenPool={(occasion) => openPoolStep(occasion)}
@@ -1067,6 +1100,7 @@ export const EnjoymentPlan: React.FC = () => {
 
                 {poolVisibleWines.map((wine) => {
                   const selected = poolDraft[wine.id];
+                  const isOverbooked = Boolean(selected) && (selected?.bottles_reserved ?? 0) > wine.quantity;
                   return (
                     <div key={wine.id} className="grid grid-cols-1 md:grid-cols-[auto,1fr,120px,120px] items-center gap-3 p-4 bg-white border border-burgundy/10 rounded-xl">
                       <input
@@ -1088,6 +1122,11 @@ export const EnjoymentPlan: React.FC = () => {
                       <div>
                         <p className="font-serif text-lg text-charcoal">{wine.vintage} {wine.name}</p>
                         <p className="text-xs text-stone-gray">{wine.producer || 'Produzent unbekannt'} · {wine.region} · Bestand {wine.quantity}</p>
+                        {isOverbooked && (
+                          <p className="mt-1 text-[11px] font-black uppercase tracking-widest text-red-600">
+                            Überbucht: {selected?.bottles_reserved} reserviert, nur {wine.quantity} auf Lager
+                          </p>
+                        )}
                       </div>
 
                       <input
@@ -1105,7 +1144,9 @@ export const EnjoymentPlan: React.FC = () => {
                             }
                           }));
                         }}
-                        className="px-3 py-2 bg-alabaster border border-burgundy/10 rounded-xl text-sm disabled:opacity-40"
+                        className={`px-3 py-2 bg-alabaster border rounded-xl text-sm disabled:opacity-40 ${
+                          isOverbooked ? 'border-red-400 text-red-700' : 'border-burgundy/10'
+                        }`}
                       />
 
                       <select
@@ -1151,6 +1192,14 @@ export const EnjoymentPlan: React.FC = () => {
           </div>
         </div>
       )}
+
+      <OpenBottleDialog
+        open={Boolean(instanceToConsume)}
+        wine={wines.find((wine) => wine.id === instanceToConsume?.wine_id) ?? null}
+        source="occasion"
+        onClose={() => setInstanceToConsume(null)}
+        onSaved={(message) => void handleConsumeSaved(message)}
+      />
     </div>
   );
 };
@@ -1160,10 +1209,11 @@ const InstanceCard: React.FC<{
   wines: Wine[];
   onAssign: (instanceId: string, wineId: string | null) => void;
   onStatusChange: (instance: OccasionInstance, status: 'planned' | 'consumed' | 'skipped') => void;
+  onRequestConsume: (instance: OccasionInstance) => void;
   onEditSeries: (occasion: Occasion) => void;
   onDeleteSeries: (occasionId: string) => void;
   onOpenPool: (occasion: Occasion) => void;
-}> = ({ instance, wines, onAssign, onStatusChange, onEditSeries, onDeleteSeries, onOpenPool }) => {
+}> = ({ instance, wines, onAssign, onStatusChange, onRequestConsume, onEditSeries, onDeleteSeries, onOpenPool }) => {
   const [isAssigning, setIsAssigning] = useState(false);
   const [search, setSearch] = useState('');
   const selectedWine = wines.find((wine) => wine.id === instance.wine_id);
@@ -1308,7 +1358,7 @@ const InstanceCard: React.FC<{
             {isSkipped ? 'Geplant' : 'Überspringen'}
           </button>
           <button
-            onClick={() => onStatusChange(instance, isConsumed ? 'planned' : 'consumed')}
+            onClick={() => (isConsumed ? onStatusChange(instance, 'planned') : onRequestConsume(instance))}
             className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
               isConsumed ? 'bg-alabaster text-stone-gray' : 'bg-burgundy text-white hover:bg-burgundy-light shadow-lg'
             }`}
