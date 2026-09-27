@@ -51,6 +51,17 @@ interface ScoreFormEntry {
   year: string;
 }
 
+interface AromaFormEntry {
+  tag: string;
+  intensity: string;
+}
+
+interface PairingFormEntry {
+  item: string;
+  category: string;
+  note: string;
+}
+
 interface StructureFormState {
   acidity: number | null;
   tannin: number | null;
@@ -97,11 +108,8 @@ interface EditFormState {
   grapes: GrapeFormEntry[];
   structure: StructureFormState;
   scores: ScoreFormEntry[];
-  aromas_json: string;
-  pairings_json: string;
-  ai_details_json: string;
-  ai_sources_json: string;
-  missing_fields_json: string;
+  aromas: AromaFormEntry[];
+  pairings: PairingFormEntry[];
 }
 
 interface WindowMetrics {
@@ -174,13 +182,6 @@ const WINE_TYPE_OPTIONS: WineType[] = ['Rot', 'Weiß', 'Rosé', 'Schaumwein', 'S
 const FORMAT_OPTIONS: BottleFormat[] = ['0.375L', '0.75L', '1.5L (Magnum)', '3.0L (Double Magnum)', '6.0L (Imperial)'];
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-
-const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return null;
-};
 
 const toNullableString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
@@ -272,57 +273,6 @@ const normalizeError = (error: unknown, fallback = 'Unbekannter Fehler'): string
   return fallback;
 };
 
-const toJsonText = (value: unknown, fallback: string): string => {
-  if (value === null || value === undefined) return fallback;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return fallback;
-  }
-};
-
-const parseJsonField = <T,>(raw: string, label: string, validate: (value: unknown) => value is T, fallback: T): T => {
-  const trimmed = raw.trim();
-  if (!trimmed) return fallback;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    throw new Error(`${label}: JSON ist ungültig.`);
-  }
-
-  if (!validate(parsed)) {
-    throw new Error(`${label}: Struktur ist ungültig.`);
-  }
-  return parsed;
-};
-
-const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
-
-const isAromaArray = (value: unknown): value is NonNullable<Wine['aromas']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      typeof (entry as { tag?: unknown }).tag === 'string' &&
-      ((entry as { intensity?: unknown }).intensity === undefined || typeof (entry as { intensity?: unknown }).intensity === 'number')
-  );
-
-const isPairingsArray = (value: unknown): value is NonNullable<Wine['pairings']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      typeof (entry as { item?: unknown }).item === 'string' &&
-      ((entry as { category?: unknown }).category === undefined || typeof (entry as { category?: unknown }).category === 'string') &&
-      ((entry as { note?: unknown }).note === undefined || typeof (entry as { note?: unknown }).note === 'string')
-  );
-
-const isWineDetails = (value: unknown): value is WineDetails => asRecord(value) !== null;
-
 const grapesToFormState = (grapes: Wine['grapes']): GrapeFormEntry[] =>
   (grapes ?? []).map((entry) => ({
     name: entry.name,
@@ -375,15 +325,37 @@ const scoresFromFormState = (entries: ScoreFormEntry[]): Wine['scores'] =>
       return { critic: entry.critic, score: entry.score, year: Number.isFinite(year) ? year : undefined };
     });
 
-const isAiSources = (value: unknown): value is NonNullable<Wine['ai_sources']> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      ((entry as { title?: unknown }).title === undefined || typeof (entry as { title?: unknown }).title === 'string') &&
-      ((entry as { url?: unknown }).url === undefined || typeof (entry as { url?: unknown }).url === 'string')
-  );
+const aromasToFormState = (aromas: Wine['aromas']): AromaFormEntry[] =>
+  (aromas ?? []).map((entry) => ({
+    tag: entry.tag,
+    intensity: entry.intensity !== undefined && entry.intensity !== null ? String(mapIntensity(entry.intensity) ?? entry.intensity) : ''
+  }));
+
+const aromasFromFormState = (entries: AromaFormEntry[]): Wine['aromas'] =>
+  entries
+    .map((entry) => ({ tag: entry.tag.trim(), intensity: entry.intensity.trim() }))
+    .filter((entry) => entry.tag.length > 0)
+    .map((entry) => {
+      const intensity = Number.parseInt(entry.intensity, 10);
+      return { tag: entry.tag, intensity: Number.isFinite(intensity) ? clamp(intensity, 1, 5) : undefined };
+    });
+
+const pairingsToFormState = (pairings: Wine['pairings']): PairingFormEntry[] =>
+  (pairings ?? []).map((entry) => ({
+    item: entry.item,
+    category: entry.category ?? '',
+    note: entry.note ?? ''
+  }));
+
+const pairingsFromFormState = (entries: PairingFormEntry[]): Wine['pairings'] =>
+  entries
+    .map((entry) => ({ item: entry.item.trim(), category: entry.category.trim(), note: entry.note.trim() }))
+    .filter((entry) => entry.item.length > 0)
+    .map((entry) => ({
+      item: entry.item,
+      category: entry.category || undefined,
+      note: entry.note || undefined
+    }));
 
 const parseCategory = (value: string): Category | undefined => {
   const trimmed = value.trim();
@@ -1637,11 +1609,8 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
     grapes: [],
     structure: EMPTY_STRUCTURE_FORM,
     scores: [],
-    aromas_json: '[]',
-    pairings_json: '[]',
-    ai_details_json: '{}',
-    ai_sources_json: '[]',
-    missing_fields_json: '[]'
+    aromas: [],
+    pairings: []
   });
 
   const showToast = useToast();
@@ -1790,11 +1759,8 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
       grapes: grapesToFormState(wine.grapes),
       structure: structureToFormState(wine.structure),
       scores: scoresToFormState(wine.scores),
-      aromas_json: toJsonText(wine.aromas ?? [], '[]'),
-      pairings_json: toJsonText(wine.pairings ?? [], '[]'),
-      ai_details_json: toJsonText(wine.ai_details ?? {}, '{}'),
-      ai_sources_json: toJsonText(wine.ai_sources ?? [], '[]'),
-      missing_fields_json: toJsonText(wine.missing_fields ?? [], '[]')
+      aromas: aromasToFormState(wine.aromas),
+      pairings: pairingsToFormState(wine.pairings)
     });
     setIsEditModalOpen(true);
   }, [wine]);
@@ -1905,22 +1871,13 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
     const grapes: Wine['grapes'] = grapesFromFormState(editForm.grapes);
     const structure: Wine['structure'] = structureFromFormState(editForm.structure);
     const scores: Wine['scores'] = scoresFromFormState(editForm.scores);
-    let aromas: Wine['aromas'] = wine.aromas;
-    let pairings: Wine['pairings'] = wine.pairings;
-    let aiDetailsValue: WineDetails | undefined = wine.ai_details;
-    let aiSourcesValue: Wine['ai_sources'] = wine.ai_sources;
-    let missingFieldsValue: string[] | undefined = wine.missing_fields;
-
-    try {
-      aromas = parseJsonField(editForm.aromas_json, 'Aromen', isAromaArray, wine.aromas ?? []);
-      pairings = parseJsonField(editForm.pairings_json, 'Pairings', isPairingsArray, wine.pairings ?? []);
-      aiDetailsValue = parseJsonField(editForm.ai_details_json, 'AI Details', isWineDetails, wine.ai_details ?? {});
-      aiSourcesValue = parseJsonField(editForm.ai_sources_json, 'AI Quellen', isAiSources, wine.ai_sources ?? []);
-      missingFieldsValue = parseJsonField(editForm.missing_fields_json, 'Fehlende Felder', isStringArray, wine.missing_fields ?? []);
-    } catch (error) {
-      showToast(normalizeError(error, 'JSON-Felder sind ungültig.'), 'error');
-      return;
-    }
+    const aromas: Wine['aromas'] = aromasFromFormState(editForm.aromas);
+    const pairings: Wine['pairings'] = pairingsFromFormState(editForm.pairings);
+    // ai_details/ai_sources/missing_fields come only from the research step,
+    // never from this form - carried through unchanged rather than round-tripped.
+    const aiDetailsValue: WineDetails | undefined = wine.ai_details;
+    const aiSourcesValue: Wine['ai_sources'] = wine.ai_sources;
+    const missingFieldsValue: string[] | undefined = wine.missing_fields;
 
     setIsSaving(true);
     try {
@@ -2328,6 +2285,22 @@ export const WineDetail: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
               />
             </section>
 
+            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Aromen</h4>
+              <AromasField
+                value={editForm.aromas}
+                onChange={(next) => setEditForm((prev) => ({ ...prev, aromas: next }))}
+              />
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Passt zu</h4>
+              <PairingsField
+                value={editForm.pairings}
+                onChange={(next) => setEditForm((prev) => ({ ...prev, pairings: next }))}
+              />
+            </section>
+
           </div>
 
           <button
@@ -2460,6 +2433,114 @@ const GrapesField = memo(function GrapesField({
         className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
       >
         <Plus className="h-3.5 w-3.5" /> Rebsorte hinzufügen
+      </button>
+    </div>
+  );
+});
+
+const AromasField = memo(function AromasField({
+  value,
+  onChange
+}: {
+  value: AromaFormEntry[];
+  onChange: (next: AromaFormEntry[]) => void;
+}) {
+  const updateRow = (index: number, patch: Partial<AromaFormEntry>) => {
+    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+  const removeRow = (index: number) => {
+    onChange(value.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-2">
+      {value.map((row, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Aroma, z. B. Schwarze Kirsche"
+            value={row.tag}
+            onChange={(event) => updateRow(index, { tag: event.target.value })}
+            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <input
+            type="number"
+            placeholder="1-5"
+            min={1}
+            max={5}
+            value={row.intensity}
+            onChange={(event) => updateRow(index, { intensity: event.target.value })}
+            className="w-20 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <button
+            type="button"
+            onClick={() => removeRow(index)}
+            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
+            aria-label="Aroma entfernen"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, { tag: '', intensity: '' }])}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
+      >
+        <Plus className="h-3.5 w-3.5" /> Aroma hinzufügen
+      </button>
+    </div>
+  );
+});
+
+const PairingsField = memo(function PairingsField({
+  value,
+  onChange
+}: {
+  value: PairingFormEntry[];
+  onChange: (next: PairingFormEntry[]) => void;
+}) {
+  const updateRow = (index: number, patch: Partial<PairingFormEntry>) => {
+    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+  const removeRow = (index: number) => {
+    onChange(value.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-2">
+      {value.map((row, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Gericht, z. B. Kurzgebratenes Rind"
+            value={row.item}
+            onChange={(event) => updateRow(index, { item: event.target.value })}
+            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <input
+            type="text"
+            placeholder="Kategorie"
+            value={row.category}
+            onChange={(event) => updateRow(index, { category: event.target.value })}
+            className="w-32 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+          />
+          <button
+            type="button"
+            onClick={() => removeRow(index)}
+            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
+            aria-label="Pairing entfernen"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, { item: '', category: '', note: '' }])}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
+      >
+        <Plus className="h-3.5 w-3.5" /> Passendes Gericht hinzufügen
       </button>
     </div>
   );
