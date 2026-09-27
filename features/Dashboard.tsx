@@ -21,6 +21,8 @@ import {
 } from '../utils.ts';
 import { storageService } from '../services/storage.ts';
 import { findLikelyDuplicates } from '../domain/wine/duplicateDetection.ts';
+import { OpenBottleDialog } from '../components/OpenBottleDialog.tsx';
+import { useToast } from '../components/Feedback.tsx';
 
 interface RecommendationRow {
   wine: Wine;
@@ -60,7 +62,9 @@ const familyLabel: Record<Exclude<WineFamily, 'unknown'>, string> = {
   fortified: 'Portwein'
 };
 
-export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
+export const Dashboard: React.FC<{ wines: Wine[]; onWineUpdate: () => void }> = ({ wines, onWineUpdate }) => {
+  const showToast = useToast();
+  const [bottleToOpen, setBottleToOpen] = useState<Wine | null>(null);
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [recentDrinks, setRecentDrinks] = useState<Array<{
     id: string;
@@ -531,17 +535,18 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
                       <p className="mt-1 text-sm text-stone-600">{row.reason}</p>
                     </div>
                     <div className="flex shrink-0 gap-2">
-                      <Link
-                        to={`/wine/${row.wine.id}`}
+                      <button
+                        type="button"
+                        onClick={() => setBottleToOpen(row.wine)}
                         className="rounded-lg border border-burgundy/25 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-burgundy"
                       >
-                        Öffnen
-                      </Link>
+                        Jetzt öffnen
+                      </button>
                       <Link
-                        to="/genussplan"
+                        to={`/genussplan?wine=${row.wine.id}`}
                         className="rounded-lg border border-stone-300 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-stone-700"
                       >
-                        Planen
+                        Für Anlass einplanen
                       </Link>
                     </div>
                   </div>
@@ -634,6 +639,18 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
           </div>
         </article>
       </section>
+
+      <OpenBottleDialog
+        open={bottleToOpen !== null}
+        wine={bottleToOpen}
+        source="dashboard"
+        onClose={() => setBottleToOpen(null)}
+        onSaved={(message) => {
+          setBottleToOpen(null);
+          showToast(message, 'success');
+          onWineUpdate();
+        }}
+      />
     </div>
   );
 };

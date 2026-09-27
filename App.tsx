@@ -183,7 +183,7 @@ const AppShell: React.FC = () => {
           }
         >
           <Routes>
-            <Route path="/" element={<Dashboard wines={wines} />} />
+            <Route path="/" element={<Dashboard wines={wines} onWineUpdate={fetchWines} />} />
             <Route
               path="/inventory"
               element={

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Category,
   Occasion,
@@ -176,6 +177,18 @@ export const EnjoymentPlan: React.FC = () => {
 
   const [instanceToConsume, setInstanceToConsume] = useState<OccasionInstance | null>(null);
 
+  // The Dashboard's "Für Anlass einplanen" used to link here bare - you
+  // landed on an unfiltered occasion list with no idea which wine you came
+  // to plan for. ?wine=<id> carries that intent across the navigation; the
+  // banner below turns it into a one-click assignment once an occasion with
+  // an open slot is picked.
+  const location = useLocation();
+  const [pendingWineId, setPendingWineId] = useState<string | null>(null);
+  useEffect(() => {
+    const wineId = new URLSearchParams(location.search).get('wine');
+    if (wineId) setPendingWineId(wineId);
+  }, [location.search]);
+
   // Wrapped in useCallback (and listed as the effect's dependency) because it
   // now closes over showToast - a context value the linter can't statically
   // prove is stable, so leaving it a plain function made the mount effect
@@ -337,6 +350,13 @@ export const EnjoymentPlan: React.FC = () => {
       setError(message);
       showToast(message, 'error');
     }
+  };
+
+  const handleQuickAssign = async (instanceId: string) => {
+    if (!pendingWineId) return;
+    await handleAssignWine(instanceId, pendingWineId);
+    setPendingWineId(null);
+    showToast('Wein eingeplant.', 'success');
   };
 
   const handleStatusUpdate = async (instance: OccasionInstance, status: 'planned' | 'consumed' | 'skipped') => {
@@ -717,6 +737,15 @@ export const EnjoymentPlan: React.FC = () => {
     return futureInstances.filter((instance) => instance.occasion_id === selectedOccasionId);
   }, [futureInstances, selectedOccasionId]);
 
+  const pendingWine = useMemo(
+    () => (pendingWineId ? wines.find((wine) => wine.id === pendingWineId) ?? null : null),
+    [pendingWineId, wines]
+  );
+  const nextOpenInstance = useMemo(
+    () => selectedOccasionInstances.find((instance) => !instance.wine_id) ?? null,
+    [selectedOccasionInstances]
+  );
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -739,6 +768,42 @@ export const EnjoymentPlan: React.FC = () => {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
           {error}
+        </div>
+      )}
+
+      {pendingWine && (
+        <div className="flex flex-col gap-3 rounded-2xl border-2 border-gold/30 bg-gold/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-gold">Wein einplanen</p>
+            <p className="mt-1 font-serif text-lg text-charcoal">
+              {pendingWine.vintage} {pendingWine.name}
+            </p>
+            <p className="mt-1 text-sm text-stone-gray">
+              {!selectedOccasionId
+                ? 'Wähle unten eine Serie, um diesen Wein einem Termin zuzuweisen.'
+                : nextOpenInstance
+                  ? `Nächster freier Termin: ${new Date(nextOpenInstance.instance_date).toLocaleDateString('de-DE')}`
+                  : 'Alle Termine dieser Serie sind bereits vergeben - wähle eine andere Serie oder lege einen neuen Termin an.'}
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            {selectedOccasionId && nextOpenInstance && (
+              <button
+                type="button"
+                onClick={() => void handleQuickAssign(nextOpenInstance.id)}
+                className="rounded-xl bg-burgundy px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light"
+              >
+                Diesem Termin zuordnen
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPendingWineId(null)}
+              className="rounded-xl border border-stone-300 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-stone-700 transition-all hover:bg-white"
+            >
+              Abbrechen
+            </button>
+          </div>
         </div>
       )}
 
