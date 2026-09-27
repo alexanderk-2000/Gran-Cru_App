@@ -281,7 +281,9 @@ export interface Wine {
 export enum WineStatus {
   READY = 'READY',
   HOLD = 'HOLD',
-  PAST_PEAK = 'PAST_PEAK'
+  PAST_PEAK = 'PAST_PEAK',
+  /** No usable drinking window - shown as such instead of silently "ready". */
+  UNKNOWN = 'UNKNOWN'
 }
 
 export interface Tasting {

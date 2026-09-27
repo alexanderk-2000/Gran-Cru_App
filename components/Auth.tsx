@@ -28,7 +28,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setSuccess(null);
 
     if (!email || !password) {
-      setError("Bitte füllen Sie alle Felder aus.");
+      setError("Bitte fülle alle Felder aus.");
       return;
     }
 
@@ -41,7 +41,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     try {
       if (isSignUp) {
         await storageService.signUp(email, password);
-        setSuccess("Konto erstellt! Bitte prüfen Sie Ihre E-Mails.");
+        setSuccess("Konto erstellt! Bitte prüfe deine E-Mails.");
         setIsSignUp(false);
         setPassword('');
       } else {
@@ -79,7 +79,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             <Wine className="w-8 h-8 text-alabaster" />
           </div>
           <h1 className="font-serif text-4xl font-bold text-burgundy mb-2">Grand Cru Vault</h1>
-          <p className="text-stone-gray font-medium tracking-wide">Premium Kellerverwaltung & Asset-Portfolio.</p>
+          <p className="text-stone-gray font-medium tracking-wide">Deine private Weinsammlung, sorgfältig geführt.</p>
         </div>
 
         <div className="bg-white border-2 border-burgundy/5 p-10 rounded-[2.5rem] shadow-premium relative group">
@@ -98,7 +98,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             )}
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-1">E-Mail Adresse</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-1">E-Mail Adresse</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
                 <input
@@ -109,7 +109,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-1">Passwort</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-1">Passwort</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
                 <input
@@ -123,7 +123,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               {isLoading ? "Lädt..." : (isSignUp ? 'KONTO ERSTELLEN' : 'ZUGANG GEWÄHREN')}
             </button>
 
-            <button type="button" onClick={handleDemoMode} disabled={isDemoLoading} className="w-full py-4 bg-white border border-burgundy/10 text-burgundy font-black rounded-2xl flex items-center justify-center gap-3 uppercase tracking-[0.15em] text-[10px]">
+            <button type="button" onClick={handleDemoMode} disabled={isDemoLoading} className="w-full py-4 bg-white border border-burgundy/10 text-burgundy font-black rounded-2xl flex items-center justify-center gap-3 uppercase tracking-[0.15em] text-[11px]">
               <Sparkles className="w-4 h-4 text-gold" /> Demo-Modus nutzen
             </button>
           </form>

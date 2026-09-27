@@ -1,6 +1,17 @@
 
 import { Wine, Category } from './types.ts';
 
+/**
+ * The single source of truth for wine categories.
+ *
+ * These used to be spelled out separately in the cellar filter (without
+ * "Daily Drinker"), in the edit form (without "Investment", although the
+ * dashboard computes an investment value from exactly that value) and
+ * implicitly in the quick-add paths. A wine could therefore carry a category
+ * that no screen let you select or filter for.
+ */
+export const WINE_CATEGORIES: Category[] = ['Genuss', 'Investment', 'Rarität', 'Daily Drinker'];
+
 export const PRE_SEED_WINES: Partial<Wine>[] = [
   {
     name: 'Château Margaux',

@@ -39,3 +39,27 @@ export const findLikelyDuplicates = (
     );
   });
 };
+
+/**
+ * Clusters wines into duplicate groups (usually pairs) for a "merge" action.
+ * Same one-hop matching as the flat duplicate-warning set the Dashboard
+ * already builds from findLikelyDuplicates - a merge UI needs the grouping,
+ * not just "is this wine part of some duplicate".
+ */
+export const groupLikelyDuplicates = (wines: Wine[]): Wine[][] => {
+  const activeWines = wines.filter((wine) => !wine.deleted_at);
+  const visited = new Set<string>();
+  const groups: Wine[][] = [];
+
+  for (const wine of activeWines) {
+    if (visited.has(wine.id)) continue;
+    const matches = findLikelyDuplicates(wine, activeWines, { excludeId: wine.id });
+    if (matches.length === 0) continue;
+
+    const group = [wine, ...matches];
+    for (const member of group) visited.add(member.id);
+    groups.push(group);
+  }
+
+  return groups;
+};

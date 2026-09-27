@@ -1,25 +1,32 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wine, WineStatus } from '../types.ts';
-import { getWineStatus, formatCurrency } from '../utils.ts';
-import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater } from 'lucide-react';
+import { getBottleUnitValue, getWineMaturity, formatCurrency, hasKnownPrice } from '../utils.ts';
+import { Calendar, ShoppingCart, Plus, Minus, ChevronRight, Trash2, GlassWater, MapPin } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+import { imageStorageService } from '../services/imageStorage.ts';
+import { useToast, useConfirm } from './Feedback.tsx';
 
 interface WineCardProps {
   wine: Wine;
-  onDrink?: (wine: Wine) => void;
+  /** Opens the "bottle opened" dialog (stock + rating + note) owned by the page. */
+  onOpenBottle?: (wine: Wine) => void;
+  /** Opens the "move to pocket" dialog owned by the page - the tap-based counterpart to drag-and-drop. */
+  onMove?: (wine: Wine) => void;
   onEdit?: (wine: Wine) => void;
   onUpdate?: () => void;
 }
 
-export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) => {
-  const status = getWineStatus(wine);
+export const WineCard: React.FC<WineCardProps> = ({ wine, onOpenBottle, onMove, onUpdate }) => {
+  const showToast = useToast();
+  const confirmDelete = useConfirm();
+  const maturity = getWineMaturity(wine);
+  const status = maturity.status;
   const isReady = status === WineStatus.READY;
   const isEmpty = wine.quantity === 0;
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isDrinking, setIsDrinking] = useState(false);
   const normalizedTitle = (wine.name || '').replace(/\s+/g, ' ').trim() || 'Unbenannter Wein';
 
   const getTopBarClass = () => {
@@ -50,60 +57,91 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
       await storageService.adjustStock(wine.id, delta, 'dashboard');
       if (onUpdate) onUpdate();
     } catch (error: any) {
-      alert(error?.message || 'Bestand konnte nicht aktualisiert werden.');
+      showToast(error?.message || 'Bestand konnte nicht aktualisiert werden.', 'error');
     } finally {
       setIsAdjusting(false);
     }
   };
 
-  const handleDrink = async (e: React.MouseEvent) => {
+  const handleOpenBottle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!onDrink || wine.quantity <= 0 || isDrinking) return;
+    if (!onOpenBottle || wine.quantity <= 0) return;
+    onOpenBottle(wine);
+  };
 
-    try {
-      setIsDrinking(true);
-      await onDrink(wine);
-      if (onUpdate) onUpdate();
-    } catch (error: any) {
-      alert(error?.message || 'Trinkvorgang fehlgeschlagen.');
-    } finally {
-      setIsDrinking(false);
-    }
+  const handleMove = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!onMove) return;
+    onMove(wine);
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (isDeleting) return;
-    if (!window.confirm(`Wein "${wine.name}" in den Papierkorb verschieben?`)) return;
+    const confirmed = await confirmDelete({
+      title: 'In den Papierkorb verschieben?',
+      description: `"${wine.name}" landet im Papierkorb und lässt sich dort wiederherstellen.`,
+      confirmLabel: 'Verschieben',
+      destructive: true
+    });
+    if (!confirmed) return;
 
     try {
       setIsDeleting(true);
       await storageService.softDeleteWine(wine.id, 'Aus Kartenansicht gelöscht');
+      showToast(`"${wine.name}" wurde in den Papierkorb verschoben.`, 'success');
       if (onUpdate) onUpdate();
     } catch (error: any) {
-      alert(error?.message || 'Löschen fehlgeschlagen.');
+      showToast(error?.message || 'Löschen fehlgeschlagen.', 'error');
     } finally {
       setIsDeleting(false);
     }
   };
 
+  // The badge shows the model's finer verdict ("Optimal", "Anlaufphase") in the
+  // colour of its coarse bucket, plus a marker when the verdict rests on thin
+  // data - a wine without a drinking window is no longer silently "Trinkreif".
   const getStatusBadge = () => {
+    const label = maturity.label;
+    const title = maturity.explanation;
+    const base = 'px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-tighter border';
+
     switch (status) {
       case WineStatus.READY:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] bg-sage-light text-sage border border-sage font-bold uppercase tracking-tighter">Trinkreif</span>;
+        return <span title={title} className={`${base} bg-sage-light text-sage border-sage`}>{label}</span>;
       case WineStatus.HOLD:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] bg-alabaster text-gold border border-gold font-bold uppercase tracking-tighter">Halten</span>;
+        return <span title={title} className={`${base} bg-alabaster text-gold border-gold`}>{label}</span>;
       case WineStatus.PAST_PEAK:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-50 text-red-700 border border-red-200 font-bold uppercase tracking-tighter">Über Peak</span>;
+        return <span title={title} className={`${base} bg-red-50 text-red-700 border-red-200`}>{label}</span>;
+      case WineStatus.UNKNOWN:
+      default:
+        return (
+          <span title={title} className={`${base} bg-stone-100 text-stone-500 border-stone-300`}>
+            Kein Fenster
+          </span>
+        );
     }
   };
 
-  const wineImage = (wine as any).ai_details?.app?.images?.bottle
-    || (wine as any).ai_details?.app?.images?.label
-    || (wine as any).ai_details?.app?.images?.case
-    || null;
+  // ai_details only stores a presence flag per photo slot (see
+  // services/imageStorage.ts) - never a URL - so the thumbnail is resolved to
+  // a fresh signed URL here instead of read off the wine record directly.
+  const [wineImage, setWineImage] = useState<string | null>(null);
+  useEffect(() => {
+    const flags = imageStorageService.getImageFlags(wine);
+    if (!flags.bottle && !flags.label && !flags.case) {
+      setWineImage(null);
+      return;
+    }
+    let active = true;
+    void imageStorageService.resolveImageUrls(wine).then((resolved) => {
+      if (active) setWineImage(resolved.bottle || resolved.label || resolved.case);
+    });
+    return () => { active = false; };
+  }, [wine]);
 
   return (
     <div className={`
@@ -126,7 +164,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
           <Link to={`/wine/${wine.id}`} className="flex-1 min-w-0 flex flex-col group/title">
             <span className="text-xs font-medium text-stone-gray uppercase tracking-widest mb-1">{wine.region}</span>
             {wine.subcellar ? (
-              <span className="mb-1 inline-flex w-fit rounded-full border border-burgundy/15 bg-burgundy/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-burgundy">
+              <span className="mb-1 inline-flex w-fit rounded-full border border-burgundy/15 bg-burgundy/5 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-burgundy">
                 {wine.subcellar}
               </span>
             ) : null}
@@ -150,7 +188,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
         <div className="mb-4 grid grid-cols-2 gap-4 border-y border-alabaster py-4">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-stone-gray">
-              <span className="text-[10px] font-black uppercase tracking-widest">Stock</span>
+              <span className="text-[11px] font-black uppercase tracking-widest">Stock</span>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -160,7 +198,7 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
               >
                 <Minus className="w-3 h-3" />
               </button>
-              <span className="text-sm font-bold text-charcoal">{wine.quantity} <span className="text-[10px] text-stone-gray font-normal">Fl.</span></span>
+              <span className="text-sm font-bold text-charcoal">{wine.quantity} <span className="text-[11px] text-stone-gray font-normal">Fl.</span></span>
               <button
                 onClick={(e) => handleAdjust(e, 1)}
                 disabled={isAdjusting}
@@ -171,8 +209,10 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
             </div>
           </div>
           <div className="flex flex-col gap-1 items-end">
-            <span className="text-[10px] font-black uppercase tracking-widest text-stone-gray">Einstand Ø</span>
-            <span className="text-sm font-bold text-charcoal">{formatCurrency(wine.purchase_price)}</span>
+            <span className="text-[11px] font-black uppercase tracking-widest text-stone-gray">
+              {hasKnownPrice(wine) && wine.market_price ? 'Marktwert' : 'Einstand'}
+            </span>
+            <span className="text-sm font-bold text-charcoal">{formatCurrency(getBottleUnitValue(wine))}</span>
           </div>
           <div className="flex items-center gap-2 col-span-2 text-stone-gray">
             <Calendar className="w-4 h-4 text-gold" />
@@ -183,29 +223,37 @@ export const WineCard: React.FC<WineCardProps> = ({ wine, onDrink, onUpdate }) =
         <div className="mt-auto grid grid-cols-2 gap-2">
           <Link
             to={`/wine/${wine.id}?action=buy`}
-            className="flex-1 py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+            className="flex-1 py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2"
           >
             <ShoppingCart className="w-3 h-3" />
             Kaufen
           </Link>
           <button
-            onClick={handleDrink}
-            disabled={!onDrink || wine.quantity <= 0 || isDrinking}
-            className="py-2 bg-sage-light border border-sage/30 hover:bg-sage/10 text-sage text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+            onClick={handleOpenBottle}
+            disabled={!onOpenBottle || wine.quantity <= 0}
+            className="py-2 bg-sage-light border border-sage/30 hover:bg-sage/10 text-sage text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <GlassWater className="w-3 h-3" />
-            {isDrinking ? '...Trinkt' : 'Trinken'}
+            Öffnen
           </button>
           <Link
             to={`/wine/${wine.id}`}
-            className="px-4 py-2 bg-burgundy hover:bg-burgundy-light text-white text-[10px] font-black rounded-lg transition-colors flex items-center justify-center uppercase tracking-widest"
+            className="px-4 py-2 bg-burgundy hover:bg-burgundy-light text-white text-[11px] font-black rounded-lg transition-colors flex items-center justify-center uppercase tracking-widest"
           >
             Details
           </Link>
           <button
+            onClick={handleMove}
+            disabled={!onMove}
+            className="py-2 bg-white border border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+          >
+            <MapPin className="w-3 h-3" />
+            Verschieben
+          </button>
+          <button
             onClick={handleDelete}
             disabled={isDeleting}
-            className="py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 text-[10px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
+            className="col-span-2 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 text-[11px] font-black rounded-lg transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <Trash2 className="w-3 h-3" />
             {isDeleting ? 'Löscht...' : 'Löschen'}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
+import { findLikelyDuplicates, groupLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
 import { Wine } from '../../types.ts';
 
 const baseWine: Wine = {
@@ -55,5 +55,33 @@ describe('findLikelyDuplicates', () => {
     const candidate = { barcode: '4006381333931' };
     const matches = findLikelyDuplicates(candidate, [baseWine], { excludeId: 'existing-1' });
     expect(matches).toHaveLength(0);
+  });
+});
+
+describe('groupLikelyDuplicates', () => {
+  it('clusters a duplicate pair into one group', () => {
+    const duplicate = { ...baseWine, id: 'existing-2' };
+    const groups = groupLikelyDuplicates([baseWine, duplicate]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].map((wine) => wine.id).sort()).toEqual(['existing-1', 'existing-2']);
+  });
+
+  it('leaves wines with no match out of any group', () => {
+    const unrelated = { ...baseWine, id: 'existing-3', name: 'Something Else', barcode: undefined, vintage: 2015 };
+    const groups = groupLikelyDuplicates([baseWine, unrelated]);
+    expect(groups).toHaveLength(0);
+  });
+
+  it('does not group a wine with itself twice or revisit a grouped wine', () => {
+    const duplicate = { ...baseWine, id: 'existing-2' };
+    const third = { ...baseWine, id: 'existing-3' };
+    const groups = groupLikelyDuplicates([baseWine, duplicate, third]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(3);
+  });
+
+  it('ignores soft-deleted wines when grouping', () => {
+    const deleted = { ...baseWine, id: 'existing-2', deleted_at: '2026-01-02T00:00:00Z' };
+    expect(groupLikelyDuplicates([baseWine, deleted])).toHaveLength(0);
   });
 });

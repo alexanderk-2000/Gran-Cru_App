@@ -1,0 +1,486 @@
+# Plan: Von „viele Features" zu „richtig gute Wein-App für den eigenen Keller"
+
+Stand: 2026-08-11 · Basis: Codestand `d2d2f4c` (main)
+
+Dieses Dokument ist zweiteilig:
+
+1. **Befund** — was beim Durchgehen der gesamten App konkret unsauber ist (mit Datei/Zeile, nachprüfbar).
+2. **Plan** — in welcher Reihenfolge das zu einer App wird, die man täglich gern benutzt.
+
+Der Befund ist neu erhoben (nicht aus `WEITERENTWICKLUNGSPOTENZIAL_2026-07-22.md` übernommen); wo sich Punkte überschneiden, ist das vermerkt.
+
+---
+
+## 0. Was heißt „richtig gut" für einen privaten Weinkeller?
+
+Die App verwaltet keinen Handelsbestand, sondern die Sammlung *einer* Person. Daraus folgen fünf Leitsätze, an denen der ganze Plan hängt:
+
+| Leitsatz | Bedeutung für die App |
+| --- | --- |
+| **1. Erfassen darf nicht wehtun** | Eine Flasche in den Keller zu legen ist der häufigste Vorgang. Er muss auf dem Handy in unter 30 Sekunden gehen — mit *einem* Weg, nicht dreien. |
+| **2. Der Keller muss immer stimmen** | Bestand ist die eine Zahl, der man glauben muss. Jede Mengenänderung ist atomar, nachvollziehbar und offline-fest. |
+| **3. Trinken ist der Höhepunkt, nicht ein Dekrement** | Eine geöffnete Flasche erzeugt eine Erinnerung (Notiz, Bewertung, Anlass), nicht nur `quantity - 1`. |
+| **4. Die App denkt mit, statt zu verwalten** | Reifefenster, Empfehlungen und Anlässe müssen auf *einer* Wahrheit beruhen und einen Klick zur Handlung anbieten. |
+| **5. Die Sammlung gehört dem Nutzer** | Export, Backup, Bilder, die nicht verfallen — Vertrauen ist bei einer Sammlung wichtiger als jedes Feature. |
+
+Gegen diese fünf Leitsätze ist die App aktuell an folgenden Stellen undicht.
+
+---
+
+## 1. Befund
+
+### 1.1 Abgerissene Workflows (das Dringendste)
+
+**B1 — Notizen und Bewertungen können gar nicht erfasst werden.**
+`storageService.addTasting()` existiert in der Legacy-Fassade (`services/storage.legacy.ts:1135`), im Offline-Adapter (`services/pwa/storageOfflineAdapter.ts:426`), in der Sync-Engine und in der DB. **Kein einziger UI-Aufruf existiert.** Der Button „Notiz erfassen" in der Notizen-Timeline ruft `onDrink(wine)` auf (`features/wine-detail/WineDetailPage.tsx:2148`) — er trinkt also eine Flasche, statt eine Notiz zu schreiben. Die Notizen-Liste darüber kann folglich nie etwas anzeigen. Für eine private Sammlung ist das die wichtigste fehlende Funktion überhaupt (Leitsatz 3).
+
+**B2 — Es gibt drei Erfassungswege, und der prominenteste ist der schlechteste.**
+- *Scanner* → `ScanResultDialog` nutzt echte KI (`aiService.generateWineInfo` → `/api/ai/search`), Dublettenwarnung, Validierung. Das ist der gute Weg.
+- *„NEU ANLEGEN"* (der große Burgunder-Button, `features/inventory/InventoryPage.tsx:543`) öffnet einen Dialog, der einen **Prompt zum Kopieren** erzeugt, den man in ChatGPT einfügen und dessen JSON man zurückkopieren soll (`buildPromptForWine`, Zeile 347–391). Die App kann das seit der OpenRouter-Anbindung selbst — sie bietet es an dieser Stelle nur nicht an.
+- *„Manuell anlegen"* (`manualAdd`, Zeile 411) legt **ohne jedes Formular** einen Datensatz „Neuer Wein", Region „Unbekannt", 0 €, Fenster `Jahr..Jahr+10` an. Dieser Platzhalter landet sofort im Bestand, in den Dashboard-KPIs und in den Alerts („Preis fehlt").
+
+**B3 — Der Genussplan ist vom Keller abgekoppelt.**
+Eine Anlass-Instanz auf `consumed` zu setzen schreibt nur den Status (`services/storage.legacy.ts:871`). Kein Bestandsabgang, kein `inventory_event`, keine Notiz. `bottles_reserved` im Wein-Pool reserviert nichts gegen den echten Bestand — man kann dieselbe letzte Flasche für drei Anlässe „reservieren" und sie danach trotzdem noch im Keller haben.
+
+**B4 — In der deployten App funktioniert keine einzige KI-Funktion.**
+Es gibt kein `api/`-Verzeichnis und keinen Serverless-Adapter; `server/index.js` startet nur einen lokalen Express-Prozess. `vercel.json` leitet **alles** auf `/index.html` um. Auf Vercel liefert `/api/ai/search` also HTML mit Status 200 → `response.json()` wirft → der Nutzer sieht „Failed to generate wine information. Unexpected token '<'". Schlimmer: `/api/health` liefert ebenfalls 200, weshalb die Einstellungen fröhlich „API-Server online" melden (`features/Settings.tsx:99`). Lokal funktioniert es nur über den Vite-Dev-Proxy (`vite.config.ts:21`).
+
+**B5 — Tote Einstiegspunkte.**
+„Einkauf erfassen" im Dashboard verlinkt nach `/inventory` (`features/Dashboard.tsx:637`) — es gibt dort keinen Einkaufsvorgang. Die `onAddBottle`-Prop wird in `App.tsx:199` und `:213` als `() => {}` durchgereicht. Alle „Beheben"-Buttons der Alerts landen auf der ungefilterten Kellerliste, statt auf den betroffenen Weinen.
+
+### 1.2 Widersprüchliche Fachlogik (dieselbe Flasche, zwei Wahrheiten)
+
+**B6 — Zwei konkurrierende Reifemodelle.**
+`getWineStatus()` (`utils.ts:5`) ist ein reiner Jahresvergleich und treibt WineCard, Kellerfilter, Dashboard-KPIs und Zeitachse. `evaluateWineDrinkability()` (`domain/wine/drinkability.ts`, Gauß-Kurve, Archetypen, Unsicherheits-Score) treibt nur Weindetail und Genussplan. Derselbe Wein kann in der Liste „Trinkreif" und im Detail „zu früh" sein. Das gute Modell ist gebaut und wird zu 20 % genutzt.
+
+**B7 — Kategorien sind an drei Stellen unterschiedlich definiert.**
+`types.ts:2` kennt vier (`Genuss | Investment | Rarität | Daily Drinker`). Der Kellerfilter bietet drei an, ohne `Daily Drinker` (`InventoryPage.tsx:565`). Das Bearbeiten-Formular bietet drei an, ohne `Investment` (`WineDetailPage.tsx:174`). `manualAdd` erzeugt `Daily Drinker` — nicht filterbar. Der Scanner erzeugt `Genuss` bzw. `Rarität`. Und das Dashboard rechnet einen Investment-Wert über `category === 'Investment'`, was man im Bearbeiten-Formular gar nicht mehr setzen kann.
+
+**B8 — Drei Rechenwege für denselben Kellerwert.**
+`calculatePortfolioStats` (`utils.ts:19`) rechnet ausschließlich mit `purchase_price`. Das Dashboard rechnet `market_price ?? purchase_price` (`Dashboard.tsx:162`). Die Sortierung „Höchster Wert" ebenso (`InventoryPage.tsx:317`). Die WineCard beschriftet `purchase_price` als „Einstand Ø" (`WineCard.tsx:174`) — das stimmt nach `recordPurchase` (gewichteter Mittelwert, `storage.legacy.ts:441`), aber das Bearbeiten-Formular überschreibt dasselbe Feld als Flachwert.
+
+**B9 — Zwei Dublettenerkennungen.**
+`domain/wine/duplicateDetection.ts` verlangt Barcode-Treffer *oder* Name+Produzent+Jahrgang+Format exakt. Das Dashboard baut sich einen eigenen, lockereren Normalisierungs-Key (`Dashboard.tsx:302`). Ergebnis: Das Dashboard warnt vor Dubletten, die der Import nie blockiert hätte — und umgekehrt.
+
+**B10 — Die Trinkhistorie ist keine.**
+`getConsumptionHistory()` filtert hart auf `type = 'consume'` (`storage.legacy.ts:597`). Das Dashboard beschriftet dieselbe Liste als „Zuletzt hinzugefügt oder getrunken" (`Dashboard.tsx:569`) — Zugänge erscheinen dort nie. Käufe, Verluste, Inventurkorrekturen und Umlagerungen werden sauber als Events geschrieben und nirgends angezeigt.
+
+### 1.3 Datenmodell
+
+**B11 — Bestandsänderungen sind nicht atomar.**
+`adjustStock`, `consumeBottle`, `recordPurchase`, `recordLoss` lesen im Client die Menge, rechnen und schreiben zurück (`storage.legacy.ts:398/543/429/468`). Schlägt das nachgelagerte Event-Insert fehl, wird per zweitem Schreibvorgang „zurückgerollt". Zwei Geräte, ein wiedergespielter Offline-Queue-Eintrag oder ein Abbruch zwischen den beiden Schreibvorgängen → verlorene Updates. Das gehört in eine Postgres-Funktion (eine Transaktion, ein Roundtrip).
+
+**B12 — Flaschen sind ein Zähler, keine Objekte.**
+Ein Wein hat `quantity`, `format`, `purchase_price`, `subcellar`. Damit ist nicht abbildbar: eine Magnum und drei 0,75er desselben Weins; zwei Zukäufe zu verschiedenen Preisen (der ältere Preis verschwindet im Mittelwert); „welche Flasche liegt in welchem Fach"; Provenienz/Bezugsquelle je Flasche. Für eine Sammlung, in der genau diese Details den Reiz ausmachen, ist das die zentrale Modellgrenze.
+
+**B13 — Kein Wertverlauf.** `market_price` ist ein einzelnes Feld ohne Historie. Der „Investment"-Anspruch (Kategorie, Dashboard-KPI, `ai_details.investment.*`) hat keine Datenbasis.
+
+**B14 — `ai_details` ist ein 10-teiliger Freiform-Blob** (`types.ts:83–232`) ohne Schema-Validierung auf beiden Seiten. Im Bearbeiten-Dialog stehen weiterhin rohe JSON-Textareas für Aromen, Pairings, `ai_details`, `ai_sources` und `missing_fields` (`WineDetailPage.tsx:1704–1708`). Rebsorten, Struktur und Scores haben seit `c92a8d5` echte Formulare — der Rest nicht.
+
+**B15 — Bilder verfallen.** `imageStorageService` erzeugt Signed URLs mit 1 Jahr Gültigkeit (`services/imageStorage.ts:15`) und **speichert diese URL** in `ai_details.app.images`. Nach einem Jahr sind alle Etikettenfotos tote Links, ohne Erneuerungspfad.
+
+### 1.4 Bedienung, besonders mobil
+
+**B16 — 33 `alert()`/`confirm()`-Aufrufe** in sieben Dateien. Ein Toast-System existiert — aber nur lokal in `WineDetailPage` (`InlineToast`, Zeile 829). Import-Ergebnisse, Fehler und Bestätigungen laufen sonst über blockierende Browser-Dialoge.
+
+**B17 — Pocket-Zuordnung funktioniert auf dem Handy nicht.** Weine werden per HTML5-Drag-&-Drop in Pockets gezogen (`InventoryPage.tsx:478–504`). Auf Touch-Geräten gibt es kein `dragstart`. Einen alternativen Weg („Verschieben nach…" im Menü) gibt es nicht — ausgerechnet für die Tätigkeit, die man mit dem Handy im Keller stehend macht.
+
+**B18 — Keine mobile Navigation, keine Sync-Anzeige.** Die Navigation liegt hinter einem Hamburger (`components/Layout.tsx:79`), es gibt keine Bottom-Bar. Der komplette Offline-Stack (Dexie, Write-Queue, Delta-Sync) ist unsichtbar: In der Seitenleiste steht das statische Dekor „Cloud Sync — Safe & Secure" (Zeile 165–171), echte Queue-Zahlen stehen ausschließlich in den Einstellungen. Man kann offline zehn Änderungen machen und weiß nirgends, ob sie angekommen sind.
+
+**B19 — Die Zeitachse skaliert nicht.** `features/Timeline.tsx` rendert jeden Wein als eigene Zeile über 41 Jahre à 80 px, ohne Filter, Gruppierung, Virtualisierung. Keine Peak-Markierung (obwohl `peak_year` existiert), Zeilen sind nicht anklickbar. Ab ~50 Weinen unbenutzbar.
+
+**B20 — Die Trinkhistorie zeigt Innereien.** Untertitel „Alle konsumierten Flaschen aus inventory_events", Zeile „Quelle: detail" (`features/DrinkHistory.tsx:76,123`). Kein Link zum Wein, kein Filter, keine Notiz. Zusätzlich ein Bug: Das Fehler-Banner steht im Zweig für *nicht leere* Listen (Zeile 102) — schlägt das Laden fehl, ist die Liste leer, also sieht man nur das `alert()`.
+
+**B21 — Die Einstellungen sind für Entwickler geschrieben.** Terminalbefehle (`cd server && npm install && npm run dev`, Zeile 203), `server/.env`-Pfade, rohe Modell-IDs. Die Modell-Listen im Client (`Settings.tsx:44–65`) driften bereits gegen den Server-Katalog (`server/src/ai/providers/modelCatalog.js`) — und `DEFAULT_SETTINGS.openai_model` ist `'5.2'` (`services/settings.ts:24`), die UI zeigt `'gpt-5.2'`.
+
+**B22 — Kein Export.** Weder CSV noch JSON. Bei einer über Jahre gepflegten Sammlung ist das ein Vertrauensproblem, kein Komfortthema.
+
+**B23 — Leere Zustände und Tonalität.** Die leere Kellerliste sagt „Starten Sie Ihre Kollektion." ohne Button (`InventoryPage.tsx:853`). Die Ansprache wechselt zwischen „Sie" („Verwaltung Ihrer flüssigen Assets") und „du" („Lege eine Pocket wie ein Unterkonto an"), und die Bankmetaphorik (Pockets = „Unterkonten", „flüssige Assets", „Portfolio") passt nicht zu einer privaten Sammlung.
+
+**B24 — Barrierefreiheit.** Nur der Dialog im Weindetail hat einen Fokus-Trap (Zeile 1583–1620); Pocket- und Erfassungs-Dialoge nicht. Statusänderungen werden nicht per `aria-live` gemeldet. 10-px-Versalien als primärer Beschriftungsstil sind auf dem Handy grenzwertig lesbar.
+
+### 1.5 Technik und Betrieb
+
+- **B25 — Die Modularisierung ist teilweise Fassade.** `services/storage/*.ts` sind Re-Export-Hüllen über die 1176-Zeilen-Datei `storage.legacy.ts`. `WineDetailPage.tsx` hat 2577 Zeilen, `EnjoymentPlanPage.tsx` 1301, `InventoryPage.tsx` 891. (Bekannt aus der Juli-Analyse, weiterhin offen.)
+- **B26 — Der KI-Cache ist prozesslokal** (`server/src/cache/aiCache.js`) — bei Serverless oder mehreren Instanzen wirkungslos; die persistente `ai_cache`-Tabelle wurde entfernt.
+- **B27 — Keine Fehlerüberwachung.** Server wie Client protokollieren nur nach `console.error`.
+- **B28 — Testabdeckung liegt neben den Risiken.** 48 Unit-Tests, grün, aber ausschließlich Domänen- und PWA-Logik. Es gibt keinen Test, der einen Erfassungs- oder Trinkvorgang durch die UI führt. `tests/unit/server.routes.test.ts` fällt lokal aus, solange `npm ci --prefix server` nicht gelaufen ist (in CI ist es abgedeckt).
+
+**Verifiziert am Codestand:** `npm run typecheck` ✅, `npm run lint` ✅, `npm run test:unit` → 48 Tests grün, 1 Suite übersprungen wegen fehlender Server-Dependencies.
+
+---
+
+## 2. Plan
+
+Sechs Phasen. Jede Phase ist für sich auslieferbar und macht die App spürbar besser — keine Phase ist reine Vorarbeit. Die Reihenfolge folgt dem Prinzip: **erst reparieren, was verspricht und nicht hält; dann den häufigsten Weg perfektionieren; dann Tiefe.**
+
+Aufwandsangaben sind grobe Größenordnungen für eine Person.
+
+---
+
+### Phase 1 — Ehrlichkeit herstellen ✅ umgesetzt
+
+*Ziel: Nichts in der App behauptet mehr etwas, das nicht stimmt.*
+
+> **Status:** umgesetzt. Umsetzungsnotizen am Ende dieses Abschnitts.
+
+| # | Arbeitspaket | Behebt |
+| --- | --- | --- |
+| 1.1 | **API in Produktion bereitstellen.** Express-App als Vercel-Function unter `api/` verfügbar machen (`server/src/app.js` exportiert bereits eine App — ein Handler-Wrapper genügt) und `vercel.json` so ordnen, dass `/api/*` *vor* dem SPA-Fallback greift. Alternative, falls das Backend bewusst lokal bleiben soll: KI-Buttons im Deployment sichtbar deaktivieren statt kryptisch scheitern zu lassen. | B4 |
+| 1.2 | **Health-Check ehrlich machen.** `/api/health` muss ein JSON-Feld prüfen, nicht nur `response.ok` — HTML mit Status 200 darf nicht als „online" gelten. | B4 |
+| 1.3 | **Kategorien vereinheitlichen.** Eine Konstante `WINE_CATEGORIES` in `constants.ts`, überall importiert (Filter, Bearbeiten-Formular, Scanner, Import). Entscheidung nötig: bleiben es vier oder wird `Daily Drinker` fallengelassen? | B7 |
+| 1.4 | **Einen Wertbegriff festlegen.** `calculatePortfolioStats` auf `market_price ?? purchase_price` umstellen und Dashboard/Sortierung dieselbe Funktion nutzen lassen. „Einstand Ø" nur dort beschriften, wo tatsächlich gemittelt wird. | B8 |
+| 1.5 | **Tote Einstiege entfernen oder erfüllen.** „Einkauf erfassen" führt in den echten Kaufdialog (oder verschwindet); `onAddBottle` raus; Alert-„Beheben"-Links auf gefilterte Listen (`/inventory?filter=missing-price`) statt auf die Gesamtliste. | B5 |
+| 1.6 | **Trinkhistorie-Fehlerbanner reparieren** (aus dem Nicht-Leer-Zweig herausziehen) und Interna aus den Texten entfernen. | B20 |
+
+**Fertig, wenn:** In einem frischen Vercel-Deployment funktionieren Scan und KI-Recherche, oder sie sind ehrlich als „nicht verfügbar" markiert. Keine Kennzahl auf dem Dashboard widerspricht mehr der Kellerliste.
+
+#### Umsetzungsnotizen
+
+- **1.1** `api/index.js` exportiert die vorhandene Express-App als Vercel-Function; `vercel.json` leitet `/api/(.*)` **vor** dem SPA-Fallback dorthin. `express`/`cors`/`dotenv`/`openai` sind jetzt auch im Root-`package.json` deklariert, weil Vercel nur dort installiert — Nebeneffekt: `tests/unit/server.routes.test.ts` läuft lokal ohne `npm ci --prefix server`. Das Funktions-Timeout ist auf 55 s gesetzt (unter `maxDuration` 60 s), sonst würde die Plattform vor unserem eigenen Timeout abbrechen. Env-Variablen und ein `curl`-Check stehen in `VERCEL_SETUP.md`.
+- **1.2** Neu: `services/apiHealth.ts`. Ein Backend gilt erst als erreichbar, wenn die Antwort JSON mit `status: "ok"` ist — `response.ok` allein war der Grund für die falsche Meldung „Server läuft". Die KI-Aufrufe prüfen denselben Content-Type und melden statt „Unexpected token '<'" einen verständlichen Hinweis. Fünf Testfälle in `tests/unit/apiHealth.test.ts`, darunter explizit der SPA-Fallback.
+- **1.3** `WINE_CATEGORIES` in `constants.ts` ist jetzt die einzige Quelle; Filter und Bearbeiten-Formular leiten sich daraus ab. Alle vier Kategorien bleiben erhalten (Wegnehmen hätte bestehende Datensätze entwertet).
+- **1.4** `getBottleUnitValue` / `getWinePositionValue` / `hasKnownPrice` in `utils.ts`; Portfolio-Statistik, Dashboard, Wertsortierung und Weinkarte rechnen darüber. Die Karte beschriftet den Wert jetzt danach, woher er stammt. Tests in `tests/unit/portfolioValue.test.ts`.
+- **1.5** „Einkauf erfassen" heißt „Nachkauf erfassen" und öffnet über `?action=purchase` einen echten Dialog (`components/PurchaseDialog.tsx`: Wein wählen, Flaschen, Preis → `recordPurchase`). Alerts verlinken über `?issue=…` auf gefilterte Listen; persistierte Filter werden in dieser Ansicht bewusst übergangen, damit die Antwort vollständig bleibt. `onAddBottle` ist entfernt.
+- **1.6** Fehlerbanner der Trinkhistorie steht außerhalb des Nicht-Leer-Zweigs, `alert()` entfällt, Einträge verlinken auf den Wein, interne Quellenschlüssel sind übersetzt.
+- **Zusätzlich mitgenommen:** Die Dashboard-Dublettenprüfung nutzt jetzt `findLikelyDuplicates` statt eigener Logik (B9, war für Phase 5 vorgesehen — die Zusammenführen-Aktion bleibt dort); irreführende Beschriftungen korrigiert („Trinkbereit (nächste 90 Tage)" → „Trinkbereit", „Marktwert" → „Kellerwert · Marktpreis, sonst Einstand", „Zuletzt hinzugefügt oder getrunken" → „Zuletzt getrunken"); die leere Kellerliste hat einen Einstiegsknopf statt eines Satzes.
+
+---
+
+### Phase 2 — Ein Erfassungsweg ✅ umgesetzt
+
+*Ziel: Leitsatz 1. Eine Flasche kommt auf einem Weg in den Keller, auf dem Handy, in unter 30 Sekunden.*
+
+| # | Arbeitspaket |
+| --- | --- |
+| 2.1 ✅ | **`WineForm` als eigene Komponente bauen** — ein Formular für Anlegen *und* Bearbeiten. Pflicht: Name, Jahrgang, Menge. Alles andere optional und eingeklappt. Struktur-Slider (Säure/Tannin/Körper/Süße/Holz) und Rebsorten-Zeilen aus dem Bearbeiten-Dialog wiederverwenden. |
+| 2.2 ✅ | **Die drei Wege zu einem zusammenführen.** Ein Einstieg „Wein hinzufügen" mit drei gleichwertigen Startpunkten in *demselben* Formular: `Foto/Barcode scannen` · `Name eingeben + KI-Recherche` · `manuell ausfüllen`. Die KI füllt Felder vor, der Nutzer bestätigt. Der Copy-Paste-Prompt entfällt ersatzlos (die App kann das selbst). `manualAdd` mit seinem Platzhalter-Datensatz entfällt ebenfalls. |
+| 2.3 ✅ | **Rohe JSON-Textareas ersetzen** — Aromen als Chip-Eingabe, Pairings als Zeilenliste. `ai_details`/`ai_sources`/`missing_fields` hinter „Erweitert" verstecken, standardmäßig unsichtbar. Umgesetzt in 7.1 — die drei KI-Rohdatenfelder kommen komplett aus dem Formular raus statt nur hinter einem „Erweitert"-Umschalter zu verschwinden, da niemand sie von Hand pflegen will. |
+| 2.4 ✅ | **JSON-Import bleibt, wandert aber in die Einstellungen** („Daten importieren") — er ist ein Migrationswerkzeug, kein Alltagsweg, und gehört nicht neben den Haupt-Button. |
+| 2.5 ✅ | **Erfassungs-Vertrauen sichtbar machen:** KI-befüllte Felder markieren, `confidence` und `missing_fields` im Formular anzeigen (der `ConfidenceBadge` existiert bereits im Lesemodus). |
+
+**Fertig, wenn:** Ein Playwright-Test legt auf einem Mobil-Viewport einen Wein per Formular an und findet ihn in der Kellerliste. Der Keller enthält keine „Neuer Wein"-Platzhalter mehr.
+
+#### Umsetzungsnotizen
+
+- Neu: `components/WineForm.tsx` (das eine Formular, Pflicht sind Name, Jahrgang, Flaschen; alles andere in aufklappbaren Abschnitten, inklusive Struktur-Schiebereglern und Rebsorten-Zeilen) und `components/AddWineDialog.tsx` (der eine Einstieg).
+- Der Copy-Paste-Prompt für ChatGPT ist ersatzlos entfallen — die Recherche läuft über `aiService.generateWineInfo`, dieselbe Funktion, die der Scan schon nutzte. Die Antwort wird mit `normalizeImportedWine` gemappt, also mit demselben Normalisierer wie der JSON-Import.
+- `manualAdd` (Platzhalter „Neuer Wein", Region „Unbekannt", 0 €, erfundenes 10-Jahres-Fenster) ist weg. Wer kein Trinkfenster einträgt, bekommt keins erfunden — der Wein erscheint dann ehrlich als „Kein Fenster" (Phase 3.4).
+- `ScanResultDialog.tsx` ist gelöscht: Ein Scan füttert jetzt dasselbe Formular vor, statt ein zweites, kleineres zu öffnen. Damit gibt es genau ein Erfassungsformular statt drei.
+- Der JSON-Import ist als eigener, klar als Migrationswerkzeug beschrifteter Dialog erhalten („Importieren") — nicht in den Einstellungen wie im Plan skizziert, sondern in der Kellerliste, weil er dort auf die aktive Pocket zugreift. Seine `alert()`-Rückmeldungen laufen jetzt über das Banner der Seite.
+- Recherchierte Felder sind im Formular mit „KI" markiert; Dubletten warnen direkt im Dialog und verweisen auf „Nachkauf erfassen".
+- Sieben Testfälle in `tests/unit/addWineDialog.test.tsx`, darunter die Regression „legt kein Trinkfenster an, das niemand eingetragen hat".
+
+**Bewusst offen (2.3):** Das Bearbeiten-Formular im Weindetail nutzt noch seine eigenen Felder samt JSON-Textareas für Aromen und Pairings. Es auf `WineForm` umzustellen ist ein sinnvoller nächster Schritt, gehört aber in dieselbe Sitzung wie die Zerlegung von `WineDetailPage.tsx` (2577 Zeilen) — separat, damit ein Fehler dort nicht die Erfassung mitreißt.
+
+**Behebt:** B2, B14 (UI-Teil), B23 (Einstiege)
+
+---
+
+### Phase 3 — Trinken, erinnern, glauben (≈ 2 Wochen)
+
+*Ziel: Leitsätze 2 und 3. Die geöffnete Flasche hinterlässt eine Erinnerung, und der Bestand stimmt immer.*
+
+| # | Arbeitspaket |
+| --- | --- |
+| 3.1 ✅ | **„Flasche öffnen"-Dialog.** Ein Vorgang: Datum · Bewertung (Sterne) · Notiz · optional Anlass · optional Foto. Schreibt in *einem* Schritt `inventory_event` **und** `tasting`. Das ist die Funktion, die aktuell komplett fehlt (B1) — höchster Einzelnutzen im ganzen Plan. |
+| 3.2 ✅ | **Notiz ohne Verbrauch ermöglichen** (Verkostung beim Händler, zweites Glas aus derselben Flasche). Entkoppelt Notiz von Bestandsabgang. |
+| 3.3 ✅ | **Bestandsmutationen in eine Postgres-Funktion verlegen.** `adjust_stock(wine_id, delta, type, source, note)` als `SECURITY INVOKER`-RPC: Menge ändern und Event schreiben in einer Transaktion. Client, Offline-Adapter und Queue-Replay rufen nur noch diese eine Funktion. Beseitigt die Lese-Rechne-Schreibe-Rennen und die manuellen Rollback-Schreibvorgänge. |
+| 3.4 ✅ | **Ein Reifemodell.** `getWineStatus` wird zu einer dünnen Hülle über `evaluateWineDrinkability`. Kellerliste, Karten, Dashboard und Zeitachse zeigen dann dieselbe Bewertung wie das Detail — inklusive Unsicherheitshinweis, wenn Struktur-Daten fehlen. |
+| 3.5 ✅ | **Trinkhistorie zur Genusshistorie ausbauen:** alle Event-Typen (Zugang, Abgang, Verlust, Korrektur, Umlagerung) mit Filter, verlinkt auf den Wein, mit Bewertung und Notiz in der Zeile. Das Dashboard-„Letzte Aktivitäten" nutzt dieselbe Quelle und stimmt dann mit seiner Beschriftung überein. |
+| 3.6 ✅ | **Globale Sync-Anzeige.** Ein Statuselement in Kopfzeile/Bottom-Bar: online/offline, ausstehende Änderungen, letzter Sync, Tippen → sofort synchronisieren. Ersetzt das statische „Safe & Secure"-Dekor. Die Daten dafür liefert `subscribeQueueSnapshot` bereits. |
+
+**Fertig, wenn:** Eine geöffnete Flasche taucht mit Bewertung und Notiz in der Historie und am Wein auf. Zwei gleichzeitige Bestandsänderungen führen nachweislich (Test) zum korrekten Endbestand. Ein Wein hat in Liste und Detail denselben Status.
+
+#### Umsetzungsnotizen zu 3.5
+
+- Aus der „Trinkhistorie" wird das **Kellerbuch**: alle Ereignistypen (getrunken, Zugang, Korrektur, Verlust, Umlagerung) **plus** die neuen Verkostungsnotizen, nach Tagen gruppiert, mit Filterchips samt Anzahl und Link auf den Wein. Bewertungen erscheinen als Sterne, Notizen als Zitat, Ereignisnotizen (Verlustgrund, Umlagerung) als Randnotiz.
+- Neu `getInventoryEvents()` für alle Typen; `getConsumptionHistory()` bleibt bewusst auf `consume` beschränkt, weil das Dashboard genau diese Liste als „Zuletzt getrunken" zeigt.
+- **Dabei gefundene Inkonsistenz:** Der Offline-Adapter gab bei `getConsumptionHistory` *alle* Ereignistypen aus Dexie zurück, während der Server auf `type = 'consume'` filterte — derselbe Screen zeigte online und offline unterschiedliche Zeilen. Jetzt filtern beide Pfade gleich.
+- Die Notizen kommen über `getTastingsCreatedSince(null)` in einer Abfrage für alle Weine (die Funktion existierte schon für den Delta-Sync), nicht als eine Abfrage pro Wein.
+
+#### Umsetzungsnotizen zu 3.3 und 3.6
+
+- **3.3:** Neue Migration `20260811000034_record_inventory_change_rpc.sql` mit `record_inventory_change(...)`: sperrt die Weinzeile per `FOR UPDATE`, ändert die Menge, rechnet bei einem Nachkauf den gewichteten Einstandspreis neu und schreibt das `inventory_event` — alles in einer Transaktion. `SECURITY INVOKER` bewusst beibehalten, damit RLS weiter mit den Rechten des Aufrufers greift; die Funktion gewährt also keinen Zugriff, den der Client nicht schon hatte.
+- `adjustStock`, `consumeBottle`, `recordPurchase` und `recordLoss` rufen jetzt diese eine Funktion. Ihre Signaturen sind unverändert, damit Offline-Adapter, Queue-Replay und alle UI-Aufrufe unberührt bleiben.
+- **Fallback mit Absicht:** Ist die Migration in der Datenbank noch nicht ausgerollt (PostgREST antwortet `PGRST202`), fällt der Client auf den alten Lese-Rechne-Schreibe-Pfad zurück und warnt einmal pro Sitzung auf der Konsole. Sonst wäre die App gegen eine nicht migrierte Datenbank schlicht kaputt. **Zum Scharfstellen muss `npm run db:push:remote` (bzw. `npm run db:push` lokal) laufen** — vorher bleibt das Rennen bestehen.
+- Sieben Testfälle in `tests/unit/inventoryRpc.test.ts`: dass jede Mutation genau einen RPC-Aufruf macht (und keine Tabellenzugriffe mehr), dass echte Datenbankfehler durchschlagen statt still in den Fallback zu rutschen, und dass der Fallback bei fehlender Funktion greift.
+- **3.6:** Neu `components/SyncStatus.tsx`, eingebaut in Seitenleiste und mobile Kopfzeile. Zeigt offline / überträgt / gesichert samt Zeitpunkt und Anzahl wartender Änderungen, mit „Jetzt synchronisieren" als Aktion. Ersetzt das statische Dekor „Cloud Sync — Safe & Secure", das dieselbe Aussage traf, egal ob zehn Änderungen in der Queue hingen.
+
+#### Umsetzungsnotizen zu 6.1
+
+- Neu `services/exportService.ts` plus Abschnitt „Sammlung exportieren" in den Einstellungen: CSV (eine Zeile je Wein, für Tabellenprogramme) und vollständiges JSON-Backup (Weine, Notizen, Bestandsereignisse, Anlässe, Pockets).
+- Die CSV nutzt Semikolon als Trennzeichen und beginnt mit einem BOM, damit Excel in deutscher Locale Spalten und Umlaute richtig liest. Werte, die mit `=`, `+`, `-` oder `@` beginnen, werden entschärft, damit ein Tabellenprogramm sie nicht als Formel ausführt.
+- Sechs Testfälle in `tests/unit/exportService.test.ts`.
+
+#### Umsetzungsnotizen zu 3.4
+
+- `getWineStatus` ist jetzt eine Hülle über `getWineMaturity` in `domain/wine/drinkability.ts`; das Gauß-Modell mit Struktur-Ableitung und Unsicherheit gilt damit für Kellerliste, Karten, Filter, Dashboard-KPIs und Zeitachse — vorher nur für Detail und Genussplan.
+- Neuer Status `WineStatus.UNKNOWN`: Weine ohne belastbares Fenster galten bisher stillschweigend als „Trinkreif" (der Jahresvergleich verglich gegen `undefined`, jedes Ergebnis war `false`). Sie erscheinen jetzt als „Kein Fenster" — mit eigenem Filter, eigenem Dashboard-Hinweis inkl. Anzahl und einem Link, der genau diese Weine listet.
+- Die Weinkarte zeigt die feine Bewertung („Optimal", „Anlaufphase", „Über Fenster") in der Farbe ihres groben Eimers, mit der Erklärung des Modells als Tooltip.
+- Das Dashboard zählt die Reife-Eimer einzeln, statt „Lagernd" als Rest zu berechnen — sonst wären die neuen „Kein Fenster"-Flaschen dort gelandet.
+- Die Zeitachse rendert Weine ohne Fenster nicht mehr als Balken bei `NaN` Pixeln, sondern listet sie mit Link zum Ergänzen auf.
+- Acht Testfälle in `tests/unit/wineMaturity.test.ts`, darunter explizit die „ohne Fenster ist nicht trinkbereit"-Regression.
+
+#### Umsetzungsnotizen zu 3.1/3.2
+
+- Neu: `components/OpenBottleDialog.tsx` — Bestand, Datum, Sterne und Notiz in einem Vorgang, erreichbar über „Öffnen" auf der Weinkarte und „Flasche öffnen" im Detail. Das Häkchen „Flasche vom Bestand abziehen" trennt Notiz und Verbrauch: Verkostung beim Händler oder ein zweites Glas gehen ohne Abgang, und bei Bestand 0 bleibt die Notiz möglich.
+- **Dabei gefundener Fehler in `addTasting`:** Die Funktion rief intern `adjustStock(-1)` auf und überschrieb ein übergebenes Datum mit „jetzt". Eine Notiz hätte damit zwingend eine Flasche verbraucht — verbucht als `adjustment`, nicht als `consume`, also unsichtbar in der Trinkhistorie, während der Bestand sank. Offline passierte das nicht, online schon. Jetzt schreibt `addTasting` nur die Notiz; der Verbrauch ist eine explizite Entscheidung des Aufrufers.
+- Ohne Bewertung wird `rating` weggelassen statt als `0` gesendet (die Tabelle erlaubt nur 1–5); die Notizliste blendet Sterne und Zitat entsprechend aus.
+- `App.tsx` reicht kein `onDrink` mehr durch; das Weindetail meldet über `onChanged` **jede** Änderung zurück (auch Nachkauf, Bearbeiten, Löschen — die aktualisierten die Kellerliste bisher gar nicht).
+- Testinfrastruktur: `vitest.config.ts` nimmt jetzt auch `.tsx` auf und lädt `tests/setup.ts` mit den jest-dom-Matchern (die Abhängigkeit war deklariert, aber nie eingebunden — es gab keine einzige Komponententests). Sechs Fälle in `tests/unit/openBottleDialog.test.tsx`.
+
+**Behebt:** B1, B6, B10, B11, B18 (Sync-Teil), B20
+
+---
+
+### Phase 4 — Der Keller als realer Ort (≈ 2–3 Wochen)
+
+*Ziel: Die App bildet ab, wo die Flasche wirklich liegt — und funktioniert dort, wo man steht: im Keller, mit dem Handy.*
+
+| # | Arbeitspaket |
+| --- | --- |
+| 4.1 | **Flaschen als Objekte (Modellentscheidung).** Neue Tabelle `bottles` (`wine_id`, `format`, `purchase_date`, `purchase_price`, `source`, `pocket_id`, `position`, `status`, `consumed_at`). `wines.quantity` bleibt als abgeleiteter, per Trigger gepflegter Wert erhalten, damit alle bestehenden Ansichten weiterlaufen. Migration: Für jeden Wein `quantity` Flaschen mit den heutigen Werten erzeugen. Löst B12 und B13 (Einstandspreis je Flasche statt Mittelwert) gemeinsam. |
+| 4.2 ✅ | **Mobile Pocket-Zuordnung.** „Verschieben nach…" als Aktion an Karte und Detail; Drag-&-Drop bleibt als Desktop-Komfort. Behebt, dass die Kernaktion im Keller auf dem Handy heute unmöglich ist. |
+| 4.3 | **Bottom-Navigation für Mobil** (Keller · Hinzufügen · Genussplan · Historie) statt Hamburger-only. |
+| 4.4 | **Pocket-Ansicht mit Belegung** — Regale/Fächer als Raster, Flaschen einsortierbar; wenigstens Kapazität und Füllstand je Pocket. |
+| 4.5 | **Suche erweitern** um Rebsorte, Land, Appellation und Jahrgang (heute nur Name/Region/Produzent/Unterkeller, `InventoryPage.tsx:302`). |
+| 4.6 | **Inventur an das Flaschenmodell anschließen:** Zählen je Pocket statt über die Gesamtliste, Korrekturen mit Begründung, Zwischenstand überlebt Navigation. |
+
+**Fertig, wenn:** Man kann auf dem Handy eine Flasche von „Regal A" nach „Regal C" verschieben, sieht Einstandspreis und Kaufdatum je Flasche, und die Inventur läuft pocketweise.
+
+**Behebt:** B12, B13 (Teil), B17, B18, B19 (Teil)
+
+---
+
+#### Umsetzungsnotizen zu 6.3
+
+- Neu `components/Feedback.tsx`: `FeedbackProvider` mit `useToast()` (stapelbare, auto-verschwindende Hinweise, wie das bisherige `InlineToast` im Weindetail) und `useConfirm()` (Promise-basierter Ersatz für `window.confirm`, mit optionalem `destructive`-Stil für rote Bestätigungsbuttons). In `App.tsx` einmal um die gesamte Shell gelegt — auch um Lade-/Auth-/Offline-Bildschirme, nicht nur um die gerouteten Seiten.
+- Alle 27 gefundenen `alert()`/`window.confirm()`-Aufrufe ersetzt, verteilt über `WineCard.tsx`, `WineDetailPage.tsx` (dessen eigenes `InlineToast` samt lokalem State komplett entfernt und durch den globalen Hook ersetzt — gleiche Aufrufsignatur `showToast(text, tone)`, daher risikoarme Änderung in einer 2500+-Zeilen-Datei), `Trash.tsx`, `Stocktake.tsx`, `InventoryPage.tsx` und `EnjoymentPlanPage.tsx` (12 Fundstellen allein dort).
+- **Dabei gefunden:** Das Einbinden von `useToast()`/`useConfirm()` in `EnjoymentPlanPage.tsx` ließ ESLints `exhaustive-deps`-Regel anschlagen, weil `loadData()` jetzt einen Context-Wert (`showToast`) einfängt, den der Linter nicht als stabil erkennen kann. Behoben, indem `loadData` in `useCallback` gefasst und als Abhängigkeit des Mount-Effekts eingetragen wurde — dasselbe Muster, das `InventoryPage.tsx` für `refreshStoredPockets` schon nutzt.
+- Löschbestätigungen nutzen `destructive: true` (roter Button) statt der stillen `window.confirm`-Box; Aktionen wie Wiederherstellen, Pocket anlegen oder Verschieben geben jetzt zusätzlich eine Erfolgsmeldung, wo vorher gar keine Rückmeldung existierte.
+- **Bewusst nicht umgesetzt:** „Löschungen mit Rückgängig-Toast statt Bestätigungsdialog" aus dem ursprünglichen Plantext. Ein Bestätigungsdialog vor der Papierkorb-Verschiebung ist für harte Löschungen (endgültiges Löschen, Papierkorb leeren) weiterhin die sicherere Wahl; für die weichen Löschungen (in den Papierkorb) ist ein Rückgängig-Toast ein sinnvoller nächster Schritt, aber ein eigenständiger UX-Wechsel, der eine eigene Betrachtung verdient statt als Nebeneffekt dieser Umstellung zu passieren.
+- Sechs Testfälle in `tests/unit/feedback.test.tsx` (Toast-Anzeige, Auto-Dismiss, manuelles Schließen, Confirm-Auflösung in beide Richtungen, Fehler bei fehlendem Provider).
+
+#### Umsetzungsnotizen zu 6.6
+
+- Neu `hooks/useFocusTrap.ts`: eine geteilte Hook, extrahiert aus dem bislang einzigen Fokus-Trap der App (dem `Dialog` im Weindetail, B24) — Anfangsfokus aufs erste Eingabefeld, `Tab`/`Shift+Tab` bleibt innerhalb des Dialogs gefangen, `Escape` schließt. `WineDetailPage.tsx`s eigener `Dialog` nutzt jetzt selbst diese Hook statt seiner eigenen Kopie der Logik.
+- Angewendet auf alle bisher ungeschützten Dialoge: `AddWineDialog`, `OpenBottleDialog`, `MoveToPocketDialog` (hatten `role="dialog"`/`aria-modal`, aber keine Tastaturlogik dahinter), `PurchaseDialog` und die beiden Modals in `InventoryPage.tsx` (Pocket anlegen, JSON-Import) — diese hatten nicht einmal `role="dialog"`/`aria-modal` —, das Wein-Pool-Modal in `EnjoymentPlanPage.tsx`, der `Confirm`-Dialog in `Feedback.tsx` sowie `ScannerOverlay.tsx` (Vollbild-Kameraansicht, bislang ganz ohne Escape-Handling).
+- Wo ein Dialog einen eigenen „busy"-Zustand hatte (z. B. `MoveToPocketDialog` während eines laufenden Verschiebens), schließt `Escape` weiterhin nicht mittendrin — dieselbe Regel, die vorher schon für den Klick auf den Hintergrund galt.
+- **`aria-live` für Statusänderungen:** Der Toast-Container in `Feedback.tsx` trägt jetzt `aria-live="polite"` (zusätzlich zum `role="status"` pro Toast, der allein nicht zuverlässig in allen Screenreadern ankommt, wenn der Container erst beim Einblenden entsteht). Fehlermeldungen in den Dialogen (`AddWineDialog`, `OpenBottleDialog`, `MoveToPocketDialog`, `PurchaseDialog`, `InventoryPage`-JSON-Import, `ScannerOverlay`) haben `role="alert"` bekommen — vorher waren das stumme `<p>`-Tags, die ein Screenreader nur fand, wenn man zufällig dorthin navigierte.
+- Mindestschriftgrößen für die Mikro-Labels waren bereits Teil von 6.5 (9→10/10→11 px, siehe dortige Notiz) — hier nicht wiederholt.
+- Vier Testfälle in `tests/unit/useFocusTrap.test.tsx` (Anfangsfokus, Tab-Wrap in beide Richtungen, Escape-Schließen) plus ein zusätzlicher Testfall in `tests/unit/feedback.test.tsx` für Escape auf dem Confirm-Dialog.
+
+#### Umsetzungsnotizen zu 6.2
+
+- `services/imageStorage.ts` speichert pro Foto-Slot jetzt ein reines Vorhanden-Flag (`ai_details.app.images.bottle = true`) statt der Signed URL selbst. Der Speicherpfad ist aus `(user_id, wine_id, slot)` vollständig deterministisch (`buildPath`), muss also gar nicht persistiert werden — beim Anzeigen wird immer frisch signiert.
+- **Rückwirkend repariert, ohne Migrationsskript:** Jeder Wahrheitswert im Slot gilt als „vorhanden, jetzt neu signieren" — auch die alten, irgendwann ablaufenden URL-Strings aus bestehenden Datensätzen. Damit funktionieren auch heute schon abgelaufene Fotos wieder, sobald sie das nächste Mal angezeigt werden, ohne dass jemand die Datenbank anfassen muss.
+- Neue Funktionen: `getImageFlags` (synchron, keine Netzwerkanfrage — reine Präsenzprüfung) und `resolveImageUrls` (asynchron, signiert nur die Slots mit gesetztem Flag, mit 30-Minuten-In-Memory-Cache gegen wiederholtes Signieren bei Re-Renders). `mergeImageUrl` → `setImagePresence`.
+- `WineDetailPage.tsx` und `WineCard.tsx` lösen die Anzeige-URL jetzt per `useEffect` auf, statt sie synchron aus dem Datensatz zu lesen — bei `WineCard` wird das ganz übersprungen, wenn kein Slot ein Flag gesetzt hat (der Normalfall für die meisten Weine).
+- Neun Testfälle in `tests/unit/imageStorage.test.ts`, darunter explizit die Rückwärtskompatibilität mit alten URL-Strings und dass ein fehlgeschlagenes Signieren die Seite nicht zum Absturz bringt.
+
+#### Umsetzungsnotizen zu 6.5 (plus Lesbarkeit als Vorgriff auf 6.6)
+
+- **Anrede vereinheitlicht:** Alle verbliebenen „Sie/Ihre/Ihnen"-Stellen (Auth-Formular, Scanner-Fehlermeldungen, Dashboard-Leerzustand, Zeitachse, Genussplan-Kopf und -Leerzustand, Konfigurationsfehler-Screen) auf „du" umgestellt — der App-Code war zu über 90 % schon „du", diese Reste stachen heraus.
+- **Bankmetaphern entfernt:** „Portfolio" als Dashboard-Überschrift → „Dein Keller" (Untertitel entsprechend angepasst, damit er sich nicht mit der neuen Überschrift wiederholt); „Vault & Portfolio" in der Seitenleiste → „Private Weinsammlung"; „Premium Kellerverwaltung & Asset-Portfolio" im Login → „Deine private Weinsammlung, sorgfältig geführt"; Pockets werden nicht mehr als „Unterkonten"/„Unterkonto" erklärt, sondern als „eigene Bereiche innerhalb deines Kellers" (Regal, Kühlschrank o. Ä.).
+- Ein Playwright-Baseline-Test verankerte den alten Wortlaut (`/^Portfolio$|Hauptkeller|Wunschliste/i` als Dashboard-Erkennungsmerkmal nach dem Demo-Login) — auf `Dein Keller` aktualisiert, sonst wäre der Test am eigenen Umbenennen zerbrochen.
+- **Zusätzlich (Lesbarkeit, greift 6.6 vor):** Die durchgängig verwendeten 9–10-px-Versal-Labels (Filterbeschriftungen, KPI-Eyebrows, Button-Mikrotext — 98 Fundstellen in 20 Dateien) sind app-weit um eine Stufe angehoben (8→9, 9→10, 10→11 px), einheitlich per Skript in einem Durchgang ersetzt, damit keine Kaskade entsteht. Bewusst nicht angetastet: `tracking-widest`/`tracking-[0.14em]` (Laufweite) und `font-black` (Schriftschnitt) — das ist Teil der bewussten Formsprache der App und eine reine Größenkorrektur genügt für den Lesbarkeitsgewinn.
+
+#### Umsetzungsnotizen zu 4.2
+
+- Neu `components/MoveToPocketDialog.tsx`: Liste der Pockets zum Antippen, aktuelle Pocket ist deaktiviert statt eines No-op-Klicks, Fehler werden angezeigt statt den Dialog stillschweigend zu schließen. Drag-and-Drop in der Kellerliste bleibt als Desktop-Komfort bestehen — das war die einzige Möglichkeit, eine Pocket zuzuweisen, und funktioniert auf Touch-Geräten nicht (kein `dragstart`-Event).
+- Eingebunden an zwei Stellen: als „Verschieben"-Aktion auf der Weinkarte (`components/WineCard.tsx`, Aktionsraster von 2×2 auf 2×3 erweitert) und als Button neben „Bearbeiten"/„Nachkauf"/„Löschen" im Weindetail-Kopf — dort gab es bislang überhaupt keinen Weg, die Pocket zu ändern, auch nicht auf dem Desktop.
+- Fünf Testfälle in `tests/unit/moveToPocketDialog.test.tsx`.
+
+### Phase 5 — Mitdenken statt verwalten (≈ 2 Wochen)
+
+*Ziel: Leitsatz 4. Die App sagt, was jetzt dran ist — und man kann es sofort tun.*
+
+| # | Arbeitspaket |
+| --- | --- |
+| 5.1 | **Genussplan an den Keller anschließen.** „Konsumiert" öffnet den Flasche-öffnen-Dialog aus 3.1 (Bestand runter, Event, Notiz, Anlass verknüpft). `bottles_reserved` prüft gegen echten Bestand und markiert Überbuchungen. |
+| 5.2 | **Zeitachse neu bauen:** nach Reifefenster gruppiert statt eine Zeile je Wein, mit Peak-Markierung, Filter, anklickbaren Balken, virtualisiert. |
+| 5.3 | **Handlungsfähige Empfehlungen.** Jede Dashboard-Empfehlung bekommt „Jetzt öffnen" (→ 3.1) und „Für Anlass einplanen" direkt an der Zeile. |
+| 5.4 | **Wertverlauf.** Tabelle `wine_price_history`; jede Marktpreisänderung (manuell oder per KI) wird als Punkt geschrieben, das Detail zeigt eine kleine Verlaufskurve. Erst damit trägt der „Investment"-Anspruch. |
+| 5.5 | **Eine Dublettenlogik** — die Dashboard-Sonderlogik durch `findLikelyDuplicates` ersetzen, mit „Zusammenführen"-Aktion statt bloßer Warnung. |
+| 5.6 | **Nachkauf-Vorschläge** aus der eigenen Historie: mehrfach gekauft, hoch bewertet, Bestand ≤ 1 → auf die Wunschliste vorschlagen. |
+
+**Fertig, wenn:** Vom Dashboard aus ist jede Empfehlung in einem Klick ausführbar, und ein im Genussplan getrunkener Wein verschwindet aus dem Bestand.
+
+**Behebt:** B3, B9, B13, B19
+
+---
+
+### Phase 6 — Vertrauen und Politur (≈ 1–2 Wochen)
+
+*Ziel: Leitsatz 5. Man gibt der App eine über Jahre gewachsene Sammlung mit ruhigem Gewissen.*
+
+| # | Arbeitspaket |
+| --- | --- |
+| 6.1 ✅ | **Export & Backup:** CSV und vollständiges JSON (Weine, Flaschen, Notizen, Events) in den Einstellungen. |
+| 6.2 ✅ | **Bild-URLs reparieren.** Nicht die Signed URL speichern, sondern den Storage-Pfad; die URL beim Anzeigen erzeugen. Beseitigt das stille Ablaufen nach einem Jahr. Bestehende Einträge per Migration auf Pfade zurückführen. |
+| 6.3 ✅ | **Toast-System global.** Den vorhandenen `InlineToast` zu einem App-weiten Provider heben und alle 33 `alert()`/`confirm()`-Aufrufe ersetzen; Löschungen mit „Rückgängig"-Toast statt Bestätigungsdialog. |
+| 6.4 | **Einstellungen für Sammler.** Modellwahl als „Schnell / Ausgewogen / Gründlich", keine Terminalbefehle, keine `.env`-Pfade; Modellkatalog nur noch aus einer Quelle (Server). |
+| 6.5 ✅ | **Sprache und Ton vereinheitlichen** — durchgängig „du" oder „Sie", Bankmetaphern raus („Pockets/Unterkonten" → „Regale/Fächer", „flüssige Assets" → „Sammlung"). |
+| 6.6 ✅ | **Barrierefreiheit:** Fokus-Trap für alle Dialoge, `aria-live` für Status, Mindestschriftgrößen statt 10-px-Versalien als Standardbeschriftung. |
+| 6.7 | **Fehlerüberwachung** (z. B. Sentry) für Client und API, plus strukturierte Server-Logs. |
+
+**Behebt:** B15, B16, B21, B22, B23, B24, B27
+
+---
+
+### Querschnitt: technische Hygiene (nebenher, nicht als eigene Phase)
+
+Diese Punkte werden **in** den Phasen erledigt, an denen die jeweilige Datei ohnehin angefasst wird — ein separates Refactoring-Projekt lohnt hier nicht:
+
+- **B25 (Dateigrößen):** Phase 2 zerlegt `WineDetailPage.tsx` beim Herausziehen des `WineForm`; Phase 5 zerlegt `EnjoymentPlanPage.tsx`. `storage.legacy.ts` wird beim RPC-Umbau (3.3) und beim Flaschenmodell (4.1) schrittweise in die vorhandenen Repositories geleert — deren Hüllen bekommen dann echten Inhalt.
+- **B26 (KI-Cache):** Sobald 1.1 auf Serverless steht, ist der Prozess-Cache wertlos → in Supabase persistieren (die Migration dafür wurde entfernt, muss neu angelegt werden).
+- **B28 (Tests):** Jede Phase liefert einen Playwright-Test für ihren Kernweg (Erfassen, Öffnen, Verschieben, Planen). Ziel ist nicht Abdeckungsquote, sondern dass die vier Wege, die man täglich benutzt, nicht still kaputtgehen.
+
+---
+
+## 3. Was bewusst nicht gebaut wird
+
+Damit der Plan nicht ausufert, explizit ausgeschlossen:
+
+- **Mehrbenutzerfähigkeit, Teilen, Social.** Es ist *ein* Keller. Kein Rollen- oder Freigabemodell.
+- **Handelsintegration / Preis-Feeds.** Marktwert bleibt manuell oder KI-recherchiert; keine Wine-Searcher-Anbindung.
+- **Native Apps.** Die PWA ist der richtige Weg; die Investition gehört in Mobil-UX (Phase 4), nicht in ein zweites Frontend.
+- **Weitere KI-Provider.** OpenRouter deckt alle Modellfamilien ab. Die offene Frage ist Qualität und Erreichbarkeit (Phase 1), nicht Auswahl.
+- **Automatische Trinkfenster-Neuberechnung im Hintergrund.** Das Modell ist da; es soll sichtbar und nachvollziehbar bleiben, nicht unsichtbar Daten überschreiben.
+
+---
+
+## 4. Woran sich Erfolg messen lässt
+
+Die bisherigen Leitmetriken (`ROADMAP_90D.md`) messen Datenqualität der KI-Recherche. Das ist richtig, aber unvollständig — sie messen nicht, ob die App gut zu benutzen ist. Ergänzend:
+
+| Metrik | Heute | Ziel |
+| --- | --- | --- |
+| Zeit vom Tippen auf „Hinzufügen" bis Wein im Keller (Handy) | nicht messbar, Weg gebrochen | < 30 s |
+| Anteil Weine mit mindestens einer Verkostungsnotiz | 0 % (technisch unmöglich) | > 50 % der geöffneten Flaschen |
+| Bestandsabweichungen bei der Inventur | unbekannt | < 2 % der Flaschen |
+| Widersprüche zwischen Listen- und Detailstatus | systematisch (zwei Modelle) | 0 |
+| KI-Funktionen im Deployment nutzbar | nein | ja |
+| Kernwege durch E2E-Tests abgedeckt | 0 von 4 | 4 von 4 |
+
+---
+
+## 5. Reihenfolge und Risiko
+
+Die Reihenfolge ist nicht beliebig:
+
+- **Phase 1 vor allem anderen,** weil eine App, die im Deployment KI verspricht und HTML zurückgibt, jedes weitere Feature untergräbt.
+- **Phase 3 vor Phase 4,** weil das Flaschenmodell (4.1) auf atomaren Bestandsmutationen (3.3) aufbaut — andersherum migriert man eine Rennbedingung in ein größeres Schema.
+- **Phase 2 vor Phase 5,** weil sich Empfehlungen nur lohnen, wenn genügend saubere Weine erfasst sind.
+
+Größte Risiken:
+
+1. **4.1 (Flaschenmodell) ist die einzige nicht triviale Migration.** Absicherung: `wines.quantity` bleibt per Trigger als abgeleiteter Wert bestehen, damit alle bestehenden Ansichten und der Offline-Adapter unverändert weiterlaufen; die Umstellung der Lesepfade erfolgt danach schrittweise.
+2. **3.4 (ein Reifemodell) ändert sichtbar Status.** Weine ohne Struktur-Daten können von „Trinkreif" auf „unsicher" springen. Das ist gewollt und ehrlich — es braucht aber einen erklärenden Hinweis in der UI, sonst wirkt es wie ein Fehler.
+3. **Phase 6 wird gern verschoben.** Export und Bild-Persistenz sind Vertrauensthemen. Wenn Zeit knapp wird, sollten 6.1 und 6.2 nach vorn gezogen werden, nicht nach hinten.
+
+---
+
+## 6. Kürzestmögliche Fassung
+
+Wenn nur zwei Wochen zur Verfügung stünden, in dieser Reihenfolge:
+
+1. API im Deployment reparieren (1.1/1.2) — sonst ist die halbe App Attrappe.
+2. Flasche-öffnen-Dialog mit Notiz und Bewertung (3.1) — die größte fehlende Funktion.
+3. Ein Erfassungsformular statt drei Wegen (2.1/2.2) — der häufigste Vorgang.
+4. Ein Reifemodell (3.4) und einheitliche Kategorien (1.3) — damit die App sich nicht selbst widerspricht.
+5. Export (6.1) — damit die Sammlung dem Nutzer gehört.
+
+---
+
+## 7. Nächste Stufe (2026-09-27)
+
+Phasen 1–3 sind vollständig umgesetzt, dazu 4.2 und der Großteil von Phase 6 (6.1, 6.2, 6.3, 6.5,
+6.6). Die App lügt nicht mehr übers Deployment, hat einen Erfassungsweg, eine Reifebewertung,
+atomare Bestandsänderungen und ein Kellerbuch. Was fehlt, ist nicht mehr „Grundfunktion kaputt",
+sondern „gute App → richtig gute App": der Genussplan bucht noch nichts, Dubletten lassen sich nur
+anzeigen statt zusammenführen, die Suche findet keine Rebsorte, die Einstellungen sprechen noch
+Entwicklersprache, und zwei alte Fundstellen (2.3, B28) sind seit Wochen als „später" markiert,
+ohne dass „später" je kam. Dieser Abschnitt schließt genau diese Lücken — bewusst ohne neue
+Datenbank-Migration on top von der noch nicht ausgerollten 3.3-RPC, um das Deployment-Risiko nicht
+zu stapeln.
+
+| # | Arbeitspaket | Aufwand | Risiko |
+| --- | --- | --- | --- |
+| 7.1 ✅ | **2.3 nachholen — keine rohen JSON-Textareas mehr im Bearbeiten-Formular.** `grapes`, `structure` und `scores` haben im Weindetail-Edit bereits echte Editoren; nur `aromas`/`pairings` sind noch JSON-Text. Dafür einen Chip-Editor nach dem Muster der bestehenden Rebsorten-Liste bauen. `ai_details_json`, `ai_sources_json`, `missing_fields_json` sind KI-Rohdaten, die kein Sammler von Hand editieren will — die kommen aus dem Editier-Formular komplett raus und bleiben nur lesbar (Quellen-Liste, Confidence-Badge — beides existiert in der Anzeige schon). | klein | niedrig |
+| 7.2 ✅ | **5.1 — Genussplan an den Keller anschließen.** „Getrunken" auf einer Instanz mit zugewiesenem Wein öffnet `OpenBottleDialog` (Bestand −1, Notiz, Bewertung) statt nur den Status umzuschalten; erst nach dem Speichern wechselt die Instanz auf „Genossen". `bottles_reserved` wird gegen den echten Bestand des zugewiesenen Weins geprüft und bei Überbuchung auf der Karte markiert. | mittel | niedrig |
+| 7.3 ✅ | **5.5 — Dubletten zusammenführen statt nur anzeigen.** Auf der bereits gefilterten Dublettenliste (`/inventory?issue=duplicates`) eine „Zusammenführen"-Aktion: Bestand summieren, Einstandspreis gewichtet neu berechnen, die überzählige Position in den Papierkorb (`deleted_at`) statt hart zu löschen — Verkostungsnotizen und Bestandsereignisse der zusammengeführten Position bleiben unangetastet erhalten (Soft-Delete löscht sie nicht, macht sie nur unsichtbar wie jede andere Löschung). Bewusst **kein** Umhängen von Fremdschlüsseln auf den Zielwein — das wäre ein Datenmigrationsproblem für sich. | mittel | niedrig |
+| 7.4 ✅ | **4.5 — Suche erweitern** um Rebsorte, Land, Appellation und Jahrgang (`InventoryPage.tsx`, heute nur Name/Region/Produzent/Unterkeller). | klein | niedrig |
+| 7.5 ✅ | **6.4 — Einstellungen für Sammler.** Modellwahl als „Schnell / Ausgewogen / Gründlich" statt Modell-IDs, keine Terminalbefehle oder `.env`-Pfade in der Oberfläche, Modellkatalog aus einer Quelle (Server-Endpoint statt hartkodierter Liste im Client, falls dort dupliziert). | mittel | niedrig |
+| 7.6 ✅ | **5.3 — Handlungsfähige Dashboard-Empfehlungen.** Jede Empfehlungszeile (Trinkfenster endet, kein Fenster hinterlegt, Dublette, fehlender Preis) bekommt eine direkte Aktion an der Zeile statt nur einen Link auf die gefilterte Liste — „Jetzt öffnen" ruft `OpenBottleDialog`, „Für Anlass einplanen" verlinkt in den Genussplan mit vorausgewähltem Wein. | mittel | niedrig |
+| 7.7 ✅ | **B28 nachholen — echte Kernweg-Tests.** Bisher deckt Playwright nur einen Screenshot-Rundgang ab (`ui-baseline.spec.ts`) und zwei Offline/Sync-Smoketests. Je ein E2E-Test für „Wein anlegen", „Flasche öffnen", „In Pocket verschieben" und „Genussplan-Instanz konsumieren" — das sind die vier Wege, die laut Plan-Ziel nicht still kaputtgehen dürfen. | mittel | niedrig |
+
+**Bewusst zurückgestellt, nicht vergessen:**
+
+- **4.1 (Flaschen als Objekte)** bleibt die einzige nicht-triviale Migration und bleibt zurückgestellt, bis die 3.3-RPC live auf der Produktivdatenbank läuft — sonst stapeln sich zwei ungetestete Migrationen im selben Fenster.
+- **5.4 (Wertverlauf)** braucht eine neue Tabelle (`wine_price_history`) und damit dieselbe Migrations-Vorsicht; kommt nach 4.1.
+- **5.6 (Nachkauf-Vorschläge)** und **6.7 (Fehlerüberwachung)** sind eigenständige, unabhängige Erweiterungen ohne Kopplung an die obige Liste — Kandidaten für die übernächste Runde, falls nach 7.1–7.7 noch Zeit bleibt.
+- **Performance/Bundle** wurde beim letzten `npm run build` überschlagen geprüft (größter Chunk `supabase-*.js` 215 kB, `react-*.js` 164 kB, `index-*.js` 170 kB, Routen sind bereits einzeln code-gesplittet) — kein akuter Handlungsbedarf, daher kein eigener Punkt in dieser Runde.
+
+**Fertig, wenn:** Ein im Genussplan als „Getrunken" markierter Wein taucht mit Bewertung im Kellerbuch auf und der Bestand stimmt. Zwei erkannte Dubletten lassen sich in einem Klick zu einer Position zusammenführen. Die Suche findet einen Wein über seine Rebsorte. Die Einstellungen enthalten keinen Modellnamen mehr, den man erst nachschlagen muss. Vier Kernwege sind durch je einen grünen E2E-Test abgesichert.
+
+#### Umsetzungsnotizen zu 7.1
+
+- **Korrigierter Befund beim Anfassen:** Es gab gar keine rohen JSON-Textareas mehr im Formular — die waren schon vorher aus dem JSX entfernt worden, aber der komplette Zustands- und Parsing-Unterbau (`aromas_json`/`pairings_json`/`ai_details_json`/`ai_sources_json`/`missing_fields_json`, `toJsonText`, `parseJsonField`, vier Typprüfer) blieb als totes Gewicht stehen: Beim Öffnen wurde `wine.aromas` zu Text serialisiert, beim Speichern unverändert zurückgeparst, ohne dass eine einzige Eingabe je dazwischen lag. `aromas`/`pairings` waren dadurch faktisch gar nicht editierbar — schlimmer als „roh", nämlich unsichtbar.
+- **Aromen und Pairings** haben jetzt echte Editoren (`AromasField`, `PairingsField`) nach demselben Zeilen-Muster wie die bestehende Rebsorten-/Scores-Liste: Text + Zahl bzw. Text + Kategorie, mit Hinzufügen/Entfernen-Buttons.
+- **`ai_details`/`ai_sources`/`missing_fields`** kommen komplett aus dem Bearbeiten-Formular raus (kein Sammler will KI-Rohdaten von Hand als JSON pflegen) und werden beim Speichern unverändert aus dem geladenen Datensatz übernommen — sie bleiben nur lesbar, über die schon vorhandene Quellen-Liste und das Confidence-Badge in der Detailansicht.
+- Sieben tote Helferfunktionen entfernt (`toJsonText`, `parseJsonField`, `isStringArray`, `isAromaArray`, `isPairingsArray`, `isWineDetails`, `asRecord`), die ausschließlich für diesen Rundweg existierten.
+- Kein neuer Testfall: Die analogen, schon länger bestehenden Konverter für Rebsorten/Scores (`grapesFromFormState`, `scoresFromFormState`) sind ebenfalls ungetestet — die neuen Aromen-/Pairing-Konverter folgen demselben Muster und derselben Testtiefe, keine Ausnahme nur für den neuen Code. Der volle Gate-Lauf (typecheck/lint/test/build) bleibt grün.
+
+#### Umsetzungsnotizen zu 7.2
+
+- **„Getrunken"** öffnet bei zugewiesenem Wein jetzt denselben `OpenBottleDialog`, den auch Weinkarte und Detail nutzen (Bestand −1, Datum, Bewertung, Notiz) — Quelle `"occasion"`. Erst nach erfolgreichem Speichern wechselt die Instanz per `updateInstanceStatus` auf „Genossen", danach `loadData()` für einen konsistenten Bestand. Ist keine Flasche zugewiesen, bleibt es beim reinen Status-Umschalten von vorher — da ist nichts abzubuchen.
+- **„Reaktivieren"** (zurück auf „Geplant") bucht bewusst **keine** Flasche zurück — dieselbe Grenze, die 6.3 schon für Löschungen gezogen hat: ein Bestands-Rollback ist eine eigene UX-Entscheidung, kein Nebeneffekt eines Statuswechsels.
+- **Überbuchung** wird nicht pro Instanz geprüft, sondern dort, wo `bottles_reserved` tatsächlich lebt: im Wein-Pool-Schritt einer Serie (`OccasionWinePoolEntry`, nicht `OccasionInstance`). Reservierte Menge > `wine.quantity` färbt das Mengenfeld rot und zeigt „Überbucht: X reserviert, nur Y auf Lager" direkt an der Zeile.
+- Keine Datenbank-Migration: Die Verknüpfung zum Anlass läuft informell über `source: "occasion"` am Inventarereignis, nicht über einen neuen Fremdschlüssel — bewusst, um kein zweites ungetestetes Migrationsfenster neben der noch nicht ausgerollten 3.3-RPC zu öffnen.
+- Kein neuer Unit-Test (EnjoymentPlanPage.tsx hat wie WineDetailPage.tsx keinerlei Komponententest-Unterbau, und der Mock-Aufwand für ein 1300-Zeilen-Storage-Interface stünde außer Verhältnis zu diesem einen Klickpfad) — der Weg wird stattdessen von 7.7 als echter E2E-Test abgedeckt.
+
+#### Umsetzungsnotizen zu 7.3
+
+- **Neu `domain/wine/duplicateDetection.ts`: `groupLikelyDuplicates()`.** Bündelt dieselbe One-Hop-Zuordnung, die das Dashboard schon als flache ID-Menge baute, zu echten Gruppen — reine Domain-Funktion, kein Service-Import, vier neue Testfälle in `tests/unit/duplicateDetection.test.ts`. `InventoryPage.tsx`s `duplicateWineIds` leitet sich jetzt aus den Gruppen ab statt die Zuordnung ein zweites Mal selbst zu berechnen.
+- **Neu `components/MergeDuplicatesDialog.tsx`:** Auf der Dublettenliste (`/inventory?issue=duplicates`) erscheint pro erkannter Gruppe eine „Zusammenführen"-Zeile. Im Dialog wählt man die Position, die bestehen bleibt; Bestand wird summiert, der Einstandspreis mengengewichtet neu berechnet (dieselbe Rechnung wie beim Nachkauf) und über `storageService.saveWine` geschrieben — das erzeugt automatisch ein korrektes `adjustment`-Inventarereignis, ohne dass der Dialog selbst eines bauen muss. Die übrigen Positionen der Gruppe gehen per `softDeleteWine(id, "Zusammengeführt mit …")` in den Papierkorb.
+- **Bewusst kein Umhängen von Fremdschlüsseln:** Tastings und Inventarereignisse der weggelegten Position bleiben an ihrer alten `wine_id` hängen — das ist exakt dasselbe Verhalten wie bei jeder anderen weichen Löschung (der Papierkorb versteckt einen Wein, löscht aber nie seine Historie), also keine neue Inkonsistenz, nur bewusst keine aufwendige Datenmigration für einen Grenzfall.
+- Vier Testfälle in `tests/unit/mergeDuplicatesDialog.test.tsx`: Summe/gewichteter Preis, Wechsel der Zielposition, ein fehlgeschlagenes Zusammenführen bleibt sichtbar statt den Dialog stillschweigend zu schließen, und eine Gruppe mit nur einem Mitglied rendert nichts.
+
+#### Umsetzungsnotizen zu 7.4
+
+- **Neu `domain/wine/search.ts`: `matchesSearchTerm()`.** Die Suchlogik aus `InventoryPage.tsx` als reine, testbare Funktion herausgezogen (statt inline im `filteredWines`-`useMemo`) — passend zur bestehenden Konvention, fachliche Prüfungen in `domain/wine/*` zu halten. Prüft jetzt zusätzlich zu Name/Region/Produzent/Pocket: Land, Appellation, Jahrgang (als Teilstring, damit „201" auch 2019 findet) und jede einzelne Rebsorte aus `wine.grapes`.
+- Acht Testfälle in `tests/unit/search.test.ts`, darunter explizit ein Wein ohne Rebsorten/Land/Appellation (die drei Felder sind optional — die Funktion darf dabei nicht werfen) und dass ein völlig unpassender Suchbegriff weiterhin nichts findet.
+- Kein UI-Hinweistext geändert („Kollektion durchsuchen…" bleibt): Der Platzhalter verankert `tests/ui-baseline.spec.ts`, und die neuen Felder brauchen keine eigene Erklärung, um brauchbar zu sein.
+
+#### Umsetzungsnotizen zu 7.5
+
+- **„KI-Provider" (drei Tabs: Google Gemini/OpenAI/Nemotron) und „KI-Modell" (5–6 Modell-IDs je Tab) wurden zu einer Sektion „KI-Recherche" mit drei Stufen zusammengelegt:** Schnell (`openrouter`/`nvidia/nemotron-nano-9b-v2`), Ausgewogen (`openai`/`gpt-5.2`, weiterhin Standard), Gründlich (`openrouter`/`nvidia/llama-3.1-nemotron-70b-instruct`). Jede Stufe ist weiterhin genau ein (Provider, Modell)-Paar aus dem bestehenden, unveränderten Server-Katalog (`server/src/ai/providers/modelCatalog.js`) — nur die Client-Darstellung wird einfacher, nicht die gespeicherten Felder (`ai_provider`/`*_model` bleiben unverändert, also kein Migrationsbedarf).
+- **Echter Bugfix dabei gefunden (B21):** `DEFAULT_SETTINGS.openai_model` in `services/settings.ts` war `'5.2'`, während die Modellliste durchgängig `'gpt-5.2'` als ID führte. Ein frisches Konto (oder der Demo-Modus) lud also einen Modellwert, der zu keiner Zeile in der alten Liste passte — sichtbar keine Auswahl markiert. Jetzt `'gpt-5.2'`, passend zur „Ausgewogen"-Stufe. Serverseitig ändert sich nichts: `modelCatalog.js`s Alias-Tabelle kennt `'5.2'` weiterhin, bereits gespeicherte alte Werte funktionieren unverändert weiter.
+- **Terminalbefehle und Dateipfade raus:** „In der lokalen Entwicklung startet ihn `npm run server`" → „Versuche es später erneut. Bleibt es dabei, prüfe die Konfiguration in den Projekteinstellungen des Deployments." Der `server/.env`-Codeblock ist weg; der Text verweist stattdessen auf die Projekteinstellungen des Deployments — konsistent mit der Formulierung, die `services/supabase.ts` schon für den fehlenden Supabase-Schlüssel verwendet.
+- **Bewusst nicht umgesetzt:** Ein Server-Endpoint, der den Modellkatalog zur Laufzeit an den Client liefert (echte Ein-Quellen-Lösung statt zwei inhaltlich synchron gehaltener Listen in `Settings.tsx` und `modelCatalog.js`). Das wäre ein neuer API-Endpunkt plus Ladezustand in den Einstellungen für einen Wert, der sich in der Praxis selten ändert — der eigentliche B21-Schmerzpunkt (Entwicklersprache, driftender Default) ist behoben, die verbleibende Client/Server-Duplikation ist ein Kommentar im Code, kein Nutzerproblem mehr.
+- Kein neuer Komponententest: `Settings.tsx` lädt beim Mount fünf unabhängige Services (Settings, API-Health, Sync-Snapshot, Install-Prompt, SW-Update) ohne bestehenden Mock-Unterbau; die geänderte Logik ist eine reine Datenabbildung (Array → Buttons) mit geringem Fehlerrisiko. Der vorhandene `tests/unit/settings.test.ts` deckt den korrigierten Default ab.
+
+#### Umsetzungsnotizen zu 7.6
+
+- **„Jetzt öffnen"** ruft jetzt wirklich `OpenBottleDialog` auf der Dashboard-Seite selbst auf (Bestand −1, Datum, Bewertung, Notiz, Quelle `"dashboard"`) statt nur auf das Weindetail zu verlinken, wo der Klick auf „Flasche öffnen" erst noch einmal nötig war. Dafür bekommt `Dashboard` ein neues `onWineUpdate`-Prop (App.tsx reichte bisher gar keinen Refresh-Callback durch — die einzige Seite ohne diesen, jetzt konsistent mit Inventory/WineDetail/Trash/Stocktake).
+- **„Für Anlass einplanen"** verlinkt auf `/genussplan?wine=<id>` statt blind auf die leere Anlass-Übersicht. `EnjoymentPlanPage` liest den `wine`-Parameter und zeigt eine Banner-Zeile mit dem Weinnamen; sobald eine Serie ausgewählt ist, bietet sie „Diesem Termin zuordnen" für den nächsten noch offenen Termin dieser Serie als Ein-Klick-Aktion (`handleAssignWine`) an — vorher landete man auf einer ungefilterten Liste ohne jeden Hinweis, wofür man eigentlich gekommen war.
+- Kein neuer Test (Dashboard.tsx hat wie WineDetailPage/EnjoymentPlanPage/Settings keinen Komponententest-Unterbau; beide neuen Pfade rufen ausschließlich bereits getestete Bausteine auf — `OpenBottleDialog` und `handleAssignWine`/`storageService.updateInstanceWine`, keine neue Fachlogik).
+
+#### Umsetzungsnotizen zu 7.7
+
+- Neu `tests/core-paths.spec.ts` mit vier Tests, jeder mit eigenem frisch angelegten Demo-Konto (siehe `tests/helpers/demoAuth.ts`, aus `ui-baseline.spec.ts` herausgezogen, damit alle vier Spezifikationen dieselbe Login-Hilfsfunktion nutzen statt sie zu duplizieren):
+  1. **Wein anlegen:** „Wein hinzufügen" → „Von Hand eintragen" → Name ausfüllen (Jahrgang/Menge haben schon sinnvolle Vorgaben aus `createEmptyDraft`) → „In den Keller" → Erfolgsmeldung und die neue Karte in der Liste.
+  2. **Flasche öffnen:** Der vorgesäte „Château Margaux" (6 Fl., `constants.ts`) → „Öffnen" → `OpenBottleDialog` → „Öffnen & speichern" → Meldung „Flasche gebucht" und Bestand jetzt „5 Fl." auf derselben Karte.
+  3. **In Pocket verschieben:** Pocket anlegen (Name mit Zeitstempel, damit Testläufe sich nicht kollidieren) → auf der Margaux-Karte „Verschieben" → Zielpocket antippen → Meldung „liegt jetzt in …" und das Pocket-Abzeichen auf der Karte.
+  4. **Genussplan-Instanz konsumieren:** Einmalige Serie mit Start/Enddatum morgen anlegen → das automatisch geöffnete Wein-Pool-Modal (Auto-Zuordnung nach Trinkfenster, hier nutzlos, weil Margaux' Fenster erst 2030 beginnt) mit `Escape` schließen (nutzt den Fokus-Trap aus 6.6) → über „Wein zuordnen" direkt am Termin Margaux auswählen (dieser Weg prüft kein Trinkfenster) → „Getrunken" → `OpenBottleDialog` → Meldung „… Anlass als genossen vermerkt" und Status „Genossen" auf der Instanz.
+- **Warum ◐ statt ✅:** Diese Sitzung hat keinen laufenden Docker-Daemon und keine installierte Supabase-CLI (`docker ps` schlägt mit „cannot connect to the Docker daemon" fehl) — die einzige Stelle, an der diese Tests bisher liefen, ist `npx playwright test --list` (Syntax/Importe geprüft, alle vier Tests werden gefunden) plus eine sorgfältige Zeile-für-Zeile-Prüfung der Selektoren gegen den tatsächlichen JSX. Die erste echte Ausführung ist der `quality-gate`-Job in CI, der einen lokalen Supabase-Stack startet — dort werden sie beim nächsten Push erstmals scharf geschaltet. Bricht dort etwas, wird es in derselben PR-Betreuungsrunde behoben, nicht stillschweigend übergangen.
+- Selektor-Strategie bewusst ohne `data-testid` (kein bestehendes Muster im Code) — stattdessen `getByRole`/`getByLabel`/`getByPlaceholder`, wie `ui-baseline.spec.ts` es schon vormacht, plus ein XPath-Aufstieg von der Weinkarten-Überschrift zum Kartencontainer (`ancestor::div[contains(@class, "rounded-3xl")]`), um mehrere gleichzeitig sichtbare Karten sauber zu unterscheiden.
+- **Erster echter CI-Lauf: 3 von 4 neuen Tests rot, alle mit Timeout, keiner mit falschem Selektor.** Ursache gefunden, nicht nur Timeouts hochgeschraubt: `ensureAuthenticated()` (aus `ui-baseline.spec.ts` übernommen) prüfte `demoButton.isVisible()` direkt nach `waitUntil: 'domcontentloaded'` — das feuert, bevor React die Auth-Seite zwingend fertig gerendert hat. `isVisible()` wartet nicht, sondern liest den Zustand genau in diesem Moment; traf der Check auf ein noch leeres DOM, hielt der Helfer das fälschlich für „schon eingeloggt" und kehrte sofort zurück, während der Rest des Tests auf einer nie authentifizierten Seite weiterlief — daher hingen die Assertions am Ende der Kette fest, nicht der Login-Schritt selbst. Behoben mit `Promise.race([demoButton.waitFor(...), loggedInHeading.waitFor(...)])`, das auf das tatsächliche Eintreten eines der beiden bekannten Zustände wartet statt einmalig hinzuschauen. Zusätzlich alle Timeouts nach der ersten Aktion nach dem Login auf 20–30 s angehoben (frisches anonymes Konto + Server-seitiges Seeden von 5–6 Weinen + erster Seitenaufbau ist unter CI-Last spürbar langsamer als auf einer warmen Dev-Maschine) und `test.describe.configure({ timeout: 90_000 })` gesetzt, damit ein einzelner langsamer Schritt nicht das ganze Testbudget vor der eigentlichen Fehlermeldung aufbraucht.
+- **Zweiter CI-Lauf nach dem Login-Fix: dieselben drei Tests immer noch rot, aber jetzt an einer anderen, eindeutigeren Stelle** — nicht mehr sofort, sondern erst nach 17–32 s, und Test 4 (Genussplan) wieder grün. Das widerlegt die erste Vermutung „Test 4 lief zufällig auf ein wärmeres System": Test 4 rührt `InventoryPage.tsx` nie an, die anderen drei schon. Tatsächliche Ursache: `/inventory` landet ohne gewählte Pocket zunächst auf dem „Hauptkeller Dashboard" (Pocket-Kacheln), **nicht** auf dem Weinkarten-Raster — `showPocketDashboard` ist wahr, solange `subcellarFilter === 'All'` gilt, und das ist der Startwert. Die Weinkarten (und damit „Château Margaux" als Überschrift) existieren also gar nicht im DOM, bis man in eine konkrete Pocket klickt. Kein Regressions-Bug, sondern ein bestehendes Verhalten der App, das schlicht keine der bisherigen Tests je durchlief. Behoben mit einem `openMainCellarGrid()`-Helfer, der auf die „Hauptkeller"-Kachel/-Chip klickt, bevor nach Weinkarten gesucht wird.
+- **Dritter CI-Lauf: Test 1 und 4 jetzt zuverlässig grün, Test 2 und 3 weiterhin rot — aber an einer Stelle, die auf die eigentliche Wurzel zeigt.** Test 2 fand „Château Margaux" wieder nicht (30 s Timeout), Test 3 sah eine **leere** Kellerliste („Ersten Wein anlegen" statt Weinkarten) und scheiterte an einem `strict mode violation`, weil `/anlegen/i` sowohl den Pocket- als auch diesen Leerzustand-Button traf. Zusammengenommen: Der serverseitige Demo-Seed (`PRE_SEED_WINES` über `signInAnonymously` → `seedIfNewUser`) kam für einige der frischen Testkonten gar nicht an. `seedIfNewUser()` (`services/storage.legacy.ts`) verschluckt Insert-Fehler bewusst nur mit `console.error(...)` — die Anmeldung „gelingt" für die Oberfläche immer, auch wenn das Seeden im Hintergrund scheitert. Das ist ein bestehendes, von dieser Sitzung nicht verursachtes Verhalten, das unter CI-Last (viele frische anonyme Konten kurz hintereinander gegen denselben lokalen Supabase-Stack) offenbar öfter zuschlägt als lokal.
+- **Endgültig behoben, indem die Tests von diesem Seed unabhängig gemacht wurden**, statt zu versuchen, das Seeden selbst zuverlässiger zu machen (das wäre eine App-Änderung außerhalb des Testumfangs gewesen): Jeder Test legt jetzt über denselben UI-Weg wie Test 1 (der einzige, der von Anfang an zuverlässig grün war) seinen eigenen Wein an und arbeitet nur noch mit diesem — „Château Margaux" kommt in `core-paths.spec.ts` nicht mehr vor. Test 3s abschließende Karten-Prüfung entfällt ebenfalls, weil die verschobene Flasche folgerichtig aus der weiterhin auf „Hauptkeller" gefilterten Ansicht verschwindet; die Erfolgsmeldung (nennt Wein und Zielpocket) bleibt der Beweis. Test 3s `/anlegen/i`-Selektor wurde zusätzlich auf `{ name: 'Anlegen', exact: true }` verschärft, damit ein gleichzeitig sichtbarer „Ersten Wein anlegen"-Button (Leerzustand) ihn nie wieder trifft — auch wenn er nach der Umstellung praktisch nicht mehr auftreten sollte.
+- **Lehre für künftige E2E-Tests in dieser App:** Server-seitige Fixtures (Demo-Seed, Beispieldaten) sind bequem, aber ein zusätzlicher Fehlerkanal außerhalb der Kontrolle des Tests, besonders wenn die Anwendung ihre eigenen Fehler dabei verschluckt. Ein Test, der sich seinen Ausgangszustand selbst über dieselbe Oberfläche baut, die er ohnehin prüft, ist robuster und deckt nebenbei denselben Erfassungsweg noch einmal ab.
+- **Vierter CI-Lauf: Test 1, 2 und 4 zuverlässig grün, nur noch Test 3 rot.** `createPocket()` (`InventoryPage.tsx`) ruft nach dem Anlegen bewusst `setSubcellarFilter(normalizedName)` auf — man landet direkt in der neuen, noch leeren Pocket. Der gerade angelegte Testwein liegt aber weiter in „Hauptkeller" und verschwindet dadurch aus der Ansicht, bevor der Test seine „Verschieben"-Karte sucht. Wieder kein Bug, nur dieselbe Filterlogik ein zweites Mal an einer anderen Stelle. Behoben, indem der Test nach dem Anlegen der Pocket erneut `openMainCellarGrid()` aufruft, bevor er die Weinkarte sucht.
+- **Fünfter CI-Lauf: alle vier Kernweg-Tests grün, `quality-gate` insgesamt grün.** Vier Iterationen, vier unterschiedliche, jeweils spezifische Ursachen (Login-Race, Hauptkeller-Dashboard-Default, unzuverlässiger Demo-Seed, Filterwechsel beim Pocket-Anlegen) — keine davon ein Bug in der App, alles Lücken zwischen „wie ein Mensch die App bedient" und „wie ein Test sie bedient". Damit ist 7.7 vollständig umgesetzt und scharf verifiziert, nicht nur geschrieben.

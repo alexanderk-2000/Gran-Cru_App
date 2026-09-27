@@ -5,6 +5,7 @@ import { storageService } from '../services/storage.ts';
 import { Trash2, RotateCcw, Wine as WineIcon, ArrowLeft, Search, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TRASH_RETENTION_DAYS, getDaysRemaining, isExpired } from '../domain/wine/trashRetention.ts';
+import { useToast, useConfirm } from '../components/Feedback.tsx';
 
 export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
   const [deletedWines, setDeletedWines] = useState<Wine[]>([]);
@@ -15,6 +16,8 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
   const [error, setError] = useState<string | null>(null);
   const [autoPurgedCount, setAutoPurgedCount] = useState(0);
   const navigate = useNavigate();
+  const showToast = useToast();
+  const confirm = useConfirm();
 
   const fetchDeleted = async () => {
     setLoading(true);
@@ -36,9 +39,7 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
       setError(null);
     } catch (err) {
       console.error(err);
-      const message = (err as Error)?.message || 'Papierkorb konnte nicht geladen werden.';
-      setError(message);
-      alert(message);
+      setError((err as Error)?.message || 'Papierkorb konnte nicht geladen werden.');
     } finally {
       setLoading(false);
     }
@@ -48,31 +49,36 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
     fetchDeleted();
   }, []);
 
-  const handleRestore = async (id: string) => {
-    setProcessingId(id);
+  const handleRestore = async (wine: Wine) => {
+    setProcessingId(wine.id);
     try {
-      await storageService.restoreWine(id);
+      await storageService.restoreWine(wine.id);
       await fetchDeleted();
       onUpdate();
+      showToast(`"${wine.name}" wurde wiederhergestellt.`, 'success');
     } catch (err) {
-      const message = (err as Error)?.message || "Wiederherstellung fehlgeschlagen.";
-      setError(message);
-      alert(message);
+      showToast((err as Error)?.message || 'Wiederherstellung fehlgeschlagen.', 'error');
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handlePermanentDelete = async (id: string) => {
-    if (!window.confirm("Diese Aktion löscht den Wein unwiderruflich aus der Datenbank. Fortfahren?")) return;
-    setProcessingId(id);
+  const handlePermanentDelete = async (wine: Wine) => {
+    const confirmed = await confirm({
+      title: 'Endgültig löschen?',
+      description: `"${wine.name}" wird unwiderruflich aus der Datenbank entfernt.`,
+      confirmLabel: 'Endgültig löschen',
+      destructive: true
+    });
+    if (!confirmed) return;
+
+    setProcessingId(wine.id);
     try {
-      await storageService.permanentlyDeleteWine(id);
+      await storageService.permanentlyDeleteWine(wine.id);
       await fetchDeleted();
+      showToast(`"${wine.name}" wurde endgültig gelöscht.`, 'success');
     } catch (err) {
-      const message = (err as Error)?.message || "Löschen fehlgeschlagen.";
-      setError(message);
-      alert(message);
+      showToast((err as Error)?.message || 'Löschen fehlgeschlagen.', 'error');
     } finally {
       setProcessingId(null);
     }
@@ -80,23 +86,28 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
 
   const handleEmptyTrash = async () => {
     if (deletedWines.length === 0 || isEmptyingTrash) return;
-    if (!window.confirm(`Papierkorb endgültig leeren? (${deletedWines.length} Weine werden dauerhaft gelöscht)`)) return;
+    const confirmed = await confirm({
+      title: 'Papierkorb endgültig leeren?',
+      description: `${deletedWines.length} Weine werden dauerhaft gelöscht.`,
+      confirmLabel: 'Papierkorb leeren',
+      destructive: true
+    });
+    if (!confirmed) return;
 
     setIsEmptyingTrash(true);
     try {
       await storageService.emptyTrash();
       await fetchDeleted();
       onUpdate();
+      showToast('Papierkorb wurde geleert.', 'success');
     } catch (err) {
-      const message = (err as Error)?.message || 'Papierkorb konnte nicht geleert werden.';
-      setError(message);
-      alert(message);
+      showToast((err as Error)?.message || 'Papierkorb konnte nicht geleert werden.', 'error');
     } finally {
       setIsEmptyingTrash(false);
     }
   };
 
-  const filteredWines = deletedWines.filter(w => 
+  const filteredWines = deletedWines.filter(w =>
     w.name.toLowerCase().includes(search.toLowerCase()) ||
     w.producer?.toLowerCase().includes(search.toLowerCase())
   );
@@ -105,9 +116,9 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
     <div className="space-y-8 animate-in fade-in duration-700 pb-20">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="flex flex-col gap-2">
-          <button 
-            onClick={() => navigate(-1)} 
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[11px] font-black tracking-widest transition-all mb-4"
           >
             <ArrowLeft className="w-4 h-4" /> Zurück zum Keller
           </button>
@@ -117,7 +128,7 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
         <button
           onClick={handleEmptyTrash}
           disabled={deletedWines.length === 0 || isEmptyingTrash || loading}
-          className="px-5 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-5 py-3 bg-red-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isEmptyingTrash ? 'Leert...' : 'Papierkorb endgültig leeren'}
         </button>
@@ -125,7 +136,7 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
 
       <div className="flex-1 relative max-w-md">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
-        <input 
+        <input
           type="text" placeholder="Papierkorb durchsuchen..." value={search} onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-12 pr-4 py-3.5 bg-white border-2 border-burgundy/5 rounded-2xl text-sm focus:border-burgundy/20 focus:outline-none"
         />
@@ -166,23 +177,23 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
                   </div>
                 </div>
                 {wine.deleted_at && (
-                  <span className="shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 whitespace-nowrap">
+                  <span className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 whitespace-nowrap">
                     Läuft ab in {Math.max(0, getDaysRemaining(wine.deleted_at))} Tag(en)
                   </span>
                 )}
               </div>
 
               <div className="flex items-center justify-between pt-6 border-t border-alabaster">
-                <p className="text-[9px] font-black text-stone-gray/50 uppercase">Gelöscht am: {new Date(wine.deleted_at!).toLocaleDateString()}</p>
+                <p className="text-[10px] font-black text-stone-gray/50 uppercase">Gelöscht am: {new Date(wine.deleted_at!).toLocaleDateString()}</p>
                 <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleRestore(wine.id)} disabled={processingId === wine.id || isEmptyingTrash}
+                  <button
+                    onClick={() => handleRestore(wine)} disabled={processingId === wine.id || isEmptyingTrash}
                     className="p-3 bg-sage-light text-sage hover:bg-sage hover:text-white rounded-xl transition-all"
                   >
                     <RotateCcw className="w-4 h-4" />
                   </button>
-                  <button 
-                    onClick={() => handlePermanentDelete(wine.id)} disabled={processingId === wine.id || isEmptyingTrash}
+                  <button
+                    onClick={() => handlePermanentDelete(wine)} disabled={processingId === wine.id || isEmptyingTrash}
                     className="p-3 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all"
                   >
                     <Trash2 className="w-4 h-4" />

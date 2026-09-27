@@ -104,6 +104,70 @@ const isSupabaseMissingRelationError = (error: unknown): boolean => {
   );
 };
 
+/**
+ * True when the database does not have the record_inventory_change function
+ * (migration 20260811000034 not applied yet). PostgREST answers PGRST202 for an
+ * unknown RPC; Postgres itself uses 42883 for "function does not exist".
+ */
+const isMissingRpcError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const maybe = error as { code?: string; message?: string };
+  const code = maybe.code || '';
+  const message = (maybe.message || '').toLowerCase();
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    (message.includes('function') && message.includes('does not exist')) ||
+    message.includes('record_inventory_change')
+  );
+};
+
+let missingRpcWarned = false;
+
+/**
+ * Runs a stock change as one atomic database transaction.
+ *
+ * Returns null when the function is not deployed yet, so callers can fall back
+ * to the old read-modify-write path instead of breaking against a database
+ * that has not run the migration. The fallback is not race-free - that is
+ * exactly why the RPC exists - so it warns once per session.
+ */
+const callInventoryRpc = async (params: {
+  wineId: string;
+  delta: number;
+  type: 'consume' | 'purchase' | 'adjustment' | 'loss';
+  source?: string;
+  note?: string | null;
+  pricePerBottle?: number | null;
+}): Promise<Wine | null> => {
+  const { data, error } = await supabase.rpc('record_inventory_change', {
+    p_wine_id: params.wineId,
+    p_delta: params.delta,
+    p_type: params.type,
+    p_source: params.source ?? 'manual',
+    p_note: params.note ?? null,
+    p_price_per_bottle: params.pricePerBottle ?? null
+  });
+
+  if (error) {
+    if (isMissingRpcError(error)) {
+      if (!missingRpcWarned) {
+        missingRpcWarned = true;
+        console.warn(
+          'record_inventory_change fehlt in der Datenbank - Bestandsänderungen laufen im nicht-atomaren Fallback. Migration 20260811000034 ausführen.'
+        );
+      }
+      return null;
+    }
+    throw error;
+  }
+
+  // A function returning a table row comes back as an object, but PostgREST
+  // wraps some shapes in an array - accept both.
+  const row = Array.isArray(data) ? data[0] : data;
+  return (row as Wine) ?? null;
+};
+
 const mapCatalogRowToAiPayload = (row: any): Record<string, any> => {
   const details = row?.details && typeof row.details === 'object' ? row.details : {};
   const shortDescription = toShortDescription(details);
@@ -396,6 +460,15 @@ export const storageService = {
   },
 
   adjustStock: async (id: string, delta: number, context?: string) => {
+    const atomic = await callInventoryRpc({
+      wineId: id,
+      delta,
+      type: 'adjustment',
+      source: context || 'manual'
+    });
+    if (atomic) return atomic;
+
+    // Fallback for databases without migration 20260811000034.
     const { data: { user } } = await supabase.auth.getUser();
     const { data: wine } = await supabase
       .from('wines')
@@ -427,6 +500,17 @@ export const storageService = {
   },
 
   recordPurchase: async (purchase: { wine_id: string; quantity: number; price_per_bottle: number; date: string }) => {
+    const atomic = await callInventoryRpc({
+      wineId: purchase.wine_id,
+      delta: purchase.quantity,
+      type: 'purchase',
+      source: 'purchase',
+      note: purchase.date,
+      pricePerBottle: purchase.price_per_bottle
+    });
+    if (atomic) return atomic;
+
+    // Fallback for databases without migration 20260811000034.
     const { data: { user } } = await supabase.auth.getUser();
     const { data: wine } = await supabase
       .from('wines')
@@ -466,6 +550,18 @@ export const storageService = {
   },
 
   recordLoss: async (wineId: string, quantity: number, reason?: string) => {
+    if (quantity > 0) {
+      const atomic = await callInventoryRpc({
+        wineId,
+        delta: -quantity,
+        type: 'loss',
+        source: 'detail',
+        note: reason ?? null
+      });
+      if (atomic) return atomic;
+    }
+
+    // Fallback for databases without migration 20260811000034.
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Nicht eingeloggt.');
 
@@ -541,6 +637,10 @@ export const storageService = {
   },
 
   consumeBottle: async (wineId: string, source: string = 'detail'): Promise<Wine> => {
+    const atomic = await callInventoryRpc({ wineId, delta: -1, type: 'consume', source });
+    if (atomic) return atomic;
+
+    // Fallback for databases without migration 20260811000034.
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Nicht eingeloggt.');
 
@@ -585,6 +685,34 @@ export const storageService = {
       throw eventError;
     }
     return updatedWine as Wine;
+  },
+
+  /**
+   * Every stock event, not just consumption - purchases, losses, stocktake
+   * corrections, transfers and soft deletes are all recorded but were visible
+   * nowhere. getConsumptionHistory() stays consume-only because the dashboard's
+   * "Zuletzt getrunken" list needs exactly that.
+   */
+  getInventoryEvents: async (): Promise<Array<{
+    id: string;
+    wine_id: string;
+    user_id: string;
+    type: string;
+    delta: number;
+    source: string;
+    note?: string | null;
+    created_at: string;
+    wines: { name: string; producer?: string; vintage?: number } | null;
+  }>> => {
+    const { data, error } = await supabase
+      .from('inventory_events')
+      .select('id,wine_id,user_id,type,delta,source,note,created_at,wines(name,producer,vintage)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return ((data || []) as any[]).map((row) => ({
+      ...row,
+      wines: Array.isArray(row.wines) ? row.wines[0] || null : row.wines
+    }));
   },
 
   getConsumptionHistory: async (): Promise<Array<{
@@ -1132,11 +1260,28 @@ export const storageService = {
     return (data as Tasting[]) || [];
   },
 
+  /**
+   * Records a tasting note. Deliberately does NOT touch stock.
+   *
+   * It used to call adjustStock(-1) as a side effect, which made a note
+   * impossible without drinking a bottle (tasting at a merchant, a second
+   * glass from an already open bottle) and booked the bottle as an
+   * "adjustment" rather than a "consume" - so it silently reduced stock while
+   * never appearing in the drink history. The offline path never decremented
+   * at all, so online and offline disagreed. Callers now decide explicitly:
+   * consumeBottle() for the bottle, addTasting() for the memory.
+   *
+   * A caller-supplied `date` is respected (notes are often written a day
+   * later); only the fallback is "now".
+   */
   addTasting: async (tasting: Partial<Tasting>): Promise<Tasting> => {
     const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from('tastings').insert([{ ...tasting, user_id: user?.id, date: new Date().toISOString() }]).select().single();
+    const { data, error } = await supabase
+      .from('tastings')
+      .insert([{ ...tasting, user_id: user?.id, date: tasting.date || new Date().toISOString() }])
+      .select()
+      .single();
     if (error) throw error;
-    await storageService.adjustStock(tasting.wine_id!, -1);
     return data as Tasting;
   },
 

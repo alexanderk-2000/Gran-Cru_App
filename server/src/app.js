@@ -18,7 +18,12 @@ dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 120000);
+// On Vercel the function is hard-killed at its configured maxDuration
+// (60s, see vercel.json) - a 120s internal timeout would never fire and the
+// caller would get a platform error page instead of our JSON error. Stay
+// just under the limit there; keep the generous default for local runs.
+const DEFAULT_REQUEST_TIMEOUT = process.env.VERCEL ? 55000 : 120000;
+const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || DEFAULT_REQUEST_TIMEOUT);
 const GEMINI_MAX_OUTPUT_TOKENS = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 4096);
 const OPENAI_MAX_OUTPUT_TOKENS = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 4096);
 const FAST_OPENAI_MAX_OUTPUT_TOKENS = Number(process.env.FAST_OPENAI_MAX_OUTPUT_TOKENS || 1800);
@@ -53,8 +58,17 @@ const aiRateLimiter = createAiRateLimiter({
   windowMs: AI_RATE_LIMIT_WINDOW_MS,
   maxRequests: AI_RATE_LIMIT_MAX_REQUESTS
 });
+// In the deployment the SPA and this app share an origin, so CORS never
+// applies there. The list only matters for local split-port development
+// (Vite on 3000, this server on 3001); CORS_ORIGINS allows extending it
+// without a code change.
+const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: corsOrigins,
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));

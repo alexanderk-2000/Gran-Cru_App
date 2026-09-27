@@ -5,6 +5,10 @@ import { storageService } from './storage.ts';
 import { enqueueAiQueueItem } from './pwa/aiQueue.ts';
 import { isOnline } from './pwa/networkState.ts';
 import { getAccessToken } from './supabase.ts';
+import { checkApiHealth } from './apiHealth.ts';
+
+export const API_UNREACHABLE_HINT =
+    'Der KI-Dienst ist nicht erreichbar. Lokal: `npm run server` starten. Im Deployment: prüfen, ob die API-Funktion und der OpenRouter-Key konfiguriert sind.';
 
 const authHeaders = async (): Promise<Record<string, string>> => {
     const token = await getAccessToken();
@@ -191,22 +195,26 @@ Offline-Normalisierung:
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
 
-                // Best-effort health check for clearer diagnostics in local dev
+                // Best-effort health check for clearer diagnostics
                 let healthHint = '';
                 if (response.status >= 500) {
-                    try {
-                        const health = await fetch('/api/health', { method: 'GET' });
-                        if (!health.ok) {
-                            healthHint = ' (API-Server scheint nicht erreichbar. Bitte `npm run server` starten.)';
-                        }
-                    } catch {
-                        healthHint = ' (API-Server scheint nicht erreichbar. Bitte `npm run server` starten.)';
+                    const health = await checkApiHealth();
+                    if (!health.online) {
+                        healthHint = ` (${API_UNREACHABLE_HINT})`;
                     }
                 }
 
                 throw new Error(
                     (errorData.error || `Server error: ${response.status} ${response.statusText}`) + healthHint
                 );
+            }
+
+            // A missing backend answers with the SPA's index.html at status 200.
+            // Without this guard the failure surfaced as "Unexpected token '<'"
+            // from response.json() - unreadable for the user and pointing at the
+            // wrong layer.
+            if (!(response.headers.get('content-type') || '').includes('application/json')) {
+                throw new Error(API_UNREACHABLE_HINT);
             }
 
             const result = await response.json();
@@ -277,6 +285,10 @@ Offline-Normalisierung:
                 },
                 body: JSON.stringify(requestPayload)
             });
+
+            if (!(response.headers.get('content-type') || '').includes('application/json')) {
+                return { success: false, error: API_UNREACHABLE_HINT };
+            }
 
             const result = await response.json().catch(() => ({}));
 

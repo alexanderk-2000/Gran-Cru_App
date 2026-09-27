@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Category,
   Occasion,
@@ -23,6 +24,9 @@ import {
   X
 } from 'lucide-react';
 import { evaluateWineDrinkability } from '../../utils.ts';
+import { useToast, useConfirm } from '../../components/Feedback.tsx';
+import { useFocusTrap } from '../../hooks/useFocusTrap.ts';
+import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
 
 const REPEAT_RULE_LABEL: Record<RepeatRule, string> = {
   none: 'Einmalig',
@@ -134,6 +138,8 @@ const categoryBonus = (wine: Wine, preferRare: boolean, preferDaily: boolean): n
 const byScoreDesc = (a: AssignmentEdge, b: AssignmentEdge) => b.totalScore - a.totalScore;
 
 export const EnjoymentPlan: React.FC = () => {
+  const showToast = useToast();
+  const confirm = useConfirm();
   const [instances, setInstances] = useState<OccasionInstance[]>([]);
   const [occasions, setOccasions] = useState<Occasion[]>([]);
   const [wines, setWines] = useState<Wine[]>([]);
@@ -152,6 +158,7 @@ export const EnjoymentPlan: React.FC = () => {
   const [selectedOccasionId, setSelectedOccasionId] = useState<string | null>(null);
 
   const [showPoolModal, setShowPoolModal] = useState(false);
+  const poolModalRef = useFocusTrap<HTMLDivElement>(showPoolModal, () => setShowPoolModal(false));
   const [poolOccasion, setPoolOccasion] = useState<Occasion | null>(null);
   const [poolDraft, setPoolDraft] = useState<Record<string, PoolDraftEntry>>({});
   const [poolSearch, setPoolSearch] = useState('');
@@ -168,7 +175,25 @@ export const EnjoymentPlan: React.FC = () => {
   const [assignmentNotice, setAssignmentNotice] = useState<string | null>(null);
   const [unassignedInstanceIds, setUnassignedInstanceIds] = useState<string[]>([]);
 
-  const loadData = async () => {
+  const [instanceToConsume, setInstanceToConsume] = useState<OccasionInstance | null>(null);
+
+  // The Dashboard's "Für Anlass einplanen" used to link here bare - you
+  // landed on an unfiltered occasion list with no idea which wine you came
+  // to plan for. ?wine=<id> carries that intent across the navigation; the
+  // banner below turns it into a one-click assignment once an occasion with
+  // an open slot is picked.
+  const location = useLocation();
+  const [pendingWineId, setPendingWineId] = useState<string | null>(null);
+  useEffect(() => {
+    const wineId = new URLSearchParams(location.search).get('wine');
+    if (wineId) setPendingWineId(wineId);
+  }, [location.search]);
+
+  // Wrapped in useCallback (and listed as the effect's dependency) because it
+  // now closes over showToast - a context value the linter can't statically
+  // prove is stable, so leaving it a plain function made the mount effect
+  // below fail exhaustive-deps.
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [instData, wineData, occasionData] = await Promise.all([
@@ -184,15 +209,15 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Termine konnten nicht geladen werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const resetForm = () => {
     setEditingOccasionId(null);
@@ -253,7 +278,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Wein-Pool konnte nicht geladen werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
@@ -263,21 +288,21 @@ export const EnjoymentPlan: React.FC = () => {
     if (!title.trim() || !startDate || !endDate) {
       const message = 'Titel, Startdatum und Enddatum sind erforderlich.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
     if (new Date(startDate) > new Date(endDate)) {
       const message = 'Startdatum darf nicht nach Enddatum liegen.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
     if (!Number.isFinite(repeatInterval) || repeatInterval < 1) {
       const message = 'Intervall muss mindestens 1 sein.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
@@ -285,7 +310,7 @@ export const EnjoymentPlan: React.FC = () => {
     if (maxCountParsed !== null && (!Number.isFinite(maxCountParsed) || maxCountParsed < 1)) {
       const message = 'Max. Wiederholungen muss größer als 0 sein.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
@@ -309,7 +334,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Fehler beim Planen der Serie.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
@@ -323,8 +348,15 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Wein konnte nicht zugewiesen werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
+  };
+
+  const handleQuickAssign = async (instanceId: string) => {
+    if (!pendingWineId) return;
+    await handleAssignWine(instanceId, pendingWineId);
+    setPendingWineId(null);
+    showToast('Wein eingeplant.', 'success');
   };
 
   const handleStatusUpdate = async (instance: OccasionInstance, status: 'planned' | 'consumed' | 'skipped') => {
@@ -335,12 +367,47 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Status konnte nicht aktualisiert werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
+    }
+  };
+
+  // "Getrunken" used to just flip instance.status - the bottle count never
+  // moved, no event or note was written, and the wine's own history had no
+  // idea the occasion ever happened. With a wine assigned, this opens the
+  // same dialog every other "I opened this bottle" moment in the app uses;
+  // the instance only switches to "Genossen" once that save succeeds.
+  // Without an assigned wine there is nothing to decrement, so it falls back
+  // to the plain status flip.
+  const handleRequestConsume = (instance: OccasionInstance) => {
+    if (instance.wine_id) {
+      setInstanceToConsume(instance);
+      return;
+    }
+    void handleStatusUpdate(instance, 'consumed');
+  };
+
+  const handleConsumeSaved = async (message: string) => {
+    if (!instanceToConsume) return;
+    const instance = instanceToConsume;
+    setInstanceToConsume(null);
+    try {
+      await storageService.updateInstanceStatus(instance.id, 'consumed');
+      await loadData();
+      showToast(`${message} Anlass als genossen vermerkt.`, 'success');
+    } catch (err: any) {
+      const errorMessage = err?.message || 'Status konnte nicht aktualisiert werden.';
+      showToast(errorMessage, 'error');
     }
   };
 
   const handleDeleteSeries = async (occasionId: string) => {
-    if (!window.confirm('Ganze Serie und alle nicht-konsumierten Instanzen löschen?')) return;
+    const confirmed = await confirm({
+      title: 'Serie löschen?',
+      description: 'Die ganze Serie und alle nicht-konsumierten Instanzen werden entfernt.',
+      confirmLabel: 'Löschen',
+      destructive: true
+    });
+    if (!confirmed) return;
     try {
       await storageService.deleteOccasion(occasionId);
       await loadData();
@@ -348,7 +415,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Serie konnte nicht gelöscht werden.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     }
   };
 
@@ -579,7 +646,7 @@ export const EnjoymentPlan: React.FC = () => {
     if (selected.length === 0) {
       const message = 'Bitte mindestens einen Wein im Pool auswählen.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
       return;
     }
 
@@ -634,7 +701,7 @@ export const EnjoymentPlan: React.FC = () => {
     } catch (err: any) {
       const message = err?.message || 'Automatische Zuordnung fehlgeschlagen.';
       setError(message);
-      alert(message);
+      showToast(message, 'error');
     } finally {
       setAssigning(false);
     }
@@ -670,13 +737,22 @@ export const EnjoymentPlan: React.FC = () => {
     return futureInstances.filter((instance) => instance.occasion_id === selectedOccasionId);
   }, [futureInstances, selectedOccasionId]);
 
+  const pendingWine = useMemo(
+    () => (pendingWineId ? wines.find((wine) => wine.id === pendingWineId) ?? null : null),
+    [pendingWineId, wines]
+  );
+  const nextOpenInstance = useMemo(
+    () => selectedOccasionInstances.find((instance) => !instance.wine_id) ?? null,
+    [selectedOccasionInstances]
+  );
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="flex flex-col gap-2">
           <h2 className="font-serif text-4xl font-bold text-charcoal">Anlass-Planung</h2>
           <p className="text-stone-gray font-medium tracking-wide">
-            Verwalten Sie Ihre Verkostungs-Termine und weisen Sie edle Tropfen zu.
+            Verwalte deine Verkostungs-Termine und weise edle Tropfen zu.
           </p>
         </div>
 
@@ -695,6 +771,42 @@ export const EnjoymentPlan: React.FC = () => {
         </div>
       )}
 
+      {pendingWine && (
+        <div className="flex flex-col gap-3 rounded-2xl border-2 border-gold/30 bg-gold/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-gold">Wein einplanen</p>
+            <p className="mt-1 font-serif text-lg text-charcoal">
+              {pendingWine.vintage} {pendingWine.name}
+            </p>
+            <p className="mt-1 text-sm text-stone-gray">
+              {!selectedOccasionId
+                ? 'Wähle unten eine Serie, um diesen Wein einem Termin zuzuweisen.'
+                : nextOpenInstance
+                  ? `Nächster freier Termin: ${new Date(nextOpenInstance.instance_date).toLocaleDateString('de-DE')}`
+                  : 'Alle Termine dieser Serie sind bereits vergeben - wähle eine andere Serie oder lege einen neuen Termin an.'}
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            {selectedOccasionId && nextOpenInstance && (
+              <button
+                type="button"
+                onClick={() => void handleQuickAssign(nextOpenInstance.id)}
+                className="rounded-xl bg-burgundy px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-burgundy-light"
+              >
+                Diesem Termin zuordnen
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPendingWineId(null)}
+              className="rounded-xl border border-stone-300 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-stone-700 transition-all hover:bg-white"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <section className="bg-white border border-burgundy/10 p-10 rounded-[2.5rem] shadow-premium animate-in slide-in-from-top-4 duration-500">
           <div className="flex items-center gap-3 mb-10">
@@ -703,7 +815,7 @@ export const EnjoymentPlan: React.FC = () => {
           </div>
           <form onSubmit={handleSubmit} className="space-y-8">
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Titel der Serie</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Titel der Serie</label>
               <input
                 type="text"
                 value={title}
@@ -716,7 +828,7 @@ export const EnjoymentPlan: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Startdatum</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Startdatum</label>
                 <input
                   type="date"
                   value={startDate}
@@ -730,13 +842,13 @@ export const EnjoymentPlan: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Enddatum</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Enddatum</label>
                 <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full px-6 py-4 bg-alabaster border border-burgundy/5 rounded-2xl" required />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Immer trinken am (optional)</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Immer trinken am (optional)</label>
               <input
                 type="date"
                 value={drinkAnchorDate}
@@ -750,7 +862,7 @@ export const EnjoymentPlan: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Wiederholung</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Wiederholung</label>
                 <select value={repeatRule} onChange={(e) => setRepeatRule(e.target.value as RepeatRule)} className="w-full px-6 py-4 bg-alabaster border border-burgundy/5 rounded-2xl font-bold">
                   <option value="none">Keine (Einmalig)</option>
                   <option value="daily">Täglich</option>
@@ -760,13 +872,13 @@ export const EnjoymentPlan: React.FC = () => {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Intervall (Jede X-te Einheit)</label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Intervall (Jede X-te Einheit)</label>
                 <input type="number" min="1" value={repeatInterval} onChange={(e) => setRepeatInterval(Math.max(1, Number(e.target.value || 1)))} className="w-full px-6 py-4 bg-alabaster border border-burgundy/5 rounded-2xl font-bold" />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-gray ml-2">Max. Wiederholungen (optional)</label>
+              <label className="text-[11px] font-black uppercase tracking-widest text-stone-gray ml-2">Max. Wiederholungen (optional)</label>
               <input
                 type="number"
                 min="1"
@@ -788,14 +900,14 @@ export const EnjoymentPlan: React.FC = () => {
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <Clock className="w-12 h-12 text-burgundy animate-spin" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-stone-gray">Lade Termin-Instanzen...</p>
+          <p className="text-[11px] font-black uppercase tracking-widest text-stone-gray">Lade Termin-Instanzen...</p>
         </div>
       ) : (
         <div className="space-y-8 pb-40">
           <section className="bg-white border border-burgundy/10 rounded-[2.5rem] shadow-premium p-8">
             <div className="flex items-center justify-between gap-4 mb-6">
               <h3 className="font-serif text-2xl font-bold text-charcoal">Anlässe</h3>
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-gray">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-stone-gray">
                 {sortedOccasions.length} Serien
               </p>
             </div>
@@ -834,7 +946,7 @@ export const EnjoymentPlan: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setSelectedOccasionId((prev) => (prev === occasion.id ? null : occasion.id))}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+                            className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest ${
                               isActive
                                 ? 'bg-burgundy text-white'
                                 : 'bg-white border border-burgundy/20 text-burgundy hover:bg-burgundy/5'
@@ -879,7 +991,7 @@ export const EnjoymentPlan: React.FC = () => {
             {!selectedOccasion ? (
               <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[2.5rem] border border-burgundy/10 shadow-premium">
                 <CalendarDays className="w-14 h-14 text-burgundy/20 mb-4" />
-                <h3 className="text-xl font-serif text-charcoal mb-2">Wählen Sie einen Anlass</h3>
+                <h3 className="text-xl font-serif text-charcoal mb-2">Wähle einen Anlass</h3>
                 <p className="text-stone-gray text-sm">Die Terminliste wird erst nach Klick auf eine Serie angezeigt.</p>
               </div>
             ) : selectedOccasionInstances.length === 0 ? (
@@ -890,7 +1002,7 @@ export const EnjoymentPlan: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4 mb-6">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-gray">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-stone-gray">
                   Termine für: {selectedOccasion.title}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -901,6 +1013,7 @@ export const EnjoymentPlan: React.FC = () => {
                       wines={wines.filter((wine) => wine.quantity > 0)}
                       onAssign={handleAssignWine}
                       onStatusChange={handleStatusUpdate}
+                      onRequestConsume={handleRequestConsume}
                       onEditSeries={(occasion) => openEditForm(occasion)}
                       onDeleteSeries={handleDeleteSeries}
                       onOpenPool={(occasion) => openPoolStep(occasion)}
@@ -914,11 +1027,17 @@ export const EnjoymentPlan: React.FC = () => {
       )}
 
       {showPoolModal && poolOccasion && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in">
+        <div
+          ref={poolModalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Wein-Pool für ${poolOccasion.title}`}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in"
+        >
           <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl border border-burgundy/5 overflow-hidden flex flex-col max-h-[92vh]">
             <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.18em] text-stone-gray font-black">Wein-Pool</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-stone-gray font-black">Wein-Pool</p>
                 <h3 className="font-serif text-2xl font-bold text-charcoal">{poolOccasion.title}</h3>
               </div>
               <button onClick={() => setShowPoolModal(false)} className="p-2"><X /></button>
@@ -1021,7 +1140,7 @@ export const EnjoymentPlan: React.FC = () => {
 
               <div className="space-y-3">
                 <div className="flex flex-col gap-3 rounded-xl border border-burgundy/10 bg-alabaster/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-gray">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-stone-gray">
                     Auswahl: {selectedVisibleCount} / {poolVisibleWines.length}
                   </p>
                   <div className="flex gap-2">
@@ -1029,7 +1148,7 @@ export const EnjoymentPlan: React.FC = () => {
                       type="button"
                       onClick={handleSelectAllVisible}
                       disabled={poolVisibleWines.length === 0 || allVisibleSelected}
-                      className="px-3 py-2 rounded-lg border border-burgundy/20 bg-white text-[10px] font-black uppercase tracking-widest text-burgundy disabled:opacity-40"
+                      className="px-3 py-2 rounded-lg border border-burgundy/20 bg-white text-[11px] font-black uppercase tracking-widest text-burgundy disabled:opacity-40"
                     >
                       Alle auswählen
                     </button>
@@ -1037,7 +1156,7 @@ export const EnjoymentPlan: React.FC = () => {
                       type="button"
                       onClick={handleClearVisibleSelection}
                       disabled={selectedVisibleCount === 0}
-                      className="px-3 py-2 rounded-lg border border-stone-300 bg-white text-[10px] font-black uppercase tracking-widest text-stone-700 disabled:opacity-40"
+                      className="px-3 py-2 rounded-lg border border-stone-300 bg-white text-[11px] font-black uppercase tracking-widest text-stone-700 disabled:opacity-40"
                     >
                       Auswahl aufheben
                     </button>
@@ -1046,6 +1165,7 @@ export const EnjoymentPlan: React.FC = () => {
 
                 {poolVisibleWines.map((wine) => {
                   const selected = poolDraft[wine.id];
+                  const isOverbooked = Boolean(selected) && (selected?.bottles_reserved ?? 0) > wine.quantity;
                   return (
                     <div key={wine.id} className="grid grid-cols-1 md:grid-cols-[auto,1fr,120px,120px] items-center gap-3 p-4 bg-white border border-burgundy/10 rounded-xl">
                       <input
@@ -1067,6 +1187,11 @@ export const EnjoymentPlan: React.FC = () => {
                       <div>
                         <p className="font-serif text-lg text-charcoal">{wine.vintage} {wine.name}</p>
                         <p className="text-xs text-stone-gray">{wine.producer || 'Produzent unbekannt'} · {wine.region} · Bestand {wine.quantity}</p>
+                        {isOverbooked && (
+                          <p className="mt-1 text-[11px] font-black uppercase tracking-widest text-red-600">
+                            Überbucht: {selected?.bottles_reserved} reserviert, nur {wine.quantity} auf Lager
+                          </p>
+                        )}
                       </div>
 
                       <input
@@ -1084,7 +1209,9 @@ export const EnjoymentPlan: React.FC = () => {
                             }
                           }));
                         }}
-                        className="px-3 py-2 bg-alabaster border border-burgundy/10 rounded-xl text-sm disabled:opacity-40"
+                        className={`px-3 py-2 bg-alabaster border rounded-xl text-sm disabled:opacity-40 ${
+                          isOverbooked ? 'border-red-400 text-red-700' : 'border-burgundy/10'
+                        }`}
                       />
 
                       <select
@@ -1114,14 +1241,14 @@ export const EnjoymentPlan: React.FC = () => {
             <div className="p-6 border-t border-alabaster flex justify-end gap-3">
               <button
                 onClick={() => setShowPoolModal(false)}
-                className="px-6 py-3 bg-white border border-burgundy/10 text-charcoal rounded-xl font-black uppercase tracking-widest text-[10px]"
+                className="px-6 py-3 bg-white border border-burgundy/10 text-charcoal rounded-xl font-black uppercase tracking-widest text-[11px]"
               >
                 Schließen
               </button>
               <button
                 onClick={handleAutoAssign}
                 disabled={assigning}
-                className="px-6 py-3 bg-burgundy text-white rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center gap-2 disabled:opacity-50"
+                className="px-6 py-3 bg-burgundy text-white rounded-xl font-black uppercase tracking-widest text-[11px] flex items-center gap-2 disabled:opacity-50"
               >
                 {assigning ? <Clock className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
                 Automatisch zuordnen
@@ -1130,6 +1257,14 @@ export const EnjoymentPlan: React.FC = () => {
           </div>
         </div>
       )}
+
+      <OpenBottleDialog
+        open={Boolean(instanceToConsume)}
+        wine={wines.find((wine) => wine.id === instanceToConsume?.wine_id) ?? null}
+        source="occasion"
+        onClose={() => setInstanceToConsume(null)}
+        onSaved={(message) => void handleConsumeSaved(message)}
+      />
     </div>
   );
 };
@@ -1139,10 +1274,11 @@ const InstanceCard: React.FC<{
   wines: Wine[];
   onAssign: (instanceId: string, wineId: string | null) => void;
   onStatusChange: (instance: OccasionInstance, status: 'planned' | 'consumed' | 'skipped') => void;
+  onRequestConsume: (instance: OccasionInstance) => void;
   onEditSeries: (occasion: Occasion) => void;
   onDeleteSeries: (occasionId: string) => void;
   onOpenPool: (occasion: Occasion) => void;
-}> = ({ instance, wines, onAssign, onStatusChange, onEditSeries, onDeleteSeries, onOpenPool }) => {
+}> = ({ instance, wines, onAssign, onStatusChange, onRequestConsume, onEditSeries, onDeleteSeries, onOpenPool }) => {
   const [isAssigning, setIsAssigning] = useState(false);
   const [search, setSearch] = useState('');
   const selectedWine = wines.find((wine) => wine.id === instance.wine_id);
@@ -1169,7 +1305,7 @@ const InstanceCard: React.FC<{
     `}>
       <div className="flex justify-between items-start mb-6">
         <div>
-          <p className="text-[10px] font-black text-burgundy uppercase tracking-[0.2em] mb-1">
+          <p className="text-[11px] font-black text-burgundy uppercase tracking-[0.2em] mb-1">
             {new Date(instance.instance_date).toLocaleDateString('de-DE', { day: '2-digit', month: 'long' })}
           </p>
           <p className="text-xs font-bold text-stone-gray uppercase tracking-widest">
@@ -1203,7 +1339,7 @@ const InstanceCard: React.FC<{
 
       <h4 className="font-serif text-2xl font-bold text-charcoal leading-tight mb-2">{instance.occasion?.title}</h4>
       {instance.assignment_reason && (
-        <p className="text-[10px] text-stone-gray uppercase tracking-[0.14em] mb-6">
+        <p className="text-[11px] text-stone-gray uppercase tracking-[0.14em] mb-6">
           {instance.auto_assigned ? 'Auto' : 'Manuell'} · {instance.assignment_reason}
         </p>
       )}
@@ -1216,7 +1352,7 @@ const InstanceCard: React.FC<{
             <WineIcon className="w-5 h-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[8px] font-black uppercase tracking-widest text-stone-gray mb-0.5">Reservierter Wein</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-stone-gray mb-0.5">Reservierter Wein</p>
             {selectedWine ? (
               <p className="text-sm font-bold text-charcoal truncate"><span className="text-burgundy opacity-70">{selectedWine.vintage}</span> {selectedWine.name}</p>
             ) : (
@@ -1263,7 +1399,7 @@ const InstanceCard: React.FC<{
           !selectedWine && !isConsumed && (
             <button
               onClick={() => setIsAssigning(true)}
-              className="w-full py-3 bg-white border-2 border-dashed border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[10px] font-black rounded-xl uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+              className="w-full py-3 bg-white border-2 border-dashed border-burgundy/10 hover:border-burgundy/30 text-burgundy text-[11px] font-black rounded-xl uppercase tracking-widest transition-all flex items-center justify-center gap-2"
             >
               <Plus className="w-3 h-3" /> Wein zuordnen
             </button>
@@ -1272,7 +1408,7 @@ const InstanceCard: React.FC<{
       </div>
 
       <div className="flex items-center justify-between pt-6 border-t border-alabaster">
-        <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${isConsumed ? 'text-sage' : isSkipped ? 'text-stone-gray' : 'text-stone-gray/60'}`}>
+        <div className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isConsumed ? 'text-sage' : isSkipped ? 'text-stone-gray' : 'text-stone-gray/60'}`}>
           <CheckCircle2 className="w-4 h-4" />
           {statusLabel}
         </div>
@@ -1280,15 +1416,15 @@ const InstanceCard: React.FC<{
         <div className="flex items-center gap-2">
           <button
             onClick={() => onStatusChange(instance, isSkipped ? 'planned' : 'skipped')}
-            className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+            className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
               isSkipped ? 'bg-alabaster text-stone-gray' : 'bg-white border border-burgundy/20 text-burgundy hover:bg-burgundy/5'
             }`}
           >
             {isSkipped ? 'Geplant' : 'Überspringen'}
           </button>
           <button
-            onClick={() => onStatusChange(instance, isConsumed ? 'planned' : 'consumed')}
-            className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+            onClick={() => (isConsumed ? onStatusChange(instance, 'planned') : onRequestConsume(instance))}
+            className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
               isConsumed ? 'bg-alabaster text-stone-gray' : 'bg-burgundy text-white hover:bg-burgundy-light shadow-lg'
             }`}
           >

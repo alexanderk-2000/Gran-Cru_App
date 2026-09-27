@@ -7,12 +7,27 @@ const BUCKET = 'wine-images';
 const MAX_WIDTH = 1200;
 const QUALITY = 0.82;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB before compression
-// The bucket is private (see 20260722000032_private_wine_images_bucket.sql) -
-// every image URL is a signed link, not a bare public URL. 1 year matches
-// the existing upload cacheControl below; a fresh signed URL is minted on
-// every new upload, so this only matters for images left untouched longer
-// than that (known follow-up: proactively refresh near expiry).
+// The bucket is private (see 20260722000032_private_wine_images_bucket.sql),
+// so every displayable image URL is a signed link. This TTL only bounds a
+// single signed URL's lifetime, not how long the photo stays viewable - see
+// the storage note below for why those are no longer the same thing.
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 365;
+
+// A signed URL is minted once and then stored verbatim in ai_details, it goes
+// dead a year later with no renewal path - the photo silently stops loading
+// and nothing in the app notices. What actually needs to persist is only
+// "does this wine have a bottle/label/case photo", because the storage path
+// itself is fully deterministic from (user, wine, slot) - see buildPath.
+// ai_details.app.images[slot] therefore now holds a boolean flag, and a fresh
+// signed URL is minted every time the photo is about to be displayed.
+//
+// Backward compatible on read: an old record still has the slot set to the
+// signed-URL *string* it was saved with. Any truthy value - string or
+// boolean - means "present, (re-)sign it now", so existing photos start
+// working past their original year without a migration script; they just
+// start being re-signed like everything else the next time they're shown.
+const urlCache = new Map<string, { url: string; expiresAt: number }>();
+const URL_CACHE_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Compress an image file using Canvas API.
@@ -122,6 +137,7 @@ export const imageStorageService = {
       throw new Error(`Upload fehlgeschlagen: ${error.message}`);
     }
 
+    urlCache.delete(path);
     return imageStorageService.getSignedUrl(wineId, userId, slot);
   },
 
@@ -136,6 +152,7 @@ export const imageStorageService = {
     if (error) {
       throw new Error(`Löschen fehlgeschlagen: ${error.message}`);
     }
+    urlCache.delete(path);
   },
 
   /**
@@ -147,6 +164,7 @@ export const imageStorageService = {
     const paths = slots.map(slot => buildPath(userId, wineId, slot));
 
     await supabase.storage.from(BUCKET).remove(paths);
+    for (const path of paths) urlCache.delete(path);
   },
 
   /**
@@ -165,32 +183,67 @@ export const imageStorageService = {
   },
 
   /**
-   * Extract current image URLs from wine ai_details.
+   * True/false per slot, straight from ai_details - no network call. Use this
+   * where only presence matters (e.g. deciding whether to bother resolving
+   * URLs at all); use resolveImageUrls() to get something to put in <img src>.
    */
-  getImagesFromWine(wine: { ai_details?: any }): Record<ImageSlot, string | null> {
+  getImageFlags(wine: { ai_details?: any }): Record<ImageSlot, boolean> {
     const images = wine?.ai_details?.app?.images;
     return {
-      bottle: images?.bottle || null,
-      label: images?.label || null,
-      case: images?.case || null
+      bottle: Boolean(images?.bottle),
+      label: Boolean(images?.label),
+      case: Boolean(images?.case)
     };
   },
 
   /**
-   * Merge a new image URL into the ai_details.app.images object.
+   * Resolves every slot that has a photo to a signed URL, minted fresh (or
+   * served from the in-memory cache) rather than read back from storage - see
+   * the module comment on why a stored URL was the wrong thing to persist.
+   * Slots without a photo resolve to null without any network call.
+   */
+  async resolveImageUrls(wine: { id: string; user_id: string; ai_details?: any }): Promise<Record<ImageSlot, string | null>> {
+    const flags = imageStorageService.getImageFlags(wine);
+    const slots: ImageSlot[] = ['bottle', 'label', 'case'];
+
+    const entries = await Promise.all(
+      slots.map(async (slot): Promise<[ImageSlot, string | null]> => {
+        if (!flags[slot]) return [slot, null];
+
+        const path = buildPath(wine.user_id, wine.id, slot);
+        const cached = urlCache.get(path);
+        if (cached && cached.expiresAt > Date.now()) return [slot, cached.url];
+
+        try {
+          const url = await imageStorageService.getSignedUrl(wine.id, wine.user_id, slot);
+          urlCache.set(path, { url, expiresAt: Date.now() + URL_CACHE_TTL_MS });
+          return [slot, url];
+        } catch {
+          // A dangling flag with a missing/inaccessible file shouldn't break
+          // the whole page - it just renders as "no photo" for that slot.
+          return [slot, null];
+        }
+      })
+    );
+
+    return Object.fromEntries(entries) as Record<ImageSlot, string | null>;
+  },
+
+  /**
+   * Sets or clears the presence flag for a slot in ai_details.app.images.
    * Returns the updated ai_details.
    */
-  mergeImageUrl(
+  setImagePresence(
     aiDetails: Record<string, any> | undefined | null,
     slot: ImageSlot,
-    url: string | null
+    present: boolean
   ): Record<string, any> {
     const details = { ...(aiDetails || {}) };
     if (!details.app) details.app = {};
     if (!details.app.images) details.app.images = {};
 
-    if (url) {
-      details.app.images[slot] = url;
+    if (present) {
+      details.app.images[slot] = true;
     } else {
       delete details.app.images[slot];
     }

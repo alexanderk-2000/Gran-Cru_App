@@ -49,9 +49,12 @@ describe('settingsService.getModel', () => {
     await expect(settingsService.getModel()).resolves.toBe('nvidia/nemotron-nano-9b-v2');
   });
 
-  it('falls back to defaults if settings are missing', async () => {
+  // Regression (B21): the default used to be the bare string '5.2', which
+  // matches no id in the Settings screen's model list ('gpt-5.2') - a fresh
+  // account loaded with no tier visibly selected.
+  it('falls back to a default that actually matches a selectable model', async () => {
     vi.spyOn(settingsService, 'getUserSettings').mockResolvedValue(null);
 
-    await expect(settingsService.getModel()).resolves.toBe('5.2');
+    await expect(settingsService.getModel()).resolves.toBe('gpt-5.2');
   });
 });
