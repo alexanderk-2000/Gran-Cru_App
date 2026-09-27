@@ -391,3 +391,36 @@ Wenn nur zwei Wochen zur Verfügung stünden, in dieser Reihenfolge:
 3. Ein Erfassungsformular statt drei Wegen (2.1/2.2) — der häufigste Vorgang.
 4. Ein Reifemodell (3.4) und einheitliche Kategorien (1.3) — damit die App sich nicht selbst widerspricht.
 5. Export (6.1) — damit die Sammlung dem Nutzer gehört.
+
+---
+
+## 7. Nächste Stufe (2026-09-27)
+
+Phasen 1–3 sind vollständig umgesetzt, dazu 4.2 und der Großteil von Phase 6 (6.1, 6.2, 6.3, 6.5,
+6.6). Die App lügt nicht mehr übers Deployment, hat einen Erfassungsweg, eine Reifebewertung,
+atomare Bestandsänderungen und ein Kellerbuch. Was fehlt, ist nicht mehr „Grundfunktion kaputt",
+sondern „gute App → richtig gute App": der Genussplan bucht noch nichts, Dubletten lassen sich nur
+anzeigen statt zusammenführen, die Suche findet keine Rebsorte, die Einstellungen sprechen noch
+Entwicklersprache, und zwei alte Fundstellen (2.3, B28) sind seit Wochen als „später" markiert,
+ohne dass „später" je kam. Dieser Abschnitt schließt genau diese Lücken — bewusst ohne neue
+Datenbank-Migration on top von der noch nicht ausgerollten 3.3-RPC, um das Deployment-Risiko nicht
+zu stapeln.
+
+| # | Arbeitspaket | Aufwand | Risiko |
+| --- | --- | --- | --- |
+| 7.1 | **2.3 nachholen — keine rohen JSON-Textareas mehr im Bearbeiten-Formular.** `grapes`, `structure` und `scores` haben im Weindetail-Edit bereits echte Editoren; nur `aromas`/`pairings` sind noch JSON-Text. Dafür einen Chip-Editor nach dem Muster der bestehenden Rebsorten-Liste bauen. `ai_details_json`, `ai_sources_json`, `missing_fields_json` sind KI-Rohdaten, die kein Sammler von Hand editieren will — die kommen aus dem Editier-Formular komplett raus und bleiben nur lesbar (Quellen-Liste, Confidence-Badge — beides existiert in der Anzeige schon). | klein | niedrig |
+| 7.2 | **5.1 — Genussplan an den Keller anschließen.** „Getrunken" auf einer Instanz mit zugewiesenem Wein öffnet `OpenBottleDialog` (Bestand −1, Notiz, Bewertung) statt nur den Status umzuschalten; erst nach dem Speichern wechselt die Instanz auf „Genossen". `bottles_reserved` wird gegen den echten Bestand des zugewiesenen Weins geprüft und bei Überbuchung auf der Karte markiert. | mittel | niedrig |
+| 7.3 | **5.5 — Dubletten zusammenführen statt nur anzeigen.** Auf der bereits gefilterten Dublettenliste (`/inventory?issue=duplicates`) eine „Zusammenführen"-Aktion: Bestand summieren, Einstandspreis gewichtet neu berechnen, die überzählige Position in den Papierkorb (`deleted_at`) statt hart zu löschen — Verkostungsnotizen und Bestandsereignisse der zusammengeführten Position bleiben unangetastet erhalten (Soft-Delete löscht sie nicht, macht sie nur unsichtbar wie jede andere Löschung). Bewusst **kein** Umhängen von Fremdschlüsseln auf den Zielwein — das wäre ein Datenmigrationsproblem für sich. | mittel | niedrig |
+| 7.4 | **4.5 — Suche erweitern** um Rebsorte, Land, Appellation und Jahrgang (`InventoryPage.tsx`, heute nur Name/Region/Produzent/Unterkeller). | klein | niedrig |
+| 7.5 | **6.4 — Einstellungen für Sammler.** Modellwahl als „Schnell / Ausgewogen / Gründlich" statt Modell-IDs, keine Terminalbefehle oder `.env`-Pfade in der Oberfläche, Modellkatalog aus einer Quelle (Server-Endpoint statt hartkodierter Liste im Client, falls dort dupliziert). | mittel | niedrig |
+| 7.6 | **5.3 — Handlungsfähige Dashboard-Empfehlungen.** Jede Empfehlungszeile (Trinkfenster endet, kein Fenster hinterlegt, Dublette, fehlender Preis) bekommt eine direkte Aktion an der Zeile statt nur einen Link auf die gefilterte Liste — „Jetzt öffnen" ruft `OpenBottleDialog`, „Für Anlass einplanen" verlinkt in den Genussplan mit vorausgewähltem Wein. | mittel | niedrig |
+| 7.7 | **B28 nachholen — echte Kernweg-Tests.** Bisher deckt Playwright nur einen Screenshot-Rundgang ab (`ui-baseline.spec.ts`) und zwei Offline/Sync-Smoketests. Je ein E2E-Test für „Wein anlegen", „Flasche öffnen", „In Pocket verschieben" und „Genussplan-Instanz konsumieren" — das sind die vier Wege, die laut Plan-Ziel nicht still kaputtgehen dürfen. | mittel | niedrig |
+
+**Bewusst zurückgestellt, nicht vergessen:**
+
+- **4.1 (Flaschen als Objekte)** bleibt die einzige nicht-triviale Migration und bleibt zurückgestellt, bis die 3.3-RPC live auf der Produktivdatenbank läuft — sonst stapeln sich zwei ungetestete Migrationen im selben Fenster.
+- **5.4 (Wertverlauf)** braucht eine neue Tabelle (`wine_price_history`) und damit dieselbe Migrations-Vorsicht; kommt nach 4.1.
+- **5.6 (Nachkauf-Vorschläge)** und **6.7 (Fehlerüberwachung)** sind eigenständige, unabhängige Erweiterungen ohne Kopplung an die obige Liste — Kandidaten für die übernächste Runde, falls nach 7.1–7.7 noch Zeit bleibt.
+- **Performance/Bundle** wurde beim letzten `npm run build` überschlagen geprüft (größter Chunk `supabase-*.js` 215 kB, `react-*.js` 164 kB, `index-*.js` 170 kB, Routen sind bereits einzeln code-gesplittet) — kein akuter Handlungsbedarf, daher kein eigener Punkt in dieser Runde.
+
+**Fertig, wenn:** Ein im Genussplan als „Getrunken" markierter Wein taucht mit Bewertung im Kellerbuch auf und der Bestand stimmt. Zwei erkannte Dubletten lassen sich in einem Klick zu einer Position zusammenführen. Die Suche findet einen Wein über seine Rebsorte. Die Einstellungen enthalten keinen Modellnamen mehr, den man erst nachschlagen muss. Vier Kernwege sind durch je einen grünen E2E-Test abgesichert.
