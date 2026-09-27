@@ -1,19 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
+import { ensureAuthenticated } from './helpers/demoAuth.ts';
 
 const SCREENSHOT_DIR = path.resolve(process.cwd(), 'reports', 'ui-baseline');
-
-const ensureAuthenticated = async (page: import('@playwright/test').Page) => {
-  await page.goto('/#/', { waitUntil: 'domcontentloaded' });
-  const demoButton = page.getByRole('button', { name: /Demo-Modus nutzen/i });
-  if (await demoButton.isVisible()) {
-    await demoButton.click();
-    await expect(page.getByRole('heading', { name: /^Dein Keller$|Hauptkeller|Wunschliste/i })).toBeVisible({
-      timeout: 30_000
-    });
-  }
-};
 
 test.describe('UI baseline snapshots', () => {
   test.beforeAll(async () => {

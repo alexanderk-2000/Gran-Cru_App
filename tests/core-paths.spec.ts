@@ -1,0 +1,115 @@
+import { test, expect } from '@playwright/test';
+import { ensureAuthenticated } from './helpers/demoAuth.ts';
+
+/**
+ * Real user-journey coverage for the four paths that must not silently
+ * break (B28): add a wine, open a bottle, move it to a pocket, and consume
+ * a planned occasion. Before this, Playwright only took screenshots
+ * (ui-baseline.spec.ts) and checked the offline/reconnect lock screen
+ * (pwa.*.spec.ts) - none of them actually drove these flows to completion.
+ *
+ * Every test starts a fresh demo account (see helpers/demoAuth.ts), seeded
+ * with a handful of starter wines including "Château Margaux" 2015 - tests
+ * never depend on each other's state or on ordering.
+ */
+test.describe('Kernwege', () => {
+  test('legt einen neuen Wein von Hand an', async ({ page }) => {
+    await ensureAuthenticated(page);
+    await page.goto('/#/inventory', { waitUntil: 'networkidle' });
+
+    await page.getByRole('button', { name: /wein hinzufügen/i }).click();
+    await page.getByRole('button', { name: /von hand eintragen/i }).click();
+
+    const wineName = `E2E Testwein ${Date.now()}`;
+    await page.getByLabel('Name *').fill(wineName);
+    await page.getByRole('button', { name: /in den keller/i }).click();
+
+    await expect(page.getByText(new RegExp(`${wineName} wurde in den Keller gelegt`))).toBeVisible({
+      timeout: 15_000
+    });
+    await expect(page.getByRole('heading', { name: wineName, exact: true })).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('öffnet eine Flasche und bucht den Bestand ab', async ({ page }) => {
+    await ensureAuthenticated(page);
+    await page.goto('/#/inventory', { waitUntil: 'networkidle' });
+
+    const heading = page.getByRole('heading', { name: 'Château Margaux', exact: true });
+    await expect(heading).toBeVisible({ timeout: 15_000 });
+    const card = heading.locator('xpath=ancestor::div[contains(@class, "rounded-3xl")][1]');
+    await expect(card.getByText('6 Fl.')).toBeVisible();
+
+    await card.getByRole('button', { name: 'Öffnen' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Flasche öffnen' });
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await dialog.getByRole('button', { name: /öffnen & speichern/i }).click();
+
+    await expect(page.getByText(/Flasche gebucht/i)).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByText('5 Fl.')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('legt eine Pocket an und verschiebt eine Flasche dorthin', async ({ page }) => {
+    await ensureAuthenticated(page);
+    await page.goto('/#/inventory', { waitUntil: 'networkidle' });
+
+    const pocketName = `E2E Regal ${Date.now()}`;
+    await page.getByRole('button', { name: 'Pocket', exact: true }).click();
+    await page.getByPlaceholder('z. B. Bordeaux Collection').fill(pocketName);
+    await page.getByRole('button', { name: /anlegen/i }).click();
+    await expect(page.getByText(new RegExp(`Pocket "${pocketName}" wurde angelegt`))).toBeVisible({
+      timeout: 15_000
+    });
+
+    const heading = page.getByRole('heading', { name: 'Château Margaux', exact: true });
+    const card = heading.locator('xpath=ancestor::div[contains(@class, "rounded-3xl")][1]');
+    await card.getByRole('button', { name: 'Verschieben' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'In Pocket verschieben' });
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await dialog.getByRole('button', { name: pocketName, exact: true }).click();
+
+    await expect(page.getByText(new RegExp(`liegt jetzt in ${pocketName}`))).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByText(pocketName)).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('plant einen Anlass und konsumiert die Instanz mit Bestandsabgang', async ({ page }) => {
+    await ensureAuthenticated(page);
+    await page.goto('/#/genussplan', { waitUntil: 'networkidle' });
+
+    await page.getByRole('button', { name: /serie planen/i }).click();
+    await page.getByPlaceholder('z.B. Monatliche Raritätenprobe').fill('E2E Verkostung');
+
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateInputs = page.locator('input[type="date"]');
+    await dateInputs.nth(0).fill(tomorrow); // Startdatum
+    await dateInputs.nth(1).fill(tomorrow); // Enddatum
+
+    await page.getByRole('button', { name: /termine erstellen/i }).click();
+
+    // Saving auto-opens the wine-pool step (auto-assign by drink window) -
+    // not useful here since Château Margaux's window starts in 2030. The
+    // direct per-instance "Wein zuordnen" picker below assigns any wine
+    // regardless of window, so the pool modal is just dismissed.
+    await expect(page.getByRole('dialog', { name: /Wein-Pool/i })).toBeVisible({ timeout: 15_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: /Wein-Pool/i })).not.toBeVisible();
+
+    await page.getByRole('button', { name: /wein zuordnen/i }).click();
+    const select = page.getByRole('combobox');
+    const marginauxOption = select.locator('option', { hasText: 'Château Margaux' });
+    const optionValue = await marginauxOption.getAttribute('value');
+    await select.selectOption(optionValue!);
+
+    await expect(page.getByText(/Château Margaux/)).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole('button', { name: /^Getrunken$/i }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Flasche öffnen' });
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await dialog.getByRole('button', { name: /öffnen & speichern/i }).click();
+
+    await expect(page.getByText(/Anlass als genossen vermerkt/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^Genossen$/).first()).toBeVisible({ timeout: 10_000 });
+  });
+});
