@@ -22,6 +22,7 @@ import {
 } from '../../domain/wine/normalization.ts';
 import { validateWineInput } from '../../domain/wine/validation.ts';
 import { findLikelyDuplicates, groupLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
+import { matchesSearchTerm } from '../../domain/wine/search.ts';
 import { loadInventoryViewPreferences, saveInventoryViewPreferences, type InventorySort } from '../../services/inventoryViewPreferences.ts';
 import { useFocusTrap } from '../../hooks/useFocusTrap.ts';
 
@@ -370,10 +371,7 @@ export const Inventory: React.FC<InventoryProps> = ({
       if (presetView === 'white' && getWineFamily(wine) !== 'white') return false;
       if (presetView === 'sparkling' && getWineFamily(wine) !== 'sparkling') return false;
       if (presetView === 'fortified' && getWineFamily(wine) !== 'fortified') return false;
-      const matchesSearch = wine.name.toLowerCase().includes(search.toLowerCase()) ||
-        wine.region.toLowerCase().includes(search.toLowerCase()) ||
-        wine.producer?.toLowerCase().includes(search.toLowerCase()) ||
-        wine.subcellar?.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = matchesSearchTerm(wine, search);
       // An issue view answers a question the dashboard asked ("which bottles
       // have no price?"). Persisted category/status/pocket filters from an
       // earlier visit would silently hide part of that answer, so they are
