@@ -111,6 +111,11 @@ test.describe('Kernwege', () => {
       timeout: 20_000
     });
 
+    // Creating a pocket switches the current filter to it (InventoryPage.tsx
+    // createPocket: setSubcellarFilter(normalizedName)) - the wine is still
+    // in "Hauptkeller", so its card just disappeared from view. Switch back.
+    await openMainCellarGrid(page);
+
     const heading = page.getByRole('heading', { name: wineName, exact: true });
     const card = heading.locator('xpath=ancestor::div[contains(@class, "rounded-3xl")][1]');
     const moveButton = card.getByRole('button', { name: 'Verschieben' });
