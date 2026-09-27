@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { settingsService, UserSettings, AIProvider } from '../services/settings.ts';
-import { Cpu, Save, CheckCircle, AlertCircle, Sparkles, Server, ExternalLink, Download, RefreshCcw, Smartphone } from 'lucide-react';
+import { Cpu, Save, CheckCircle, AlertCircle, Server, ExternalLink, Download, RefreshCcw, Smartphone } from 'lucide-react';
 import { requestInstallPrompt, subscribeInstallPrompt, hideIOSInstallInstructions, type InstallPromptState } from '../services/pwa/installPrompt.ts';
 import { applySwUpdate, subscribeSwUpdateState, type SwUpdateState } from '../services/pwa/swRegistration.ts';
 import { getSyncStateSnapshot } from '../services/pwa/offlineDb.ts';
@@ -10,6 +10,45 @@ import { runSyncCycle } from '../services/pwa/syncEngine.ts';
 import { storageService } from '../services/storage.ts';
 import { checkApiHealth } from '../services/apiHealth.ts';
 import { exportService } from '../services/exportService.ts';
+
+interface ModelTierOption {
+    tier: 'fast' | 'balanced' | 'thorough';
+    label: string;
+    description: string;
+    provider: AIProvider;
+    model: string;
+}
+
+// One tier per real choice a collector has to make, instead of three
+// provider tabs with 5-6 raw model IDs each (B21) - "gpt-5.2" or
+// "nvidia/llama-3.1-nemotron-70b-instruct" says nothing to someone who just
+// wants a wine looked up. Each tier maps to one concrete, already-supported
+// (provider, model) pair from server/src/ai/providers/modelCatalog.js, so
+// saving/loading stays compatible with the existing ai_provider/*_model
+// columns - only this screen's presentation changes.
+const MODEL_TIERS: ModelTierOption[] = [
+    {
+        tier: 'fast',
+        label: 'Schnell',
+        description: 'Für schnelle Antworten, wenn es nicht auf jedes Detail ankommt.',
+        provider: 'openrouter',
+        model: 'nvidia/nemotron-nano-9b-v2'
+    },
+    {
+        tier: 'balanced',
+        label: 'Ausgewogen',
+        description: 'Guter Mittelweg aus Tempo und Recherchetiefe - die empfohlene Wahl.',
+        provider: 'openai',
+        model: 'gpt-5.2'
+    },
+    {
+        tier: 'thorough',
+        label: 'Gründlich',
+        description: 'Das gründlichste verfügbare Modell, für Recherchen, bei denen jedes Detail zählt.',
+        provider: 'openrouter',
+        model: 'nvidia/llama-3.1-nemotron-70b-instruct'
+    }
+];
 
 export const Settings: React.FC = () => {
     const [, setSettings] = useState<UserSettings | null>(null);
@@ -46,28 +85,13 @@ export const Settings: React.FC = () => {
     const [exportState, setExportState] = useState<'idle' | 'csv' | 'json'>('idle');
     const [exportMessage, setExportMessage] = useState<string | null>(null);
 
-    const geminiModels = [
-        { id: 'gemini-pro-latest', name: 'Gemini Pro (Latest)', description: 'Höchste Qualität für Recherche' },
-        { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro (Preview)', description: 'Neuste Pro-Generation' },
-        { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (Preview)', description: 'Schneller Flash-Modus' },
-        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Starkes Reasoning' },
-        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Schnell & günstig' },
-        { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Sehr günstig' },
-    ];
-
-    const openaiModels = [
-        { id: 'gpt-5.2', name: 'GPT-5.2 (Search)', description: 'Standard mit Web-Search' },
-        { id: 'gpt-5.1', name: 'GPT-5.1', description: 'Fallback 1' },
-        { id: 'o3', name: 'o3', description: 'Fallback 2' },
-        { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fallback 3' },
-        { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Fallback 4' }
-    ];
-
-    const openrouterModels = [
-        { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B', description: 'Größtes Modell, mit Web-Search' },
-        { id: 'nvidia/nemotron-nano-9b-v2', name: 'Nemotron Nano 9B', description: 'Schnell & günstig' },
-        { id: 'nvidia/nemotron-nano-12b-v2-vl', name: 'Nemotron Nano 12B VL', description: 'Mit Bildverständnis' }
-    ];
+    // One tier per real choice a collector has to make, instead of three
+    // provider tabs with 5-6 raw model IDs each (B21) - "gpt-5.2" or
+    // "nvidia/llama-3.1-nemotron-70b-instruct" says nothing to someone who
+    // just wants a wine looked up. Each tier still maps to one concrete,
+    // already-supported (provider, model) pair from server/src/ai/providers/
+    // modelCatalog.js, so saving/loading stays compatible with the existing
+    // ai_provider/*_model columns.
 
 
     useEffect(() => {
@@ -231,7 +255,8 @@ export const Settings: React.FC = () => {
                                         andere - Keller, Bestand, Planung - funktioniert davon unabhängig weiter.
                                     </p>
                                     <p className="text-red-700">
-                                        In der lokalen Entwicklung startet ihn <code className="bg-red-100 px-1.5 py-0.5 rounded font-mono text-xs">npm run server</code>.
+                                        Versuche es später erneut. Bleibt es dabei, prüfe die Konfiguration in den
+                                        Projekteinstellungen des Deployments.
                                     </p>
                                 </div>
                             </div>
@@ -242,13 +267,12 @@ export const Settings: React.FC = () => {
                         <div className="flex items-start gap-3">
                             <AlertCircle className="w-5 h-5 text-gold shrink-0 mt-0.5" />
                             <div className="text-sm text-stone-gray">
-                                <p className="font-bold text-charcoal mb-1">API Key konfigurieren</p>
+                                <p className="font-bold text-charcoal mb-1">KI-Zugang</p>
                                 <p className="mb-2">
-                                    Gemini, GPT und Nemotron laufen alle über einen einzigen OpenRouter-Key. Trage ihn sicher im Backend ein:
+                                    Alle drei Stufen laufen über einen einzigen OpenRouter-Schlüssel. Wer für das
+                                    Deployment zuständig ist, hinterlegt ihn dort in den Projekteinstellungen - im
+                                    täglichen Gebrauch ist hier nichts einzustellen.
                                 </p>
-                                <code className="bg-charcoal/5 px-3 py-2 rounded-lg block font-mono text-xs mb-3">
-                                    server/.env
-                                </code>
                                 <div className="flex gap-4 mt-3">
                                     <a
                                         href="https://openrouter.ai/keys"
@@ -401,92 +425,32 @@ export const Settings: React.FC = () => {
                     </div>
                 </section>
 
-                {/* Provider Selection */}
+                {/* Model Tier Selection */}
                 <section className="bg-white rounded-[2.5rem] border border-burgundy/5 p-10 shadow-premium mb-8">
                     <div className="flex items-center gap-4 mb-8 pb-6 border-b border-alabaster">
-                        <div className="p-3 bg-burgundy/5 rounded-2xl text-burgundy">
-                            <Sparkles className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h2 className="font-serif text-2xl font-bold text-charcoal">KI-Provider</h2>
-                            <p className="text-sm text-stone-gray mt-1">Wähle dein bevorzugtes Modell - alle laufen über OpenRouter</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4">
-                        <button
-                            onClick={() => setProvider('gemini')}
-                            className={`p-6 rounded-2xl border-2 transition-all ${provider === 'gemini'
-                                ? 'border-burgundy bg-burgundy/5'
-                                : 'border-burgundy/10 hover:border-burgundy/30'
-                                }`}
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-charcoal">Google Gemini</h3>
-                                {provider === 'gemini' && <CheckCircle className="w-5 h-5 text-burgundy" />}
-                            </div>
-                            <p className="text-sm text-stone-gray text-left">Gemini Modelle via OpenRouter (Web-Search, Fallback aktiv)</p>
-                        </button>
-
-                        <button
-                            onClick={() => setProvider('openai')}
-                            className={`p-6 rounded-2xl border-2 transition-all ${provider === 'openai'
-                                ? 'border-burgundy bg-burgundy/5'
-                                : 'border-burgundy/10 hover:border-burgundy/30'
-                                }`}
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-charcoal">OpenAI</h3>
-                                {provider === 'openai' && <CheckCircle className="w-5 h-5 text-burgundy" />}
-                            </div>
-                            <p className="text-sm text-stone-gray text-left">GPT Modelle via OpenRouter (Web-Search, Fallback aktiv)</p>
-                        </button>
-
-                        <button
-                            onClick={() => setProvider('openrouter')}
-                            className={`p-6 rounded-2xl border-2 transition-all ${provider === 'openrouter'
-                                ? 'border-burgundy bg-burgundy/5'
-                                : 'border-burgundy/10 hover:border-burgundy/30'
-                                }`}
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-charcoal">Nemotron</h3>
-                                {provider === 'openrouter' && <CheckCircle className="w-5 h-5 text-burgundy" />}
-                            </div>
-                            <p className="text-sm text-stone-gray text-left">NVIDIA Nemotron via OpenRouter (Web-Search, Fallback aktiv)</p>
-                        </button>
-                    </div>
-                </section>
-
-                {/* Model Selection */}
-                <section className="bg-white rounded-[2.5rem] border border-burgundy/5 p-10 shadow-premium mb-8">
-                    <div className="flex items-center gap-4 mb-8 pb-6 border-alabaster">
                         <div className="p-3 bg-burgundy/5 rounded-2xl text-burgundy">
                             <Cpu className="w-6 h-6" />
                         </div>
                         <div>
-                            <h2 className="font-serif text-2xl font-bold text-charcoal">KI-Modell</h2>
-                            <p className="text-sm text-stone-gray mt-1">
-                                Wähle das {provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'Nemotron'}-Modell für Weinanalysen
-                            </p>
+                            <h2 className="font-serif text-2xl font-bold text-charcoal">KI-Recherche</h2>
+                            <p className="text-sm text-stone-gray mt-1">Wie gründlich soll die Recherche zu einem Wein sein?</p>
                         </div>
                     </div>
 
                     <div className="space-y-4">
-                        {(provider === 'gemini' ? geminiModels : provider === 'openai' ? openaiModels : openrouterModels).map((model) => {
-                            const isSelected = provider === 'gemini'
-                                ? geminiModel === model.id
-                                : provider === 'openai'
-                                    ? openaiModel === model.id
-                                    : openrouterModel === model.id;
+                        {MODEL_TIERS.map((option) => {
+                            const activeModel =
+                                provider === 'gemini' ? geminiModel : provider === 'openai' ? openaiModel : openrouterModel;
+                            const isSelected = provider === option.provider && activeModel === option.model;
 
                             return (
                                 <button
-                                    key={model.id}
+                                    key={option.tier}
                                     onClick={() => {
-                                        if (provider === 'gemini') setGeminiModel(model.id);
-                                        else if (provider === 'openai') setOpenaiModel(model.id);
-                                        else setOpenrouterModel(model.id);
+                                        setProvider(option.provider);
+                                        if (option.provider === 'gemini') setGeminiModel(option.model);
+                                        else if (option.provider === 'openai') setOpenaiModel(option.model);
+                                        else setOpenrouterModel(option.model);
                                     }}
                                     className={`w-full p-6 rounded-2xl border-2 transition-all text-left ${isSelected
                                         ? 'border-burgundy bg-burgundy/5'
@@ -495,8 +459,8 @@ export const Settings: React.FC = () => {
                                 >
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-bold text-charcoal mb-1">{model.name}</h3>
-                                            <p className="text-sm text-stone-gray">{model.description}</p>
+                                            <h3 className="font-bold text-charcoal mb-1">{option.label}</h3>
+                                            <p className="text-sm text-stone-gray">{option.description}</p>
                                         </div>
                                         {isSelected && (
                                             <CheckCircle className="w-6 h-6 text-burgundy shrink-0" />

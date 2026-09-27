@@ -18,10 +18,15 @@ export interface UserSettings {
 
 const LOCAL_STORAGE_KEY = 'wine_vault_settings';
 
+// Default tier is "Ausgewogen" (openai/gpt-5.2) - keep in sync with the
+// "balanced" entry in features/Settings.tsx's MODEL_TIERS. This used to be
+// 'openai_model: "5.2"', which matched nothing in the UI's model list
+// ('gpt-5.2') - a fresh account's settings loaded with no model visibly
+// selected (B21).
 const DEFAULT_SETTINGS: Omit<UserSettings, 'user_id' | 'created_at' | 'updated_at'> = {
     ai_provider: 'openai',
     gemini_model: 'gemini-pro-latest',
-    openai_model: '5.2',
+    openai_model: 'gpt-5.2',
     openrouter_model: 'nvidia/llama-3.1-nemotron-70b-instruct',
     currency: 'EUR',
     language: 'de',
