@@ -18,12 +18,28 @@ import { ensureAuthenticated } from './helpers/demoAuth.ts';
  * than on a warm dev machine - the default 60s test timeout was too tight
  * for that specific combination the first time this ran in CI.
  */
+
+/**
+ * Landing on /inventory with no pocket picked shows the "Hauptkeller
+ * Dashboard" (pocket tiles), not the flat wine grid - InventoryPage only
+ * renders wine cards once subcellarFilter is something other than the
+ * default 'All' (see showPocketDashboard). A fresh account has no custom
+ * pockets, so the one tile that exists is "Hauptkeller" itself; the same
+ * label also appears as a quick-filter chip above the dashboard section,
+ * and clicking either does the same thing (sets subcellarFilter), so the
+ * first match is picked without needing to tell them apart.
+ */
+const openMainCellarGrid = async (page: import('@playwright/test').Page) => {
+  await page.getByRole('button', { name: /Hauptkeller/i }).first().click();
+};
+
 test.describe('Kernwege', () => {
   test.describe.configure({ timeout: 90_000 });
 
   test('legt einen neuen Wein von Hand an', async ({ page }) => {
     await ensureAuthenticated(page);
     await page.goto('/#/inventory', { waitUntil: 'networkidle' });
+    await openMainCellarGrid(page);
 
     const addButton = page.getByRole('button', { name: /wein hinzufügen/i });
     await expect(addButton).toBeVisible({ timeout: 30_000 });
@@ -43,6 +59,7 @@ test.describe('Kernwege', () => {
   test('öffnet eine Flasche und bucht den Bestand ab', async ({ page }) => {
     await ensureAuthenticated(page);
     await page.goto('/#/inventory', { waitUntil: 'networkidle' });
+    await openMainCellarGrid(page);
 
     const heading = page.getByRole('heading', { name: 'Château Margaux', exact: true });
     await expect(heading).toBeVisible({ timeout: 30_000 });
@@ -64,6 +81,7 @@ test.describe('Kernwege', () => {
   test('legt eine Pocket an und verschiebt eine Flasche dorthin', async ({ page }) => {
     await ensureAuthenticated(page);
     await page.goto('/#/inventory', { waitUntil: 'networkidle' });
+    await openMainCellarGrid(page);
 
     const pocketButton = page.getByRole('button', { name: 'Pocket', exact: true });
     await expect(pocketButton).toBeVisible({ timeout: 30_000 });
@@ -86,8 +104,12 @@ test.describe('Kernwege', () => {
     await expect(dialog).toBeVisible({ timeout: 10_000 });
     await dialog.getByRole('button', { name: pocketName, exact: true }).click();
 
-    await expect(page.getByText(new RegExp(`liegt jetzt in ${pocketName}`))).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText(pocketName)).toBeVisible({ timeout: 10_000 });
+    // The card is filtered out of this view once moved - the current filter
+    // is still "Hauptkeller", and the wine no longer belongs to it. The
+    // success message (naming the wine and the destination) is the proof.
+    await expect(
+      page.getByText(new RegExp(`Château Margaux liegt jetzt in ${pocketName}`))
+    ).toBeVisible({ timeout: 20_000 });
   });
 
   test('plant einen Anlass und konsumiert die Instanz mit Bestandsabgang', async ({ page }) => {
