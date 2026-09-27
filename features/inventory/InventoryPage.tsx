@@ -8,6 +8,7 @@ import { PurchaseDialog } from '../../components/PurchaseDialog.tsx';
 import { AddWineDialog, type AddWineSeed } from '../../components/AddWineDialog.tsx';
 import { OpenBottleDialog } from '../../components/OpenBottleDialog.tsx';
 import { MoveToPocketDialog } from '../../components/MoveToPocketDialog.tsx';
+import { MergeDuplicatesDialog } from '../../components/MergeDuplicatesDialog.tsx';
 import { useToast } from '../../components/Feedback.tsx';
 import { Search, Plus, X, Loader2, Upload, ScanBarcode } from 'lucide-react';
 import { getBottleUnitValue, getWineFamily, getWineStatus, hasKnownPrice } from '../../utils.ts';
@@ -20,7 +21,7 @@ import {
   normalizeSubcellar,
 } from '../../domain/wine/normalization.ts';
 import { validateWineInput } from '../../domain/wine/validation.ts';
-import { findLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
+import { findLikelyDuplicates, groupLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
 import { loadInventoryViewPreferences, saveInventoryViewPreferences, type InventorySort } from '../../services/inventoryViewPreferences.ts';
 import { useFocusTrap } from '../../hooks/useFocusTrap.ts';
 
@@ -78,6 +79,7 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [isMovingWine, setIsMovingWine] = useState(false);
   const [bottleToOpen, setBottleToOpen] = useState<Wine | null>(null);
   const [wineToMove, setWineToMove] = useState<Wine | null>(null);
+  const [mergeGroup, setMergeGroup] = useState<Wine[] | null>(null);
   const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -325,20 +327,15 @@ export const Inventory: React.FC<InventoryProps> = ({
     await importWinesFromJsonText(jsonCodeInput);
   };
 
-  const duplicateWineIds = useMemo(() => {
-    if (presetIssue !== 'duplicates') return new Set<string>();
-    const inventory = wines.filter((wine) => wine.wishlist === wishlistOnly);
-    const ids = new Set<string>();
-    for (const wine of inventory) {
-      if (ids.has(wine.id)) continue;
-      const matches = findLikelyDuplicates(wine, inventory, { excludeId: wine.id });
-      if (matches.length > 0) {
-        ids.add(wine.id);
-        for (const match of matches) ids.add(match.id);
-      }
-    }
-    return ids;
+  const duplicateGroups = useMemo(() => {
+    if (presetIssue !== 'duplicates') return [];
+    return groupLikelyDuplicates(wines.filter((wine) => wine.wishlist === wishlistOnly));
   }, [presetIssue, wines, wishlistOnly]);
+
+  const duplicateWineIds = useMemo(
+    () => new Set(duplicateGroups.flat().map((wine) => wine.id)),
+    [duplicateGroups]
+  );
 
   const matchesIssue = useCallback(
     (wine: Wine): boolean => {
@@ -777,6 +774,33 @@ export const Inventory: React.FC<InventoryProps> = ({
         </div>
       )}
 
+      {duplicateGroups.length > 0 && (
+        <section className="space-y-3 rounded-[1.8rem] border-2 border-burgundy/5 bg-white p-4 shadow-premium">
+          <p className="text-[11px] font-black uppercase tracking-widest text-stone-gray">
+            {duplicateGroups.length === 1 ? '1 Dublettengruppe' : `${duplicateGroups.length} Dublettengruppen`} gefunden
+          </p>
+          <div className="space-y-2">
+            {duplicateGroups.map((group) => (
+              <div
+                key={group.map((wine) => wine.id).join('-')}
+                className="flex flex-col gap-2 rounded-xl border border-stone-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <p className="text-sm text-charcoal">
+                  {group.map((wine) => `${wine.vintage} ${wine.name} (${wine.quantity} Fl.)`).join(' · ')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setMergeGroup(group)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-burgundy/20 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-burgundy transition-all hover:border-burgundy/40 hover:bg-burgundy/5"
+                >
+                  Zusammenführen
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {showPocketDashboard ? (
         <section className="rounded-[2rem] border-2 border-burgundy/5 bg-white p-6 shadow-premium">
           <div className="mb-5 flex flex-col gap-1">
@@ -876,6 +900,17 @@ export const Inventory: React.FC<InventoryProps> = ({
         onClose={() => setWineToMove(null)}
         onMoved={(message) => {
           setWineToMove(null);
+          setFeedback(message);
+          onWineUpdate();
+        }}
+      />
+
+      <MergeDuplicatesDialog
+        open={mergeGroup !== null}
+        group={mergeGroup}
+        onClose={() => setMergeGroup(null)}
+        onMerged={(message) => {
+          setMergeGroup(null);
           setFeedback(message);
           onWineUpdate();
         }}
