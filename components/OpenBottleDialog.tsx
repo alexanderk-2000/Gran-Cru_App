@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { GlassWater, Loader2, Star, X } from 'lucide-react';
 import type { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
+import { useFocusTrap } from '../hooks/useFocusTrap.ts';
 
 /**
  * One dialog for "I opened this bottle": stock, rating and note in a single
@@ -65,6 +66,8 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
     }
   }, [open, defaultConsume, wine]);
 
+  const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose);
+
   if (!open || !wine) return null;
 
   const hasNote = rating > 0 || note.trim().length > 0;
@@ -104,6 +107,7 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[120] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
@@ -218,7 +222,11 @@ export const OpenBottleDialog: React.FC<OpenBottleDialogProps> = ({
             />
           </div>
 
-          {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
+          {error && (
+            <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
+              {error}
+            </p>
+          )}
         </div>
 
         <div className="flex gap-3 border-t border-alabaster px-6 py-4">

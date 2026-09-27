@@ -25,6 +25,7 @@ import { imageStorageService, type ImageSlot } from '../../services/imageStorage
 import { evaluateWineDrinkability, formatCurrency } from '../../utils.ts';
 import { BottleFormat, Category, CriticScore, Tasting, Wine, WineDetails, WineType } from '../../types.ts';
 import { WINE_CATEGORIES } from '../../constants.ts';
+import { useFocusTrap } from '../../hooks/useFocusTrap.ts';
 
 const LUXURY_BG = '#FDFBF7';
 const ACCENT_BURGUNDY = '#5B1E2D';
@@ -1558,55 +1559,8 @@ const Dialog = memo(function Dialog({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const onCloseRef = useRef(onClose);
+  const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose);
   const titleId = useMemo(() => `dialog-${title.toLowerCase().replace(/\s+/g, '-')}`, [title]);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const node = dialogRef.current;
-    if (!node) return undefined;
-
-    const selectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const focusables = Array.from(node.querySelectorAll<HTMLElement>(selectors)).filter((entry) => !entry.hasAttribute('disabled'));
-    const fieldFocusables = focusables.filter((entry) => {
-      const tag = entry.tagName.toLowerCase();
-      return tag === 'input' || tag === 'select' || tag === 'textarea';
-    });
-    const first = fieldFocusables[0] || focusables[0];
-    first?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-
-      if (event.key !== 'Tab') return;
-      if (focusables.length === 0) return;
-
-      const activeElement = document.activeElement;
-      const firstFocusable = focusables[0];
-      const lastFocusable = focusables[focusables.length - 1];
-
-      if (!event.shiftKey && activeElement === lastFocusable) {
-        event.preventDefault();
-        firstFocusable.focus();
-      } else if (event.shiftKey && activeElement === firstFocusable) {
-        event.preventDefault();
-        lastFocusable.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open]);
 
   if (!open) return null;
 

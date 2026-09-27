@@ -3,6 +3,7 @@ import { Loader2, Search, ShoppingCart, X } from 'lucide-react';
 import type { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
 import { formatCurrency } from '../utils.ts';
+import { useFocusTrap } from '../hooks/useFocusTrap.ts';
 
 /**
  * Records a repeat purchase for a wine already in the cellar.
@@ -60,6 +61,8 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
     if (selected) setPricePerBottle(String(selected.purchase_price ?? 0));
   }, [selected]);
 
+  const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose);
+
   if (!open) return null;
 
   const parsedQuantity = Math.max(1, Math.round(Number(quantity) || 0));
@@ -86,7 +89,11 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[110] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Nachkauf erfassen"
       onClick={(event) => {
         if (event.target === event.currentTarget && !isSaving) onClose();
       }}
@@ -212,7 +219,11 @@ export const PurchaseDialog: React.FC<PurchaseDialogProps> = ({ open, wines, onC
             </>
           )}
 
-          {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
+          {error && (
+            <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
+              {error}
+            </p>
+          )}
         </div>
 
         <div className="flex gap-3 border-t border-alabaster px-6 py-4">

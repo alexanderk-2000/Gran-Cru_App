@@ -262,35 +262,14 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 - **Bewusst nicht umgesetzt:** „Löschungen mit Rückgängig-Toast statt Bestätigungsdialog" aus dem ursprünglichen Plantext. Ein Bestätigungsdialog vor der Papierkorb-Verschiebung ist für harte Löschungen (endgültiges Löschen, Papierkorb leeren) weiterhin die sicherere Wahl; für die weichen Löschungen (in den Papierkorb) ist ein Rückgängig-Toast ein sinnvoller nächster Schritt, aber ein eigenständiger UX-Wechsel, der eine eigene Betrachtung verdient statt als Nebeneffekt dieser Umstellung zu passieren.
 - Sechs Testfälle in `tests/unit/feedback.test.tsx` (Toast-Anzeige, Auto-Dismiss, manuelles Schließen, Confirm-Auflösung in beide Richtungen, Fehler bei fehlendem Provider).
 
-#### Umsetzungsnotizen zu 6.2
+#### Umsetzungsnotizen zu 6.6
 
-- `services/imageStorage.ts` speichert pro Foto-Slot jetzt ein reines Vorhanden-Flag (`ai_details.app.images.bottle = true`) statt der Signed URL selbst. Der Speicherpfad ist aus `(user_id, wine_id, slot)` vollständig deterministisch (`buildPath`), muss also gar nicht persistiert werden — beim Anzeigen wird immer frisch signiert.
-- **Rückwirkend repariert, ohne Migrationsskript:** Jeder Wahrheitswert im Slot gilt als „vorhanden, jetzt neu signieren" — auch die alten, irgendwann ablaufenden URL-Strings aus bestehenden Datensätzen. Damit funktionieren auch heute schon abgelaufene Fotos wieder, sobald sie das nächste Mal angezeigt werden, ohne dass jemand die Datenbank anfassen muss.
-- Neue Funktionen: `getImageFlags` (synchron, keine Netzwerkanfrage — reine Präsenzprüfung) und `resolveImageUrls` (asynchron, signiert nur die Slots mit gesetztem Flag, mit 30-Minuten-In-Memory-Cache gegen wiederholtes Signieren bei Re-Renders). `mergeImageUrl` → `setImagePresence`.
-- `WineDetailPage.tsx` und `WineCard.tsx` lösen die Anzeige-URL jetzt per `useEffect` auf, statt sie synchron aus dem Datensatz zu lesen — bei `WineCard` wird das ganz übersprungen, wenn kein Slot ein Flag gesetzt hat (der Normalfall für die meisten Weine).
-- Neun Testfälle in `tests/unit/imageStorage.test.ts`, darunter explizit die Rückwärtskompatibilität mit alten URL-Strings und dass ein fehlgeschlagenes Signieren die Seite nicht zum Absturz bringt.
-
-#### Umsetzungsnotizen zu 6.5 (plus Lesbarkeit als Vorgriff auf 6.6)
-
-- **Anrede vereinheitlicht:** Alle verbliebenen „Sie/Ihre/Ihnen"-Stellen (Auth-Formular, Scanner-Fehlermeldungen, Dashboard-Leerzustand, Zeitachse, Genussplan-Kopf und -Leerzustand, Konfigurationsfehler-Screen) auf „du" umgestellt — der App-Code war zu über 90 % schon „du", diese Reste stachen heraus.
-- **Bankmetaphern entfernt:** „Portfolio" als Dashboard-Überschrift → „Dein Keller" (Untertitel entsprechend angepasst, damit er sich nicht mit der neuen Überschrift wiederholt); „Vault & Portfolio" in der Seitenleiste → „Private Weinsammlung"; „Premium Kellerverwaltung & Asset-Portfolio" im Login → „Deine private Weinsammlung, sorgfältig geführt"; Pockets werden nicht mehr als „Unterkonten"/„Unterkonto" erklärt, sondern als „eigene Bereiche innerhalb deines Kellers" (Regal, Kühlschrank o. Ä.).
-- Ein Playwright-Baseline-Test verankerte den alten Wortlaut (`/^Portfolio$|Hauptkeller|Wunschliste/i` als Dashboard-Erkennungsmerkmal nach dem Demo-Login) — auf `Dein Keller` aktualisiert, sonst wäre der Test am eigenen Umbenennen zerbrochen.
-- **Zusätzlich (Lesbarkeit, greift 6.6 vor):** Die durchgängig verwendeten 9–10-px-Versal-Labels (Filterbeschriftungen, KPI-Eyebrows, Button-Mikrotext — 98 Fundstellen in 20 Dateien) sind app-weit um eine Stufe angehoben (8→9, 9→10, 10→11 px), einheitlich per Skript in einem Durchgang ersetzt, damit keine Kaskade entsteht. Bewusst nicht angetastet: `tracking-widest`/`tracking-[0.14em]` (Laufweite) und `font-black` (Schriftschnitt) — das ist Teil der bewussten Formsprache der App und eine reine Größenkorrektur genügt für den Lesbarkeitsgewinn.
-
-#### Umsetzungsnotizen zu 4.2
-
-#### Umsetzungsnotizen zu 4.2
-
-#### Umsetzungsnotizen zu 6.5 (plus Lesbarkeit als Vorgriff auf 6.6)
-
-- **Anrede vereinheitlicht:** Alle verbliebenen „Sie/Ihre/Ihnen"-Stellen (Auth-Formular, Scanner-Fehlermeldungen, Dashboard-Leerzustand, Zeitachse, Genussplan-Kopf und -Leerzustand, Konfigurationsfehler-Screen) auf „du" umgestellt — der App-Code war zu über 90 % schon „du", diese Reste stachen heraus.
-- **Bankmetaphern entfernt:** „Portfolio" als Dashboard-Überschrift → „Dein Keller" (Untertitel entsprechend angepasst, damit er sich nicht mit der neuen Überschrift wiederholt); „Vault & Portfolio" in der Seitenleiste → „Private Weinsammlung"; „Premium Kellerverwaltung & Asset-Portfolio" im Login → „Deine private Weinsammlung, sorgfältig geführt"; Pockets werden nicht mehr als „Unterkonten"/„Unterkonto" erklärt, sondern als „eigene Bereiche innerhalb deines Kellers" (Regal, Kühlschrank o. Ä.).
-- Ein Playwright-Baseline-Test verankerte den alten Wortlaut (`/^Portfolio$|Hauptkeller|Wunschliste/i` als Dashboard-Erkennungsmerkmal nach dem Demo-Login) — auf `Dein Keller` aktualisiert, sonst wäre der Test am eigenen Umbenennen zerbrochen.
-- **Zusätzlich (Lesbarkeit, greift 6.6 vor):** Die durchgängig verwendeten 9–10-px-Versal-Labels (Filterbeschriftungen, KPI-Eyebrows, Button-Mikrotext — 98 Fundstellen in 20 Dateien) sind app-weit um eine Stufe angehoben (8→9, 9→10, 10→11 px), einheitlich per Skript in einem Durchgang ersetzt, damit keine Kaskade entsteht. Bewusst nicht angetastet: `tracking-widest`/`tracking-[0.14em]` (Laufweite) und `font-black` (Schriftschnitt) — das ist Teil der bewussten Formsprache der App und eine reine Größenkorrektur genügt für den Lesbarkeitsgewinn.
-
-#### Umsetzungsnotizen zu 4.2
-
-#### Umsetzungsnotizen zu 4.2
+- Neu `hooks/useFocusTrap.ts`: eine geteilte Hook, extrahiert aus dem bislang einzigen Fokus-Trap der App (dem `Dialog` im Weindetail, B24) — Anfangsfokus aufs erste Eingabefeld, `Tab`/`Shift+Tab` bleibt innerhalb des Dialogs gefangen, `Escape` schließt. `WineDetailPage.tsx`s eigener `Dialog` nutzt jetzt selbst diese Hook statt seiner eigenen Kopie der Logik.
+- Angewendet auf alle bisher ungeschützten Dialoge: `AddWineDialog`, `OpenBottleDialog`, `MoveToPocketDialog` (hatten `role="dialog"`/`aria-modal`, aber keine Tastaturlogik dahinter), `PurchaseDialog` und die beiden Modals in `InventoryPage.tsx` (Pocket anlegen, JSON-Import) — diese hatten nicht einmal `role="dialog"`/`aria-modal` —, das Wein-Pool-Modal in `EnjoymentPlanPage.tsx`, der `Confirm`-Dialog in `Feedback.tsx` sowie `ScannerOverlay.tsx` (Vollbild-Kameraansicht, bislang ganz ohne Escape-Handling).
+- Wo ein Dialog einen eigenen „busy"-Zustand hatte (z. B. `MoveToPocketDialog` während eines laufenden Verschiebens), schließt `Escape` weiterhin nicht mittendrin — dieselbe Regel, die vorher schon für den Klick auf den Hintergrund galt.
+- **`aria-live` für Statusänderungen:** Der Toast-Container in `Feedback.tsx` trägt jetzt `aria-live="polite"` (zusätzlich zum `role="status"` pro Toast, der allein nicht zuverlässig in allen Screenreadern ankommt, wenn der Container erst beim Einblenden entsteht). Fehlermeldungen in den Dialogen (`AddWineDialog`, `OpenBottleDialog`, `MoveToPocketDialog`, `PurchaseDialog`, `InventoryPage`-JSON-Import, `ScannerOverlay`) haben `role="alert"` bekommen — vorher waren das stumme `<p>`-Tags, die ein Screenreader nur fand, wenn man zufällig dorthin navigierte.
+- Mindestschriftgrößen für die Mikro-Labels waren bereits Teil von 6.5 (9→10/10→11 px, siehe dortige Notiz) — hier nicht wiederholt.
+- Vier Testfälle in `tests/unit/useFocusTrap.test.tsx` (Anfangsfokus, Tab-Wrap in beide Richtungen, Escape-Schließen) plus ein zusätzlicher Testfall in `tests/unit/feedback.test.tsx` für Escape auf dem Confirm-Dialog.
 
 #### Umsetzungsnotizen zu 6.2
 
@@ -306,19 +285,6 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 - **Bankmetaphern entfernt:** „Portfolio" als Dashboard-Überschrift → „Dein Keller" (Untertitel entsprechend angepasst, damit er sich nicht mit der neuen Überschrift wiederholt); „Vault & Portfolio" in der Seitenleiste → „Private Weinsammlung"; „Premium Kellerverwaltung & Asset-Portfolio" im Login → „Deine private Weinsammlung, sorgfältig geführt"; Pockets werden nicht mehr als „Unterkonten"/„Unterkonto" erklärt, sondern als „eigene Bereiche innerhalb deines Kellers" (Regal, Kühlschrank o. Ä.).
 - Ein Playwright-Baseline-Test verankerte den alten Wortlaut (`/^Portfolio$|Hauptkeller|Wunschliste/i` als Dashboard-Erkennungsmerkmal nach dem Demo-Login) — auf `Dein Keller` aktualisiert, sonst wäre der Test am eigenen Umbenennen zerbrochen.
 - **Zusätzlich (Lesbarkeit, greift 6.6 vor):** Die durchgängig verwendeten 9–10-px-Versal-Labels (Filterbeschriftungen, KPI-Eyebrows, Button-Mikrotext — 98 Fundstellen in 20 Dateien) sind app-weit um eine Stufe angehoben (8→9, 9→10, 10→11 px), einheitlich per Skript in einem Durchgang ersetzt, damit keine Kaskade entsteht. Bewusst nicht angetastet: `tracking-widest`/`tracking-[0.14em]` (Laufweite) und `font-black` (Schriftschnitt) — das ist Teil der bewussten Formsprache der App und eine reine Größenkorrektur genügt für den Lesbarkeitsgewinn.
-
-#### Umsetzungsnotizen zu 4.2
-
-#### Umsetzungsnotizen zu 4.2
-
-#### Umsetzungsnotizen zu 6.5 (plus Lesbarkeit als Vorgriff auf 6.6)
-
-- **Anrede vereinheitlicht:** Alle verbliebenen „Sie/Ihre/Ihnen"-Stellen (Auth-Formular, Scanner-Fehlermeldungen, Dashboard-Leerzustand, Zeitachse, Genussplan-Kopf und -Leerzustand, Konfigurationsfehler-Screen) auf „du" umgestellt — der App-Code war zu über 90 % schon „du", diese Reste stachen heraus.
-- **Bankmetaphern entfernt:** „Portfolio" als Dashboard-Überschrift → „Dein Keller" (Untertitel entsprechend angepasst, damit er sich nicht mit der neuen Überschrift wiederholt); „Vault & Portfolio" in der Seitenleiste → „Private Weinsammlung"; „Premium Kellerverwaltung & Asset-Portfolio" im Login → „Deine private Weinsammlung, sorgfältig geführt"; Pockets werden nicht mehr als „Unterkonten"/„Unterkonto" erklärt, sondern als „eigene Bereiche innerhalb deines Kellers" (Regal, Kühlschrank o. Ä.).
-- Ein Playwright-Baseline-Test verankerte den alten Wortlaut (`/^Portfolio$|Hauptkeller|Wunschliste/i` als Dashboard-Erkennungsmerkmal nach dem Demo-Login) — auf `Dein Keller` aktualisiert, sonst wäre der Test am eigenen Umbenennen zerbrochen.
-- **Zusätzlich (Lesbarkeit, greift 6.6 vor):** Die durchgängig verwendeten 9–10-px-Versal-Labels (Filterbeschriftungen, KPI-Eyebrows, Button-Mikrotext — 98 Fundstellen in 20 Dateien) sind app-weit um eine Stufe angehoben (8→9, 9→10, 10→11 px), einheitlich per Skript in einem Durchgang ersetzt, damit keine Kaskade entsteht. Bewusst nicht angetastet: `tracking-widest`/`tracking-[0.14em]` (Laufweite) und `font-black` (Schriftschnitt) — das ist Teil der bewussten Formsprache der App und eine reine Größenkorrektur genügt für den Lesbarkeitsgewinn.
-
-#### Umsetzungsnotizen zu 4.2
 
 #### Umsetzungsnotizen zu 4.2
 
@@ -356,7 +322,7 @@ Aufwandsangaben sind grobe Größenordnungen für eine Person.
 | 6.3 ✅ | **Toast-System global.** Den vorhandenen `InlineToast` zu einem App-weiten Provider heben und alle 33 `alert()`/`confirm()`-Aufrufe ersetzen; Löschungen mit „Rückgängig"-Toast statt Bestätigungsdialog. |
 | 6.4 | **Einstellungen für Sammler.** Modellwahl als „Schnell / Ausgewogen / Gründlich", keine Terminalbefehle, keine `.env`-Pfade; Modellkatalog nur noch aus einer Quelle (Server). |
 | 6.5 ✅ | **Sprache und Ton vereinheitlichen** — durchgängig „du" oder „Sie", Bankmetaphern raus („Pockets/Unterkonten" → „Regale/Fächer", „flüssige Assets" → „Sammlung"). |
-| 6.6 | **Barrierefreiheit:** Fokus-Trap für alle Dialoge, `aria-live` für Status, Mindestschriftgrößen statt 10-px-Versalien als Standardbeschriftung. |
+| 6.6 ✅ | **Barrierefreiheit:** Fokus-Trap für alle Dialoge, `aria-live` für Status, Mindestschriftgrößen statt 10-px-Versalien als Standardbeschriftung. |
 | 6.7 | **Fehlerüberwachung** (z. B. Sentry) für Client und API, plus strukturierte Server-Logs. |
 
 **Behebt:** B15, B16, B21, B22, B23, B24, B27

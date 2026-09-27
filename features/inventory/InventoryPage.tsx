@@ -22,6 +22,7 @@ import {
 import { validateWineInput } from '../../domain/wine/validation.ts';
 import { findLikelyDuplicates } from '../../domain/wine/duplicateDetection.ts';
 import { loadInventoryViewPreferences, saveInventoryViewPreferences, type InventorySort } from '../../services/inventoryViewPreferences.ts';
+import { useFocusTrap } from '../../hooks/useFocusTrap.ts';
 
 const MAIN_CELLAR_FILTER = '__main_cellar__';
 const MAIN_CELLAR_LABEL = 'Hauptkeller';
@@ -81,6 +82,13 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const closePocketModal = useCallback(() => {
+    setIsPocketModalOpen(false);
+    setNewPocketName('');
+  }, []);
+  const pocketModalRef = useFocusTrap<HTMLDivElement>(isPocketModalOpen, closePocketModal);
+  const jsonModalRef = useFocusTrap<HTMLDivElement>(isJsonModalOpen, () => setIsJsonModalOpen(false));
 
   const presetView = useMemo(() => {
     const view = new URLSearchParams(location.search).get('view');
@@ -633,16 +641,19 @@ export const Inventory: React.FC<InventoryProps> = ({
       </section>
 
       {isPocketModalOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-charcoal/35 p-4 backdrop-blur-sm animate-in fade-in">
+        <div
+          ref={pocketModalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Neue Pocket"
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-charcoal/35 p-4 backdrop-blur-sm animate-in fade-in"
+        >
           <div className="w-full max-w-md rounded-[2rem] border border-burgundy/10 bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="font-serif text-2xl text-charcoal">Neue Pocket</h3>
               <button
                 type="button"
-                onClick={() => {
-                  setIsPocketModalOpen(false);
-                  setNewPocketName('');
-                }}
+                onClick={closePocketModal}
                 className="rounded-full p-1 text-stone-gray transition-all hover:bg-alabaster hover:text-charcoal"
               >
                 <X className="h-5 w-5" />
@@ -666,10 +677,7 @@ export const Inventory: React.FC<InventoryProps> = ({
             <div className="mt-5 flex items-center justify-end gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setIsPocketModalOpen(false);
-                  setNewPocketName('');
-                }}
+                onClick={closePocketModal}
                 className="rounded-xl border border-stone-300 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-stone-700 transition-all hover:bg-alabaster"
               >
                 Abbrechen
@@ -689,7 +697,13 @@ export const Inventory: React.FC<InventoryProps> = ({
       )}
 
       {isJsonModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm">
+        <div
+          ref={jsonModalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Daten importieren"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm"
+        >
           <div className="w-full max-w-lg rounded-[2rem] border border-burgundy/10 bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-start justify-between">
               <div>
@@ -736,7 +750,9 @@ export const Inventory: React.FC<InventoryProps> = ({
             />
 
             {importError && (
-              <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{importError}</p>
+              <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
+                {importError}
+              </p>
             )}
 
             <div className="mt-4 flex gap-3">

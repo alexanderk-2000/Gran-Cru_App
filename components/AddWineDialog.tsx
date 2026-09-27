@@ -7,6 +7,7 @@ import { normalizeImportedWine } from '../domain/wine/normalization.ts';
 import { findLikelyDuplicates } from '../domain/wine/duplicateDetection.ts';
 import { validateWineInput } from '../domain/wine/validation.ts';
 import { WineForm, createEmptyDraft, draftFromWine, draftToWine, type WineDraft } from './WineForm.tsx';
+import { useFocusTrap } from '../hooks/useFocusTrap.ts';
 
 /**
  * The single way a wine enters the cellar.
@@ -91,6 +92,8 @@ export const AddWineDialog: React.FC<AddWineDialogProps> = ({
     const candidate = draftToWine(draft);
     return findLikelyDuplicates(candidate, existingWines);
   }, [draft, existingWines]);
+
+  const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
@@ -199,6 +202,7 @@ export const AddWineDialog: React.FC<AddWineDialogProps> = ({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[110] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { evaluateWineDrinkability } from '../../utils.ts';
 import { useToast, useConfirm } from '../../components/Feedback.tsx';
+import { useFocusTrap } from '../../hooks/useFocusTrap.ts';
 
 const REPEAT_RULE_LABEL: Record<RepeatRule, string> = {
   none: 'Einmalig',
@@ -155,6 +156,7 @@ export const EnjoymentPlan: React.FC = () => {
   const [selectedOccasionId, setSelectedOccasionId] = useState<string | null>(null);
 
   const [showPoolModal, setShowPoolModal] = useState(false);
+  const poolModalRef = useFocusTrap<HTMLDivElement>(showPoolModal, () => setShowPoolModal(false));
   const [poolOccasion, setPoolOccasion] = useState<Occasion | null>(null);
   const [poolDraft, setPoolDraft] = useState<Record<string, PoolDraftEntry>>({});
   const [poolSearch, setPoolSearch] = useState('');
@@ -927,7 +929,13 @@ export const EnjoymentPlan: React.FC = () => {
       )}
 
       {showPoolModal && poolOccasion && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in">
+        <div
+          ref={poolModalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Wein-Pool für ${poolOccasion.title}`}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in"
+        >
           <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl border border-burgundy/5 overflow-hidden flex flex-col max-h-[92vh]">
             <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
               <div>

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Info, X } from 'lucide-react';
+import { useFocusTrap } from '../hooks/useFocusTrap.ts';
 
 /**
  * App-wide toasts and confirmations.
@@ -88,11 +89,17 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const value = useMemo<FeedbackContextValue>(() => ({ showToast, confirm }), [showToast, confirm]);
 
+  const confirmDialogRef = useFocusTrap<HTMLDivElement>(Boolean(confirmState), () => resolveConfirm(false));
+
   return (
     <FeedbackContext.Provider value={value}>
       {children}
 
-      <div className="pointer-events-none fixed left-1/2 top-6 z-[200] flex w-[min(92vw,560px)] -translate-x-1/2 flex-col gap-2">
+      <div
+        aria-live="polite"
+        aria-atomic="false"
+        className="pointer-events-none fixed left-1/2 top-6 z-[200] flex w-[min(92vw,560px)] -translate-x-1/2 flex-col gap-2"
+      >
         {toasts.map((toast) => {
           const Icon = ToastIcon[toast.tone];
           return (
@@ -118,6 +125,7 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       {confirmState && (
         <div
+          ref={confirmDialogRef}
           className="fixed inset-0 z-[210] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm"
           role="alertdialog"
           aria-modal="true"

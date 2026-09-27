@@ -112,6 +112,25 @@ describe('FeedbackProvider', () => {
     await waitFor(() => expect(onResult).toHaveBeenCalledWith(false));
   });
 
+  // Part of B24: the confirm dialog had role="alertdialog" without any of the
+  // keyboard behavior that role implies - Escape did nothing.
+  it('resolves false when the confirm dialog is dismissed with Escape', async () => {
+    const onResult = vi.fn();
+    render(
+      <FeedbackProvider>
+        <ConfirmHarness onResult={onResult} />
+      </FeedbackProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
+    expect(screen.getByText('Löschen?')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith(false));
+    expect(screen.queryByText('Löschen?')).not.toBeInTheDocument();
+  });
+
   it('throws when used outside a FeedbackProvider', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(() => render(<ToastHarness />)).toThrow('useFeedback must be used within a FeedbackProvider');

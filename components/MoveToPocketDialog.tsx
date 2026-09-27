@@ -3,6 +3,7 @@ import { Check, Loader2, MapPin, X } from 'lucide-react';
 import type { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
 import { normalizeSubcellar } from '../domain/wine/normalization.ts';
+import { useFocusTrap } from '../hooks/useFocusTrap.ts';
 
 /**
  * Moves a wine to a different pocket by tapping, not dragging.
@@ -39,6 +40,10 @@ export const MoveToPocketDialog: React.FC<MoveToPocketDialogProps> = ({
     if (open) setError(null);
   }, [open, wine?.id]);
 
+  const dialogRef = useFocusTrap<HTMLDivElement>(open, () => {
+    if (!movingTo) onClose();
+  });
+
   if (!open || !wine) return null;
 
   const currentPocket = normalizeSubcellar(wine.subcellar);
@@ -65,6 +70,7 @@ export const MoveToPocketDialog: React.FC<MoveToPocketDialogProps> = ({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[130] flex items-center justify-center bg-charcoal/40 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
@@ -128,7 +134,11 @@ export const MoveToPocketDialog: React.FC<MoveToPocketDialogProps> = ({
           })}
         </div>
 
-        {error && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

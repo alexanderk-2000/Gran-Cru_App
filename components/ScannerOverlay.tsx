@@ -10,6 +10,7 @@ import {
     parseBarcodeResult,
     type ScanResult,
 } from '../services/scanner.ts';
+import { useFocusTrap } from '../hooks/useFocusTrap.ts';
 
 interface ScannerOverlayProps {
     open: boolean;
@@ -122,10 +123,12 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
         }
     }, [mode, isLoading, onResult]);
 
+    const overlayRef = useFocusTrap<HTMLDivElement>(open, onClose);
+
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+        <div ref={overlayRef} role="dialog" aria-modal="true" aria-label="Wein scannen" className="fixed inset-0 z-[60] flex flex-col bg-black">
             {/* Top bar */}
             <div className="relative z-10 flex items-center justify-between px-4 py-3">
                 <button
@@ -194,7 +197,7 @@ export const ScannerOverlay: React.FC<ScannerOverlayProps> = ({ open, onClose, o
             <div className="relative z-10 flex flex-col items-center gap-3 px-4 pb-8 pt-4">
                 {/* Error */}
                 {error && (
-                    <div className="w-full max-w-sm rounded-xl bg-red-500/20 px-4 py-2 text-center text-sm text-red-200 backdrop-blur-sm">
+                    <div role="alert" className="w-full max-w-sm rounded-xl bg-red-500/20 px-4 py-2 text-center text-sm text-red-200 backdrop-blur-sm">
                         {error}
                     </div>
                 )}
