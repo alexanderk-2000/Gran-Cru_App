@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, ClipboardList, Loader2, Search } from 'lucide-react';
+import { Check, ClipboardList, Loader2, Minus, Plus, Search } from 'lucide-react';
 import { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
+import { PageHeader, buttonClass, cardClass } from '../components/PageHeader.tsx';
 
 interface StocktakeProps {
   wines: Wine[];
@@ -10,7 +10,6 @@ interface StocktakeProps {
 }
 
 export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
-  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [isApplying, setIsApplying] = useState(false);
@@ -78,87 +77,135 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
     }
   };
 
+  const countedCount = inventoryWines.filter((wine) => counts[wine.id] !== undefined && counts[wine.id] !== '').length;
+  const saldo = discrepancies.reduce((sum, wine) => sum + (getCounted(wine) - wine.quantity), 0);
+  const stepCount = (wine: Wine, delta: number) => {
+    handleCountChange(wine.id, String(Math.max(0, getCounted(wine) + delta)));
+  };
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" /> Zurück zum Keller
+    <div className="space-y-6 animate-in fade-in duration-700 pb-20">
+      <PageHeader
+        eyebrow="Keller"
+        title="Inventur"
+        description="Gezählte Flaschen eintragen, Abweichungen prüfen, dann übernehmen. Funktioniert auch offline."
+        actions={
+          <button onClick={handleApply} disabled={discrepancies.length === 0 || isApplying} className={buttonClass.primary}>
+            {isApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {discrepancies.length > 0 ? `${discrepancies.length} Korrektur(en) übernehmen` : 'Keine Abweichungen'}
           </button>
-          <h2 className="font-serif text-4xl font-bold text-charcoal">Inventur</h2>
-          <p className="text-stone-gray font-medium tracking-wide">
-            Gezählten Bestand eintragen und Abweichungen als Korrektur übernehmen. Funktioniert vollständig offline.
-          </p>
+        }
+      />
+
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className={`${cardClass} px-[22px] py-5 flex flex-col gap-2.5`}>
+          <span className="text-[13px] text-stone-gray">Fortschritt</span>
+          <span className="text-[26px] font-bold leading-tight tabular-nums">
+            {countedCount} <span className="text-[15px] font-medium text-stone-gray">von {inventoryWines.length} Weinen</span>
+          </span>
+          <span
+            role="progressbar"
+            aria-label="Fortschritt"
+            aria-valuenow={countedCount}
+            aria-valuemin={0}
+            aria-valuemax={inventoryWines.length}
+            className="block h-1.5 rounded-full bg-sand overflow-hidden"
+          >
+            <span className="block h-full bg-charcoal" style={{ width: `${inventoryWines.length ? (countedCount / inventoryWines.length) * 100 : 0}%` }} />
+          </span>
         </div>
-        <button
-          onClick={handleApply}
-          disabled={discrepancies.length === 0 || isApplying}
-          className="px-5 py-3 bg-burgundy text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-burgundy-light transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {isApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          {discrepancies.length > 0 ? `${discrepancies.length} Korrektur(en) übernehmen` : 'Keine Abweichungen'}
-        </button>
-      </header>
+        <div className={`${cardClass} px-[22px] py-5 flex flex-col gap-1.5`}>
+          <span className="text-[13px] text-stone-gray">Mit Differenz</span>
+          <span className={`text-[26px] font-bold leading-tight tabular-nums ${discrepancies.length ? 'text-burgundy' : 'text-charcoal'}`}>{discrepancies.length}</span>
+          <span className="text-[13px] text-charcoal-soft">Weine weichen vom Soll ab</span>
+        </div>
+        <div className={`${cardClass} px-[22px] py-5 flex flex-col gap-1.5`}>
+          <span className="text-[13px] text-stone-gray">Saldo</span>
+          <span className="text-[26px] font-bold leading-tight tabular-nums">{saldo > 0 ? `+${saldo}` : saldo} Fl.</span>
+          <span className="text-[13px] text-charcoal-soft">gegenüber Soll-Bestand</span>
+        </div>
+      </section>
 
       {lastAppliedCount !== null && (
-        <div className="bg-sage-light border border-sage/30 text-sage px-4 py-3 rounded-xl text-sm">
+        <div role="status" className="bg-sage-light text-sage px-4 py-3 rounded-[10px] text-sm font-medium">
           {lastAppliedCount} Korrektur(en) wurden als Bestandsereignis gespeichert.
         </div>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+        <div role="alert" className="bg-burgundy-tint text-burgundy-dark px-4 py-3 rounded-[10px] text-sm">
           {error}
         </div>
       )}
 
-      <div className="flex-1 relative max-w-md">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
+      <label className="relative block max-w-md">
+        <span className="sr-only">Kollektion durchsuchen</span>
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
         <input
           type="text"
           placeholder="Kollektion durchsuchen..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-3.5 bg-white border-2 border-burgundy/5 rounded-2xl text-sm focus:border-burgundy/20 focus:outline-none"
+          className="w-full h-11 pl-10 pr-4 bg-white border border-line-strong rounded-[10px] text-sm focus:border-burgundy focus:ring-2 focus:ring-burgundy/15 focus:outline-none"
         />
-      </div>
+      </label>
 
-      <div className="bg-white rounded-[2rem] border border-burgundy/5 shadow-premium overflow-hidden">
+      <div className={`${cardClass} overflow-x-auto`}>
         {filteredWines.length > 0 ? (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[620px] text-sm">
             <thead>
-              <tr className="border-b border-alabaster text-[10px] font-black uppercase tracking-widest text-stone-gray">
-                <th className="text-left px-6 py-4">Wein</th>
-                <th className="text-right px-6 py-4">Soll-Bestand</th>
-                <th className="text-right px-6 py-4">Gezählt</th>
-                <th className="text-right px-6 py-4">Differenz</th>
+              <tr className="text-xs font-semibold uppercase tracking-[0.06em] text-stone-gray">
+                <th scope="col" className="text-left px-5 py-3.5 font-semibold">Wein</th>
+                <th scope="col" className="text-right px-3 py-3.5 font-semibold">Soll</th>
+                <th scope="col" className="text-center px-3 py-3.5 font-semibold">Gezählt</th>
+                <th scope="col" className="text-right px-5 py-3.5 font-semibold">Differenz</th>
               </tr>
             </thead>
             <tbody>
               {filteredWines.map((wine) => {
                 const counted = getCounted(wine);
                 const delta = counted - wine.quantity;
+                const touched = counts[wine.id] !== undefined && counts[wine.id] !== '';
                 return (
-                  <tr key={wine.id} className={`border-b border-alabaster last:border-0 ${delta !== 0 ? 'bg-amber-50/40' : ''}`}>
-                    <td className="px-6 py-4">
-                      <p className="font-serif font-bold text-charcoal">{wine.vintage} {wine.name}</p>
-                      <p className="text-xs text-stone-gray">{wine.producer}</p>
+                  <tr key={wine.id} className={`border-t border-line-soft ${delta !== 0 ? 'bg-burgundy-wash' : ''}`}>
+                    <td className="px-5 py-3">
+                      <p className="font-semibold text-charcoal">{wine.vintage} {wine.name}</p>
+                      <p className="text-xs text-stone-gray">{wine.producer || wine.subcellar || '—'}</p>
                     </td>
-                    <td className="px-6 py-4 text-right font-medium text-stone-gray">{wine.quantity}</td>
-                    <td className="px-6 py-4 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        value={counts[wine.id] ?? String(wine.quantity)}
-                        onChange={(e) => handleCountChange(wine.id, e.target.value)}
-                        disabled={isApplying}
-                        className="w-20 text-right rounded-lg border border-stone-200 px-2 py-1.5 text-sm font-medium focus:border-burgundy/30 focus:outline-none disabled:opacity-50"
-                      />
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums">{wine.quantity}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => stepCount(wine, -1)}
+                          disabled={isApplying}
+                          aria-label={`${wine.name}: eine Flasche weniger`}
+                          className="w-9 h-9 rounded-lg border border-line-strong bg-white flex items-center justify-center hover:bg-alabaster disabled:opacity-50"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="numeric"
+                          aria-label={`${wine.name}: gezählte Flaschen`}
+                          value={counts[wine.id] ?? String(wine.quantity)}
+                          onChange={(e) => handleCountChange(wine.id, e.target.value)}
+                          disabled={isApplying}
+                          className={`w-14 h-9 text-center rounded-lg border border-line-strong text-base font-bold tabular-nums focus:border-burgundy focus:outline-none disabled:opacity-50 ${touched ? 'text-charcoal' : 'text-stone-gray'}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => stepCount(wine, 1)}
+                          disabled={isApplying}
+                          aria-label={`${wine.name}: eine Flasche mehr`}
+                          className="w-9 h-9 rounded-lg border border-line-strong bg-white flex items-center justify-center hover:bg-alabaster disabled:opacity-50"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
-                    <td className={`px-6 py-4 text-right font-black ${delta > 0 ? 'text-sage' : delta < 0 ? 'text-red-600' : 'text-stone-gray/40'}`}>
+                    <td className={`px-5 py-3 text-right font-bold tabular-nums ${delta === 0 ? 'text-sage' : 'text-burgundy'}`}>
                       {delta > 0 ? `+${delta}` : delta}
                     </td>
                   </tr>
@@ -167,10 +214,12 @@ export const Stocktake: React.FC<StocktakeProps> = ({ wines, onUpdate }) => {
             </tbody>
           </table>
         ) : (
-          <div className="py-32 flex flex-col items-center justify-center text-center">
-            <ClipboardList className="w-20 h-20 text-burgundy/10 mb-6" />
-            <h3 className="text-2xl font-serif text-charcoal mb-2">Keine Weine gefunden</h3>
-            <p className="text-stone-gray text-sm">Keine Bestände für eine Inventur vorhanden.</p>
+          <div className="py-20 px-6 flex flex-col items-center justify-center gap-2 text-center">
+            <span aria-hidden="true" className="w-14 h-14 rounded-full bg-sand flex items-center justify-center text-stone-gray mb-1">
+              <ClipboardList className="w-6 h-6" />
+            </span>
+            <h2 className="text-lg font-semibold text-charcoal">Keine Weine gefunden</h2>
+            <p className="text-charcoal-soft text-sm">Keine Bestände für eine Inventur vorhanden.</p>
           </div>
         )}
       </div>

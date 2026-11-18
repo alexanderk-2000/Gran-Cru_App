@@ -1,7 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { settingsService, UserSettings, AIProvider } from '../services/settings.ts';
-import { Cpu, Save, CheckCircle, AlertCircle, Sparkles, Server, ExternalLink, Download, RefreshCcw, Smartphone } from 'lucide-react';
+import { Save, CheckCircle, AlertCircle, ExternalLink, Download, RefreshCcw } from 'lucide-react';
+import { PageHeader, buttonClass, cardClass } from '../components/PageHeader.tsx';
 import { requestInstallPrompt, subscribeInstallPrompt, hideIOSInstallInstructions, type InstallPromptState } from '../services/pwa/installPrompt.ts';
 import { applySwUpdate, subscribeSwUpdateState, type SwUpdateState } from '../services/pwa/swRegistration.ts';
 import { getSyncStateSnapshot } from '../services/pwa/offlineDb.ts';
@@ -160,300 +161,218 @@ export const Settings: React.FC = () => {
         await applySwUpdate();
     };
 
+    const providerOptions: Array<{ id: AIProvider; name: string; description: string }> = [
+        { id: 'gemini', name: 'Google Gemini', description: 'Gemini-Modelle' },
+        { id: 'openai', name: 'OpenAI', description: 'GPT-Modelle' },
+        { id: 'openrouter', name: 'Nemotron', description: 'NVIDIA-Modelle' }
+    ];
+    const models = provider === 'gemini' ? geminiModels : provider === 'openai' ? openaiModels : openrouterModels;
+    const selectedModel = provider === 'gemini' ? geminiModel : provider === 'openai' ? openaiModel : openrouterModel;
+    const selectModel = (id: string) => {
+        if (provider === 'gemini') setGeminiModel(id);
+        else if (provider === 'openai') setOpenaiModel(id);
+        else setOpenrouterModel(id);
+    };
+
+    const serverBadge =
+        serverStatus === 'online'
+            ? { label: 'Verbunden', className: 'bg-sage-light text-sage', dot: 'bg-sage' }
+            : serverStatus === 'offline'
+                ? { label: 'Nicht erreichbar', className: 'bg-burgundy-tint text-burgundy', dot: 'bg-burgundy' }
+                : { label: 'Prüfe Verbindung …', className: 'bg-sand text-charcoal-soft', dot: 'bg-gold animate-pulse' };
+
+    const statusRows: Array<{ label: string; value: string; good?: boolean }> = [
+        {
+            label: 'Installation',
+            value: installState.isInstalled ? 'Bereits installiert' : installState.canPromptInstall ? 'Installierbar' : installState.isIOS ? 'Über Safari möglich' : 'Nicht verfügbar',
+            good: installState.isInstalled || installState.canPromptInstall
+        },
+        {
+            label: 'Service Worker',
+            value: swState.updateAvailable ? 'Update verfügbar' : swState.offlineReady ? 'Offline bereit' : 'Initialisierung läuft',
+            good: swState.offlineReady && !swState.updateAvailable
+        },
+        {
+            label: 'Ausstehende Änderungen',
+            value: `${syncState.write_queue_pending} offen${syncState.write_queue_failed ? `, ${syncState.write_queue_failed} fehlgeschlagen` : ''}`
+        },
+        {
+            label: 'Ausstehende KI-Anfragen',
+            value: `${syncState.ai_queue_pending} offen${syncState.ai_queue_failed ? `, ${syncState.ai_queue_failed} fehlgeschlagen` : ''}`
+        }
+    ];
+
+    const sectionClass = `${cardClass} p-6 flex flex-col gap-5`;
+
     return (
-        <div className="min-h-screen bg-alabaster/40 pt-16 pb-40 px-6">
-            <div className="max-w-4xl mx-auto">
-                <div className="mb-12">
-                    <h1 className="font-serif text-5xl font-bold text-charcoal mb-4">Einstellungen</h1>
-                    <p className="text-stone-gray text-lg">Konfiguriere deine persönlichen KI-Einstellungen</p>
+        <div className="max-w-[880px] space-y-6 pb-20 animate-in fade-in duration-700">
+            <PageHeader eyebrow="System" title="Einstellungen" description="KI-Recherche, Verbindung und Offline-Betrieb." />
+
+            {/* KI-Recherche */}
+            <section className={sectionClass}>
+                <div className="flex flex-col gap-0.5">
+                    <h2 className="text-lg font-semibold text-charcoal">KI-Recherche</h2>
+                    <p className="text-[13px] text-stone-gray">Alle Modelle laufen über OpenRouter, mit Web-Suche und automatischem Fallback.</p>
                 </div>
 
-                {/* Server Status */}
-                <section className="bg-white rounded-[2.5rem] border border-burgundy/5 p-10 shadow-premium mb-8">
-                    <div className="flex items-center gap-4 mb-8 pb-6 border-b border-alabaster">
-                        <div className="p-3 bg-burgundy/5 rounded-2xl text-burgundy">
-                            <Server className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h2 className="font-serif text-2xl font-bold text-charcoal">API Server Status</h2>
-                            <p className="text-sm text-stone-gray mt-1">Verbindung zum Backend-Server</p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                        <div className={`w-3 h-3 rounded-full ${serverStatus === 'online' ? 'bg-green-500' :
-                            serverStatus === 'offline' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'
-                            }`} />
-                        <span className="font-bold text-charcoal">
-                            {serverStatus === 'online' ? 'Server läuft' :
-                                serverStatus === 'offline' ? 'Server nicht erreichbar' : 'Prüfe Verbindung...'}
-                        </span>
-                    </div>
-
-                    {serverStatus === 'offline' && (
-                        <div className="mt-6 bg-red-50 p-6 rounded-2xl border border-red-200">
-                            <div className="flex items-start gap-3">
-                                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                                <div className="text-sm">
-                                    <p className="font-bold text-red-800 mb-2">Server nicht gestartet</p>
-                                    <p className="text-red-700 mb-3">
-                                        Der API-Server muss für KI-Funktionen laufen. Starte ihn mit:
-                                    </p>
-                                    <code className="bg-red-100 px-3 py-2 rounded-lg block font-mono text-xs">
-                                        cd server && npm install && npm run dev
-                                    </code>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="mt-6 bg-alabaster/40 p-6 rounded-2xl border border-burgundy/5">
-                        <div className="flex items-start gap-3">
-                            <AlertCircle className="w-5 h-5 text-gold shrink-0 mt-0.5" />
-                            <div className="text-sm text-stone-gray">
-                                <p className="font-bold text-charcoal mb-1">API Key konfigurieren</p>
-                                <p className="mb-2">
-                                    Gemini, GPT und Nemotron laufen alle über einen einzigen OpenRouter-Key. Trage ihn sicher im Backend ein:
-                                </p>
-                                <code className="bg-charcoal/5 px-3 py-2 rounded-lg block font-mono text-xs mb-3">
-                                    server/.env
-                                </code>
-                                <div className="flex gap-4 mt-3">
-                                    <a
-                                        href="https://openrouter.ai/keys"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-burgundy hover:underline flex items-center gap-1"
-                                    >
-                                        OpenRouter Key erstellen <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                {/* PWA Status / Install / Sync */}
-                <section className="bg-white rounded-[2.5rem] border border-burgundy/5 p-10 shadow-premium mb-8">
-                    <div className="flex items-center gap-4 mb-8 pb-6 border-b border-alabaster">
-                        <div className="p-3 bg-burgundy/5 rounded-2xl text-burgundy">
-                            <Smartphone className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h2 className="font-serif text-2xl font-bold text-charcoal">PWA, Offline & Sync</h2>
-                            <p className="text-sm text-stone-gray mt-1">Installation, Queue-Status und manuelle Synchronisation</p>
-                        </div>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 gap-6 mb-6">
-                        <div className="bg-alabaster/40 rounded-2xl p-5 border border-burgundy/10">
-                            <p className="text-xs uppercase tracking-wider text-stone-gray mb-2">Installierbarkeit</p>
-                            <p className="font-bold text-charcoal">
-                                {installState.isInstalled ? 'Bereits installiert' : installState.canPromptInstall ? 'Installierbar (Chrome)' : installState.isIOS ? 'iOS Anleitung verfügbar' : 'Nicht verfügbar'}
-                            </p>
-                        </div>
-                        <div className="bg-alabaster/40 rounded-2xl p-5 border border-burgundy/10">
-                            <p className="text-xs uppercase tracking-wider text-stone-gray mb-2">Service Worker</p>
-                            <p className="font-bold text-charcoal">
-                                {swState.updateAvailable ? 'Update verfügbar' : swState.offlineReady ? 'Offline bereit' : 'Initialisierung läuft'}
-                            </p>
-                        </div>
-                        <div className="bg-alabaster/40 rounded-2xl p-5 border border-burgundy/10">
-                            <p className="text-xs uppercase tracking-wider text-stone-gray mb-2">Write Queue</p>
-                            <p className="font-bold text-charcoal">
-                                {syncState.write_queue_pending} offen, {syncState.write_queue_failed} fehlgeschlagen
-                            </p>
-                        </div>
-                        <div className="bg-alabaster/40 rounded-2xl p-5 border border-burgundy/10">
-                            <p className="text-xs uppercase tracking-wider text-stone-gray mb-2">AI Queue</p>
-                            <p className="font-bold text-charcoal">
-                                {syncState.ai_queue_pending} offen, {syncState.ai_queue_failed} fehlgeschlagen
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 mb-4">
-                        <button
-                            onClick={handleInstallClick}
-                            disabled={installState.isInstalled}
-                            className="px-5 py-3 rounded-xl bg-burgundy text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                        >
-                            <Download className="w-4 h-4" />
-                            {installState.isInstalled ? 'Installiert' : 'App installieren'}
-                        </button>
-
-                        <button
-                            onClick={handleSyncNow}
-                            disabled={syncState.syncing}
-                            className="px-5 py-3 rounded-xl border border-burgundy/20 text-burgundy font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                        >
-                            <RefreshCcw className={`w-4 h-4 ${syncState.syncing ? 'animate-spin' : ''}`} />
-                            {syncState.syncing ? 'Synchronisiert...' : 'Jetzt synchronisieren'}
-                        </button>
-
-                        {swState.updateAvailable && (
-                            <button
-                                onClick={handleApplyUpdate}
-                                className="px-5 py-3 rounded-xl bg-charcoal text-white font-bold text-sm"
-                            >
-                                Update laden
-                            </button>
-                        )}
-                    </div>
-
-                    {installFeedback && (
-                        <p className="text-sm text-burgundy mb-3">{installFeedback}</p>
-                    )}
-
-                    {installState.instructionsVisible && installState.isIOS && (
-                        <div className="bg-burgundy/5 border border-burgundy/15 rounded-2xl p-5">
-                            <p className="text-sm text-charcoal mb-2 font-bold">iOS Installation</p>
-                            <p className="text-sm text-stone-gray mb-3">In Safari auf <span className="font-medium">Teilen</span> tippen und <span className="font-medium">Zum Home-Bildschirm</span> wählen.</p>
-                            <button onClick={hideIOSInstallInstructions} className="text-xs uppercase tracking-wider text-burgundy font-bold">
-                                Verstanden
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="mt-4 text-xs text-stone-gray">
-                        Letzter Sync Start: {syncState.last_sync_started_at || '—'} | Letzter Sync Ende: {syncState.last_sync_completed_at || '—'}
-                        {syncState.last_sync_error ? ` | Fehler: ${syncState.last_sync_error}` : ''}
-                    </div>
-                </section>
-
-                {/* Provider Selection */}
-                <section className="bg-white rounded-[2.5rem] border border-burgundy/5 p-10 shadow-premium mb-8">
-                    <div className="flex items-center gap-4 mb-8 pb-6 border-b border-alabaster">
-                        <div className="p-3 bg-burgundy/5 rounded-2xl text-burgundy">
-                            <Sparkles className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h2 className="font-serif text-2xl font-bold text-charcoal">KI-Provider</h2>
-                            <p className="text-sm text-stone-gray mt-1">Wähle dein bevorzugtes Modell - alle laufen über OpenRouter</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4">
-                        <button
-                            onClick={() => setProvider('gemini')}
-                            className={`p-6 rounded-2xl border-2 transition-all ${provider === 'gemini'
-                                ? 'border-burgundy bg-burgundy/5'
-                                : 'border-burgundy/10 hover:border-burgundy/30'
-                                }`}
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-charcoal">Google Gemini</h3>
-                                {provider === 'gemini' && <CheckCircle className="w-5 h-5 text-burgundy" />}
-                            </div>
-                            <p className="text-sm text-stone-gray text-left">Gemini Modelle via OpenRouter (Web-Search, Fallback aktiv)</p>
-                        </button>
-
-                        <button
-                            onClick={() => setProvider('openai')}
-                            className={`p-6 rounded-2xl border-2 transition-all ${provider === 'openai'
-                                ? 'border-burgundy bg-burgundy/5'
-                                : 'border-burgundy/10 hover:border-burgundy/30'
-                                }`}
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-charcoal">OpenAI</h3>
-                                {provider === 'openai' && <CheckCircle className="w-5 h-5 text-burgundy" />}
-                            </div>
-                            <p className="text-sm text-stone-gray text-left">GPT Modelle via OpenRouter (Web-Search, Fallback aktiv)</p>
-                        </button>
-
-                        <button
-                            onClick={() => setProvider('openrouter')}
-                            className={`p-6 rounded-2xl border-2 transition-all ${provider === 'openrouter'
-                                ? 'border-burgundy bg-burgundy/5'
-                                : 'border-burgundy/10 hover:border-burgundy/30'
-                                }`}
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-charcoal">Nemotron</h3>
-                                {provider === 'openrouter' && <CheckCircle className="w-5 h-5 text-burgundy" />}
-                            </div>
-                            <p className="text-sm text-stone-gray text-left">NVIDIA Nemotron via OpenRouter (Web-Search, Fallback aktiv)</p>
-                        </button>
-                    </div>
-                </section>
-
-                {/* Model Selection */}
-                <section className="bg-white rounded-[2.5rem] border border-burgundy/5 p-10 shadow-premium mb-8">
-                    <div className="flex items-center gap-4 mb-8 pb-6 border-alabaster">
-                        <div className="p-3 bg-burgundy/5 rounded-2xl text-burgundy">
-                            <Cpu className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h2 className="font-serif text-2xl font-bold text-charcoal">KI-Modell</h2>
-                            <p className="text-sm text-stone-gray mt-1">
-                                Wähle das {provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'Nemotron'}-Modell für Weinanalysen
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="space-y-4">
-                        {(provider === 'gemini' ? geminiModels : provider === 'openai' ? openaiModels : openrouterModels).map((model) => {
-                            const isSelected = provider === 'gemini'
-                                ? geminiModel === model.id
-                                : provider === 'openai'
-                                    ? openaiModel === model.id
-                                    : openrouterModel === model.id;
-
+                <fieldset className="flex flex-col gap-2">
+                    <legend className="text-[13px] font-semibold mb-2">Anbieter</legend>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {providerOptions.map((option) => {
+                            const active = provider === option.id;
                             return (
                                 <button
-                                    key={model.id}
-                                    onClick={() => {
-                                        if (provider === 'gemini') setGeminiModel(model.id);
-                                        else if (provider === 'openai') setOpenaiModel(model.id);
-                                        else setOpenrouterModel(model.id);
-                                    }}
-                                    className={`w-full p-6 rounded-2xl border-2 transition-all text-left ${isSelected
-                                        ? 'border-burgundy bg-burgundy/5'
-                                        : 'border-burgundy/10 hover:border-burgundy/30'
-                                        }`}
+                                    key={option.id}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => setProvider(option.id)}
+                                    className={`min-h-16 px-3.5 py-3 rounded-[10px] text-left flex flex-col gap-0.5 transition-colors ${active ? 'border-2 border-burgundy bg-burgundy-wash' : 'border border-line-strong bg-white hover:bg-alabaster'}`}
                                 >
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h3 className="font-bold text-charcoal mb-1">{model.name}</h3>
-                                            <p className="text-sm text-stone-gray">{model.description}</p>
-                                        </div>
-                                        {isSelected && (
-                                            <CheckCircle className="w-6 h-6 text-burgundy shrink-0" />
-                                        )}
-                                    </div>
+                                    <span className="text-sm font-semibold text-charcoal">{option.name}</span>
+                                    <span className="text-xs text-charcoal-soft">{option.description}</span>
                                 </button>
                             );
                         })}
                     </div>
-                </section>
+                </fieldset>
 
-                {/* Save Button */}
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="flex-1 py-5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-xs flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                        <Save className="w-5 h-5" />
-                        {isSaving ? 'Speichern...' : 'Einstellungen Speichern'}
-                    </button>
+                <fieldset className="flex flex-col gap-2">
+                    <legend className="text-[13px] font-semibold mb-2">Modell</legend>
+                    <div className="flex flex-col border border-line rounded-[10px] overflow-hidden">
+                        {models.map((model, index) => {
+                            const active = selectedModel === model.id;
+                            return (
+                                <button
+                                    key={model.id}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => selectModel(model.id)}
+                                    className={`min-h-[52px] px-3.5 py-2.5 flex items-center gap-3 text-left transition-colors ${index > 0 ? 'border-t border-line-soft' : ''} ${active ? 'bg-alabaster' : 'bg-white hover:bg-alabaster/60'}`}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={`w-[18px] h-[18px] shrink-0 rounded-full border-2 flex items-center justify-center ${active ? 'border-burgundy' : 'border-line-strong'}`}
+                                    >
+                                        {active && <span className="w-2 h-2 rounded-full bg-burgundy" />}
+                                    </span>
+                                    <span className="flex-1 text-sm font-semibold text-charcoal">{model.name}</span>
+                                    <span className="text-[13px] text-charcoal-soft text-right">{model.description}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </fieldset>
 
+                <div className="flex flex-wrap items-center justify-end gap-3">
                     {saveStatus === 'success' && (
-                        <div className="flex items-center gap-2 text-sage">
-                            <CheckCircle className="w-5 h-5" />
-                            <span className="font-bold text-sm">Gespeichert!</span>
-                        </div>
+                        <span role="status" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-sage">
+                            <CheckCircle className="w-4 h-4" /> Gespeichert
+                        </span>
                     )}
-
                     {saveStatus === 'error' && (
-                        <div className="flex items-center gap-2 text-red-600">
-                            <AlertCircle className="w-5 h-5" />
-                            <span className="font-bold text-sm">Fehler beim Speichern</span>
-                        </div>
+                        <span role="alert" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-burgundy">
+                            <AlertCircle className="w-4 h-4" /> Fehler beim Speichern
+                        </span>
                     )}
+                    <button onClick={handleSave} disabled={isSaving} className={buttonClass.primary}>
+                        <Save className="w-4 h-4" />
+                        {isSaving ? 'Speichern …' : 'Speichern'}
+                    </button>
                 </div>
-            </div>
+            </section>
+
+            {/* API-Server */}
+            <section className={sectionClass}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-col gap-0.5">
+                        <h2 className="text-lg font-semibold text-charcoal">API-Server</h2>
+                        <p className="text-[13px] text-stone-gray">Verbindung zum Backend für KI-Anfragen</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-2 h-[30px] px-3 rounded-full text-[13px] font-semibold ${serverBadge.className}`}>
+                        <span aria-hidden="true" className={`w-2 h-2 rounded-full ${serverBadge.dot}`} />
+                        {serverBadge.label}
+                    </span>
+                </div>
+
+                {serverStatus === 'offline' && (
+                    <div className="bg-burgundy-wash border border-burgundy-tint p-4 rounded-[10px] text-sm flex gap-3">
+                        <AlertCircle className="w-5 h-5 text-burgundy shrink-0 mt-0.5" />
+                        <div className="flex flex-col gap-2 min-w-0">
+                            <p className="font-semibold text-burgundy-dark">Server nicht gestartet</p>
+                            <p className="text-charcoal-soft">Der API-Server muss für KI-Funktionen laufen. Starte ihn mit:</p>
+                            <code className="bg-white border border-line px-3 py-2 rounded-lg block font-mono text-xs overflow-x-auto">
+                                cd server && npm install && npm run dev
+                            </code>
+                        </div>
+                    </div>
+                )}
+
+                <div className="bg-alabaster p-4 rounded-[10px] text-sm flex flex-col gap-2">
+                    <p className="font-semibold text-charcoal">API-Key konfigurieren</p>
+                    <p className="text-charcoal-soft">
+                        Gemini, GPT und Nemotron laufen über einen einzigen OpenRouter-Key. Trage ihn im Backend in <code className="font-mono text-xs bg-white border border-line px-1.5 py-0.5 rounded">server/.env</code> ein.
+                    </p>
+                    <a
+                        href="https://openrouter.ai/keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-semibold text-burgundy hover:text-burgundy-dark w-fit"
+                    >
+                        OpenRouter-Key erstellen <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                </div>
+            </section>
+
+            {/* Offline & Sync */}
+            <section className={sectionClass}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-col gap-0.5">
+                        <h2 className="text-lg font-semibold text-charcoal">Offline &amp; Synchronisation</h2>
+                        <p className="text-[13px] text-stone-gray">Installation als App, Warteschlangen und manueller Abgleich</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {swState.updateAvailable && (
+                            <button onClick={handleApplyUpdate} className={buttonClass.secondary}>Update laden</button>
+                        )}
+                        <button onClick={handleSyncNow} disabled={syncState.syncing} className={buttonClass.secondary}>
+                            <RefreshCcw className={`w-4 h-4 ${syncState.syncing ? 'animate-spin' : ''}`} />
+                            {syncState.syncing ? 'Synchronisiert …' : 'Jetzt synchronisieren'}
+                        </button>
+                    </div>
+                </div>
+
+                <dl className="flex flex-col">
+                    {statusRows.map((row) => (
+                        <div key={row.label} className="flex justify-between gap-3 py-3 border-t border-line-soft">
+                            <dt className="text-charcoal">{row.label}</dt>
+                            <dd className={`font-semibold text-right ${row.good ? 'text-sage' : 'text-charcoal'}`}>{row.value}</dd>
+                        </div>
+                    ))}
+                </dl>
+
+                <div className="flex flex-wrap items-center gap-3">
+                    <button onClick={handleInstallClick} disabled={installState.isInstalled} className={buttonClass.primary}>
+                        <Download className="w-4 h-4" />
+                        {installState.isInstalled ? 'Installiert' : 'App installieren'}
+                    </button>
+                    {installFeedback && <p role="status" className="text-sm text-burgundy">{installFeedback}</p>}
+                </div>
+
+                {installState.instructionsVisible && installState.isIOS && (
+                    <div className="bg-alabaster rounded-[10px] p-4 flex flex-col gap-1.5">
+                        <p className="font-semibold text-charcoal">Auf dem iPhone installieren</p>
+                        <p className="text-charcoal-soft">In Safari auf <strong className="font-semibold">Teilen</strong> tippen und <strong className="font-semibold">Zum Home-Bildschirm</strong> wählen.</p>
+                        <button onClick={hideIOSInstallInstructions} className="mt-1 w-fit text-[13px] font-semibold text-burgundy">
+                            Verstanden
+                        </button>
+                    </div>
+                )}
+
+                <p className="text-xs text-stone-gray">
+                    Letzter Sync: {syncState.last_sync_completed_at ? new Date(syncState.last_sync_completed_at).toLocaleString('de-DE') : '—'}
+                    {syncState.last_sync_error ? ` · Fehler: ${syncState.last_sync_error}` : ''}
+                </p>
+            </section>
         </div>
     );
 };

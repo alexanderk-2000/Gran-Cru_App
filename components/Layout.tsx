@@ -8,7 +8,8 @@ import {
   Heart,
   Menu,
   X,
-  CircleDot,
+  Plus,
+  ScanLine,
   CalendarDays,
   ShieldCheck,
   LogOut,
@@ -68,52 +69,84 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isGuest = user?.email === 'Gast-Sammler';
 
+  const winesLabel = isGuest ? 'Demo-Modus' : 'Angemeldet';
+
   return (
     <div className="min-h-screen bg-alabaster flex flex-col text-charcoal">
-      {/* Mobile Header */}
-      <header className="md:hidden flex items-center justify-between p-4 bg-white border-b border-burgundy/5 sticky top-0 z-40 shadow-sm">
-        <div className="flex items-center gap-2">
-          <CircleDot className="text-burgundy w-6 h-6" />
-          <h1 className="font-serif text-lg font-bold tracking-tight text-burgundy">Grand Cru</h1>
-        </div>
-        <button onClick={() => setSidebarOpen(true)}>
-          <Menu className="text-burgundy" />
+      {/* Mobile header */}
+      <header className="md:hidden flex items-center justify-between px-4 h-14 bg-white border-b border-line sticky top-0 z-40">
+        <Link to="/" className="flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg bg-burgundy text-alabaster flex items-center justify-center">
+            <WineIcon className="w-4 h-4" aria-hidden="true" />
+          </span>
+          <span className="font-serif text-lg font-bold text-burgundy">Grand Cru</span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Menü öffnen"
+          className="w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-charcoal hover:bg-alabaster"
+        >
+          <Menu className="w-5 h-5" />
         </button>
       </header>
 
-      {/* Sidebar Overlay for Mobile */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-charcoal/40 backdrop-blur-sm z-[60] md:hidden"
+          className="fixed inset-0 bg-charcoal/40 z-[60] md:hidden"
           onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
         />
       )}
 
-      {/* Sidebar - Fixed on desktop, slide-over on mobile */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-[70] w-64 flex flex-col bg-white border-r border-burgundy/10 transition-transform duration-300 shadow-premium
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
-        <div className="p-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-burgundy rounded-lg shadow-burgundy-glow">
-              <WineIcon className="w-6 h-6 text-alabaster" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-serif text-xl font-bold text-burgundy leading-none">CRU</span>
-              <span className="text-[10px] tracking-[0.2em] text-stone-gray font-medium uppercase">Vault & Portfolio</span>
-            </div>
-          </div>
-          <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
-            <X className="w-6 h-6 text-stone-gray" />
+      <aside
+        className={`fixed inset-y-0 left-0 z-[70] w-64 flex flex-col gap-7 px-4 pt-7 pb-6 bg-white border-r border-line transition-transform duration-300 overflow-y-auto
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+      >
+        <div className="flex items-center justify-between px-2">
+          <Link to="/" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-[10px] bg-burgundy text-alabaster flex items-center justify-center">
+              <WineIcon className="w-5 h-5" aria-hidden="true" />
+            </span>
+            <span className="flex flex-col gap-0.5">
+              <span className="font-serif text-xl font-bold leading-none text-burgundy">Grand Cru</span>
+              <span className="text-[11px] tracking-[0.12em] uppercase text-stone-gray">Vault &amp; Portfolio</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="md:hidden w-10 h-10 flex items-center justify-center rounded-lg text-stone-gray hover:bg-alabaster"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Menü schließen"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 px-4 py-4 overflow-y-auto">
-          <div className="space-y-5">
+        <div className="flex gap-2 px-2">
+          <Link
+            to="/inventory?add=1"
+            onClick={() => setSidebarOpen(false)}
+            className="flex-1 h-11 rounded-[10px] bg-burgundy text-white flex items-center justify-center gap-2 text-sm font-semibold hover:bg-burgundy-dark transition-colors"
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" />
+            Wein erfassen
+          </Link>
+          <Link
+            to="/inventory?scan=1"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Etikett scannen"
+            className="w-11 h-11 rounded-[10px] border border-line-strong text-charcoal flex items-center justify-center hover:bg-alabaster transition-colors"
+          >
+            <ScanLine className="w-[18px] h-[18px]" aria-hidden="true" />
+          </Link>
+        </div>
+
+        <nav aria-label="Hauptnavigation" className="flex-1">
+          <div className="space-y-6">
             {navGroups.map((group) => (
-              <div key={group.title} className="space-y-1.5">
-                <p className="px-3 text-[10px] tracking-[0.12em] text-stone-gray/80 uppercase">{group.title}</p>
+              <div key={group.title} className="flex flex-col gap-0.5">
+                <p className="px-3 mb-1.5 text-[11px] font-semibold tracking-[0.12em] text-stone-gray uppercase">{group.title}</p>
                 {group.items.map((item) => {
                   const isActive = location.pathname === item.path;
                   const Icon = item.icon;
@@ -122,15 +155,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                       key={item.path}
                       to={item.path}
                       onClick={() => setSidebarOpen(false)}
-                      className={`
-                        flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group
-                        ${isActive
-                          ? 'bg-white text-charcoal border border-burgundy/15 shadow-[0_4px_10px_rgba(40,35,37,0.06)]'
-                          : 'text-stone-gray hover:bg-alabaster/70 hover:text-charcoal'}
-                      `}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`flex items-center gap-3 h-10 px-3 rounded-lg text-sm transition-colors ${isActive
+                        ? 'bg-burgundy-tint text-burgundy font-semibold'
+                        : 'text-charcoal-soft font-medium hover:bg-sand'
+                        }`}
                     >
-                      <Icon className={`w-4 h-4 ${isActive ? 'text-burgundy' : 'group-hover:text-burgundy transition-colors'}`} />
-                      <span className={`${isActive ? 'font-medium' : 'font-normal'}`}>{item.label}</span>
+                      <Icon className="w-[18px] h-[18px]" aria-hidden="true" />
+                      {item.label}
                     </Link>
                   );
                 })}
@@ -139,49 +171,41 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
         </nav>
 
-        <div className="p-6 border-t border-alabaster space-y-4">
-          <div className={`p-4 rounded-xl border flex flex-col gap-2 ${isGuest ? 'bg-gold/5 border-gold/10' : 'bg-alabaster border-burgundy/5'}`}>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full animate-pulse ${isGuest ? 'bg-gold' : 'bg-sage'}`} />
-              <span className="text-[9px] font-black text-stone-gray uppercase tracking-widest">
-                {isGuest ? 'Demo-Modus' : 'Verbunden als'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {isGuest && <Sparkles className="w-3 h-3 text-gold" />}
-              <span className="text-xs text-charcoal font-bold truncate">
-                {isGuest ? 'Gast-Sammler' : user?.email}
-              </span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="mt-2 flex items-center gap-2 text-[10px] font-black text-burgundy/60 hover:text-burgundy transition-colors uppercase tracking-widest"
-            >
-              <LogOut className="w-3 h-3" />
-              {isGuest ? 'Beenden' : 'Abmelden'}
-            </button>
+        <div className="flex flex-col gap-3 p-4 rounded-xl bg-alabaster border border-line">
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true" className={`w-2 h-2 rounded-full ${isGuest ? 'bg-gold' : 'bg-sage'}`} />
+            <span className={`text-xs font-semibold ${isGuest ? 'text-gold-dim' : 'text-sage'}`}>{winesLabel}</span>
+            <ShieldCheck className="w-4 h-4 ml-auto text-stone-gray" aria-label="Cloud Sync aktiv" />
           </div>
-
-          <div className="p-4 bg-alabaster-dark rounded-xl border border-burgundy/5 flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-burgundy" />
-            <div className="flex flex-col">
-              <span className="text-[10px] text-stone-gray uppercase tracking-widest font-bold">Cloud Sync</span>
-              <span className="text-xs text-charcoal font-medium">Safe & Secure</span>
-            </div>
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="w-8 h-8 shrink-0 rounded-full bg-burgundy-tint text-burgundy flex items-center justify-center text-[13px] font-bold uppercase"
+            >
+              {isGuest ? <Sparkles className="w-4 h-4" /> : (user?.email?.[0] ?? '?')}
+            </span>
+            <span className="flex flex-col min-w-0 flex-1">
+              <span className="text-[13px] font-semibold truncate">{isGuest ? 'Gast-Sammler' : user?.email}</span>
+              <span className="text-xs text-stone-gray">Privater Keller</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleLogout}
+              aria-label={isGuest ? 'Demo beenden' : 'Abmelden'}
+              title={isGuest ? 'Beenden' : 'Abmelden'}
+              className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-stone-gray hover:text-burgundy hover:bg-white transition-colors"
+            >
+              <LogOut className="w-[18px] h-[18px]" />
+            </button>
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 md:pl-64 transition-all duration-300">
-        <main className="min-h-screen p-4 md:p-10 pb-24 md:pb-10 relative">
-          <div className="max-w-6xl mx-auto">
+      <div className="flex-1 md:pl-64">
+        <main className="min-h-screen px-4 md:px-12 pt-6 md:pt-10 pb-24 md:pb-16">
+          <div className="max-w-[1120px] mx-auto">
             {children}
           </div>
-
-          {/* Decorative Gradients */}
-          <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-gold/5 blur-[120px] pointer-events-none z-0" />
-          <div className="fixed bottom-0 left-0 w-[300px] h-[300px] bg-burgundy/5 blur-[100px] pointer-events-none z-0" />
         </main>
       </div>
     </div>

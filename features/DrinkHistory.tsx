@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, GlassWater, Loader2, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { GlassWater, Loader2, RefreshCw } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
+import { PageHeader, buttonClass, cardClass } from '../components/PageHeader.tsx';
 
 interface ConsumeEvent {
   id: string;
@@ -19,7 +20,6 @@ interface ConsumeEvent {
 }
 
 export const DrinkHistory: React.FC = () => {
-  const navigate = useNavigate();
   const [events, setEvents] = useState<ConsumeEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,89 +50,107 @@ export const DrinkHistory: React.FC = () => {
   const grouped = useMemo(() => {
     const groups = new Map<string, ConsumeEvent[]>();
     for (const event of events) {
-      const day = new Date(event.created_at).toLocaleDateString('de-DE', {
-        weekday: 'short',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-      if (!groups.has(day)) groups.set(day, []);
-      groups.get(day)!.push(event);
+      const month = new Date(event.created_at).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+      if (!groups.has(month)) groups.set(month, []);
+      groups.get(month)!.push(event);
     }
     return [...groups.entries()];
   }, [events]);
 
-  return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" /> Zurück
-          </button>
-          <h2 className="font-serif text-4xl font-bold text-charcoal">Trinkhistorie</h2>
-          <p className="text-stone-gray font-medium tracking-wide">Alle konsumierten Flaschen aus inventory_events.</p>
-        </div>
+  const currentYear = new Date().getFullYear();
+  const bottlesThisYear = useMemo(
+    () =>
+      events
+        .filter((event) => new Date(event.created_at).getFullYear() === currentYear)
+        .reduce((sum, event) => sum + Math.abs(event.delta || 0), 0),
+    [events, currentYear]
+  );
 
-        <button
-          onClick={() => load(true)}
-          disabled={loading || refreshing}
-          className="inline-flex items-center gap-2 px-5 py-3 bg-white border border-burgundy/10 rounded-xl text-xs font-black tracking-widest uppercase text-charcoal hover:border-burgundy/30 transition-all disabled:opacity-50"
-        >
-          {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          Aktualisieren
-        </button>
-      </header>
+  return (
+    <div className="space-y-6 animate-in fade-in duration-700 pb-20">
+      <PageHeader
+        eyebrow="Historie"
+        title="Trinkhistorie"
+        description="Jede geöffnete Flasche, chronologisch."
+        actions={
+          <button onClick={() => load(true)} disabled={loading || refreshing} className={buttonClass.secondary}>
+            {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Aktualisieren
+          </button>
+        }
+      />
+
+      {!loading && events.length > 0 && (
+        <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={`${cardClass} px-[22px] py-5 flex flex-col gap-1.5`}>
+            <span className="text-[13px] text-stone-gray">Geöffnet {currentYear}</span>
+            <span className="font-serif text-[32px] font-semibold leading-tight tabular-nums">{bottlesThisYear} Fl.</span>
+          </div>
+          <div className={`${cardClass} px-[22px] py-5 flex flex-col gap-1.5`}>
+            <span className="text-[13px] text-stone-gray">Einträge gesamt</span>
+            <span className="font-serif text-[32px] font-semibold leading-tight tabular-nums">{events.length}</span>
+          </div>
+        </section>
+      )}
+
+      {error && (
+        <div role="alert" className="bg-burgundy-tint text-burgundy-dark px-4 py-3 rounded-[10px] text-sm">
+          {error}
+        </div>
+      )}
 
       {loading ? (
-        <div className="py-24 flex flex-col items-center gap-4">
-          <Loader2 className="w-12 h-12 text-burgundy animate-spin" />
-          <p className="text-xs font-black uppercase text-stone-gray tracking-widest">Lade Trinkhistorie ...</p>
+        <div className="py-24 flex flex-col items-center gap-3" role="status">
+          <Loader2 className="w-8 h-8 text-burgundy animate-spin" />
+          <p className="text-sm text-stone-gray">Lade Trinkhistorie …</p>
         </div>
       ) : grouped.length === 0 ? (
-        <div className="py-24 bg-white rounded-[2.5rem] border border-burgundy/5 text-center">
-          <GlassWater className="w-14 h-14 text-burgundy/20 mx-auto mb-4" />
-          <h3 className="font-serif text-2xl text-charcoal mb-2">Noch keine Einträge</h3>
-          <p className="text-stone-gray text-sm">Sobald du „Flasche trinken“ nutzt, erscheinen die Events hier.</p>
+        <div className={`${cardClass} py-20 px-6 flex flex-col items-center gap-2 text-center border-dashed border-line-strong`}>
+          <span aria-hidden="true" className="w-14 h-14 rounded-full bg-sand flex items-center justify-center text-stone-gray mb-1">
+            <GlassWater className="w-6 h-6" />
+          </span>
+          <h2 className="text-lg font-semibold text-charcoal">Noch keine Einträge</h2>
+          <p className="text-charcoal-soft text-sm">Sobald du „Flasche trinken“ nutzt, erscheinen die Flaschen hier.</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-              {error}
-            </div>
-          )}
-
-          {grouped.map(([day, dayEvents]) => (
-            <section key={day} className="bg-white rounded-[2rem] border border-burgundy/5 shadow-premium overflow-hidden">
-              <div className="px-6 py-4 border-b border-alabaster bg-alabaster/40">
-                <p className="text-[10px] font-black uppercase tracking-widest text-stone-gray">{day}</p>
-              </div>
-
-              <div className="divide-y divide-alabaster">
-                {dayEvents.map((event) => (
-                  <article key={event.id} className="px-6 py-4 flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-serif text-xl text-charcoal">
-                        {event.wines?.vintage ? `${event.wines.vintage} ` : ''}
-                        {event.wines?.name || 'Unbekannter Wein'}
-                      </p>
-                      <p className="text-sm text-stone-gray">{event.wines?.producer || 'Produzent unbekannt'}</p>
-                      <p className="text-[10px] mt-1 uppercase tracking-widest text-stone-gray/80">Quelle: {event.source}</p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-sm font-black text-burgundy">{event.delta}</p>
-                      <p className="text-xs text-stone-gray">{new Date(event.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        grouped.map(([month, monthEvents]) => (
+          <section key={month} className="flex flex-col gap-2.5">
+            <h2 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-stone-gray">{month}</h2>
+            <ol className={`${cardClass} overflow-hidden`}>
+              {monthEvents.map((event, index) => {
+                const date = new Date(event.created_at);
+                return (
+                  <li
+                    key={event.id}
+                    className={`flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-4 ${index > 0 ? 'border-t border-line-soft' : ''}`}
+                  >
+                    <span className="w-14 shrink-0 text-[13px] font-semibold tabular-nums text-charcoal-soft">
+                      {date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                    </span>
+                    {event.wine_id ? (
+                      <Link to={`/wine/${event.wine_id}`} className="flex-1 min-w-[220px] flex flex-col hover:text-burgundy">
+                        <span className="font-semibold text-charcoal">
+                          {event.wines?.vintage ? `${event.wines.vintage} ` : ''}
+                          {event.wines?.name || 'Unbekannter Wein'}
+                        </span>
+                        <span className="text-[13px] text-charcoal-soft">{event.wines?.producer || 'Produzent unbekannt'}</span>
+                      </Link>
+                    ) : (
+                      <span className="flex-1 min-w-[220px] font-semibold">{event.wines?.name || 'Unbekannter Wein'}</span>
+                    )}
+                    <span className="h-[26px] px-2.5 rounded-full inline-flex items-center bg-sand text-xs font-semibold text-charcoal-soft">
+                      {event.source}
+                    </span>
+                    <span className="min-w-[48px] text-right text-[13px] tabular-nums text-stone-gray">
+                      {date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span className="min-w-[44px] text-right font-bold tabular-nums">{Math.abs(event.delta)} Fl.</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        ))
       )}
     </div>
   );

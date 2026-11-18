@@ -143,7 +143,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                                     handleDelete();
                                 }}
                                 className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur rounded-full
-                  text-red-600 hover:bg-red-50 hover:text-red-700 transition-all shadow-sm
+                  text-burgundy hover:bg-burgundy-tint hover:text-burgundy transition-all shadow-sm
                   opacity-0 group-hover:opacity-100 hover:!opacity-100"
                                 style={{ opacity: 1 }}
                                 aria-label={`${label} löschen`}
@@ -155,20 +155,20 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                         {/* Replace hint */}
                         <div className="absolute bottom-2 left-1/2 -translate-x-1/2">
                             <span className="px-2 py-1 bg-white/80 backdrop-blur rounded-full
-                text-[9px] font-bold uppercase tracking-widest text-stone-600
+                text-[11px] font-bold uppercase tracking-widest text-charcoal-soft
                 opacity-0 hover:opacity-100 transition-opacity">
                                 Ersetzen
                             </span>
                         </div>
                     </>
                 ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-400">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-gray">
                         {isDragOver ? (
                             <Upload className="w-8 h-8 text-burgundy/50" />
                         ) : (
                             <Camera className="w-8 h-8" />
                         )}
-                        <span className="text-[10px] font-bold uppercase tracking-widest">
+                        <span className="text-[11px] font-bold uppercase tracking-widest">
                             {isDragOver ? 'Ablegen' : 'Hochladen'}
                         </span>
                     </div>
@@ -192,13 +192,13 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             </div>
 
             {/* Label */}
-            <span className="text-[10px] font-bold uppercase tracking-widest text-stone-gray">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-stone-gray">
                 {label}
             </span>
 
             {/* Error */}
             {error && (
-                <span className="text-[10px] text-red-500 font-medium">{error}</span>
+                <span className="text-[11px] text-red-500 font-medium">{error}</span>
             )}
         </div>
     );

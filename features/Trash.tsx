@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Wine } from '../types.ts';
 import { storageService } from '../services/storage.ts';
-import { Trash2, RotateCcw, Wine as WineIcon, ArrowLeft, Search, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Trash2, RotateCcw, Search, Loader2 } from 'lucide-react';
+import { PageHeader, cardClass } from '../components/PageHeader.tsx';
 import { TRASH_RETENTION_DAYS, getDaysRemaining, isExpired } from '../domain/wine/trashRetention.ts';
 
 export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
@@ -14,7 +14,6 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoPurgedCount, setAutoPurgedCount] = useState(0);
-  const navigate = useNavigate();
 
   const fetchDeleted = async () => {
     setLoading(true);
@@ -102,103 +101,105 @@ export const Trash: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="flex flex-col gap-2">
-          <button 
-            onClick={() => navigate(-1)} 
-            className="flex items-center gap-2 text-stone-gray hover:text-burgundy uppercase text-[10px] font-black tracking-widest transition-all mb-4"
+    <div className="space-y-6 animate-in fade-in duration-700 pb-20 max-w-[880px]">
+      <PageHeader
+        eyebrow="Keller"
+        title="Papierkorb"
+        description={`Gelöschte Weine wiederherstellen oder endgültig entfernen. Einträge werden nach ${TRASH_RETENTION_DAYS} Tagen automatisch gelöscht.`}
+        actions={
+          <button
+            onClick={handleEmptyTrash}
+            disabled={deletedWines.length === 0 || isEmptyingTrash || loading}
+            className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-[10px] border border-burgundy bg-white text-burgundy font-semibold text-sm hover:bg-burgundy-tint transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <ArrowLeft className="w-4 h-4" /> Zurück zum Keller
+            {isEmptyingTrash ? 'Leert …' : 'Papierkorb leeren'}
           </button>
-          <h2 className="font-serif text-4xl font-bold text-charcoal">Papierkorb</h2>
-          <p className="text-stone-gray font-medium tracking-wide">Gelöschte Weine können hier wiederhergestellt oder endgültig entfernt werden.</p>
-        </div>
-        <button
-          onClick={handleEmptyTrash}
-          disabled={deletedWines.length === 0 || isEmptyingTrash || loading}
-          className="px-5 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {isEmptyingTrash ? 'Leert...' : 'Papierkorb endgültig leeren'}
-        </button>
-      </header>
+        }
+      />
 
-      <div className="flex-1 relative max-w-md">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
-        <input 
-          type="text" placeholder="Papierkorb durchsuchen..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-3.5 bg-white border-2 border-burgundy/5 rounded-2xl text-sm focus:border-burgundy/20 focus:outline-none"
-        />
-      </div>
+      {deletedWines.length > 3 && (
+        <label className="relative block max-w-md">
+          <span className="sr-only">Papierkorb durchsuchen</span>
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
+          <input
+            type="text" placeholder="Papierkorb durchsuchen..." value={search} onChange={(e) => setSearch(e.target.value)}
+            className="w-full h-11 pl-10 pr-4 bg-white border border-line-strong rounded-[10px] text-sm focus:border-burgundy focus:ring-2 focus:ring-burgundy/15 focus:outline-none"
+          />
+        </label>
+      )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+        <div role="alert" className="bg-burgundy-tint text-burgundy-dark px-4 py-3 rounded-[10px] text-sm">
           {error}
         </div>
       )}
 
       {autoPurgedCount > 0 && (
-        <div className="bg-alabaster border border-burgundy/10 text-stone-gray px-4 py-3 rounded-xl text-sm">
+        <div role="status" className="bg-white border border-line text-charcoal-soft px-4 py-3 rounded-[10px] text-sm">
           {autoPurgedCount} Eintrag/Einträge wurden nach Ablauf der {TRASH_RETENTION_DAYS}-tägigen Aufbewahrungsfrist endgültig gelöscht.
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {loading ? (
-          <div className="col-span-full py-24 flex flex-col items-center gap-4">
-            <Loader2 className="w-12 h-12 text-burgundy animate-spin" />
-            <p className="text-xs font-black uppercase text-stone-gray tracking-widest">Synchronisiere Papierkorb...</p>
-          </div>
-        ) : filteredWines.length > 0 ? (
-          filteredWines.map(wine => (
-            <div key={wine.id} className="bg-white p-8 rounded-[2.5rem] border border-burgundy/5 shadow-premium flex flex-col justify-between">
-              <div className="flex items-start justify-between mb-6">
-                <div className="flex items-start gap-5">
-                  <div className="p-5 bg-alabaster rounded-2xl text-stone-gray/30">
-                    <WineIcon className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h3 className="font-serif text-2xl font-bold text-charcoal leading-tight">{wine.vintage} {wine.name}</h3>
-                    <p className="text-sm text-stone-gray font-medium">{wine.producer}</p>
-                    {wine.deleted_reason && (
-                      <p className="mt-2 text-xs text-stone-gray italic">Grund: {wine.deleted_reason}</p>
-                    )}
-                  </div>
-                </div>
-                {wine.deleted_at && (
-                  <span className="shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 whitespace-nowrap">
-                    Läuft ab in {Math.max(0, getDaysRemaining(wine.deleted_at))} Tag(en)
+      {loading ? (
+        <div className="py-24 flex flex-col items-center gap-3" role="status">
+          <Loader2 className="w-8 h-8 text-burgundy animate-spin" />
+          <p className="text-sm text-stone-gray">Synchronisiere Papierkorb …</p>
+        </div>
+      ) : filteredWines.length > 0 ? (
+        <ul className={`${cardClass} overflow-hidden`}>
+          {filteredWines.map((wine, index) => {
+            const busy = processingId === wine.id || isEmptyingTrash;
+            const daysLeft = wine.deleted_at ? Math.max(0, getDaysRemaining(wine.deleted_at)) : null;
+            return (
+              <li
+                key={wine.id}
+                className={`flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-4 ${index > 0 ? 'border-t border-line-soft' : ''}`}
+              >
+                <span className="flex-1 min-w-[240px] flex flex-col">
+                  <span className="font-semibold text-charcoal">{wine.vintage} {wine.name}</span>
+                  <span className="text-[13px] text-stone-gray">
+                    {[wine.producer, wine.deleted_at ? `gelöscht am ${new Date(wine.deleted_at).toLocaleDateString('de-DE')}` : null, wine.deleted_reason ? `Grund: ${wine.deleted_reason}` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </span>
+                {daysLeft !== null && (
+                  <span className={`h-[26px] px-2.5 rounded-full inline-flex items-center text-xs font-semibold ${daysLeft <= 3 ? 'bg-burgundy-tint text-burgundy' : 'bg-sand text-charcoal-soft'}`}>
+                    noch {daysLeft} {daysLeft === 1 ? 'Tag' : 'Tage'}
                   </span>
                 )}
-              </div>
-
-              <div className="flex items-center justify-between pt-6 border-t border-alabaster">
-                <p className="text-[9px] font-black text-stone-gray/50 uppercase">Gelöscht am: {new Date(wine.deleted_at!).toLocaleDateString()}</p>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleRestore(wine.id)} disabled={processingId === wine.id || isEmptyingTrash}
-                    className="p-3 bg-sage-light text-sage hover:bg-sage hover:text-white rounded-xl transition-all"
+                <span className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRestore(wine.id)}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-lg border border-line-strong bg-white text-[13px] font-semibold text-charcoal hover:bg-alabaster disabled:opacity-50"
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <RotateCcw className="w-4 h-4" /> Wiederherstellen
                   </button>
-                  <button 
-                    onClick={() => handlePermanentDelete(wine.id)} disabled={processingId === wine.id || isEmptyingTrash}
-                    className="p-3 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all"
+                  <button
+                    type="button"
+                    onClick={() => handlePermanentDelete(wine.id)}
+                    disabled={busy}
+                    aria-label={`${wine.name} endgültig löschen`}
+                    className="inline-flex items-center h-10 px-3.5 rounded-lg text-[13px] font-semibold text-burgundy hover:bg-burgundy-tint disabled:opacity-50"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    Endgültig löschen
                   </button>
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="col-span-full py-32 flex flex-col items-center justify-center text-center bg-white rounded-[3rem] border border-dashed border-burgundy/10">
-            <Trash2 className="w-20 h-20 text-burgundy/10 mb-6" />
-            <h3 className="text-2xl font-serif text-charcoal mb-2">Papierkorb leer</h3>
-            <p className="text-stone-gray text-sm">Keine gelöschten Datensätze gefunden.</p>
-          </div>
-        )}
-      </div>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className={`${cardClass} border-dashed border-line-strong py-16 px-6 flex flex-col items-center gap-2 text-center`}>
+          <span aria-hidden="true" className="w-14 h-14 rounded-full bg-sand flex items-center justify-center text-stone-gray mb-1">
+            <Trash2 className="w-6 h-6" />
+          </span>
+          <h2 className="text-lg font-semibold text-charcoal">Papierkorb leer</h2>
+          <p className="text-charcoal-soft text-sm">Keine gelöschten Weine vorhanden.</p>
+        </div>
+      )}
     </div>
   );
 };

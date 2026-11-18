@@ -21,7 +21,7 @@ const DrinkHistory = lazy(() => import('./features/DrinkHistory.tsx').then((m) =
 
 const OfflineLockScreen: React.FC = () => (
   <div className="min-h-screen bg-alabaster flex items-center justify-center px-6">
-    <div className="max-w-xl w-full bg-white rounded-[2rem] border border-burgundy/10 p-8 shadow-premium">
+    <div className="max-w-xl w-full bg-white rounded-2xl border border-burgundy/10 p-8 shadow-premium">
       <h1 className="font-serif text-3xl text-burgundy mb-3">Offline gesperrt</h1>
       <p className="text-stone-gray leading-relaxed">
         Ohne aktive Session ist der Offline-Zugriff gesperrt. Verbinde dich kurz mit dem Internet
@@ -33,9 +33,9 @@ const OfflineLockScreen: React.FC = () => (
 
 const MissingConfigScreen: React.FC = () => (
   <div className="min-h-screen bg-alabaster flex items-center justify-center px-6">
-    <div className="max-w-xl w-full bg-white rounded-[2rem] border-2 border-red-100 p-8 shadow-premium text-center">
-      <div className="inline-flex items-center justify-center p-4 bg-red-50 rounded-2xl mb-6">
-        <AlertCircle className="w-8 h-8 text-red-600" />
+    <div className="max-w-xl w-full bg-white rounded-2xl border-2 border-burgundy-tint p-8 shadow-premium text-center">
+      <div className="inline-flex items-center justify-center p-4 bg-burgundy-tint rounded-2xl mb-6">
+        <AlertCircle className="w-8 h-8 text-burgundy" />
       </div>
       <h1 className="font-serif text-3xl text-burgundy mb-3">Konfiguration fehlt</h1>
       <p className="text-stone-gray leading-relaxed mb-6">
@@ -45,9 +45,9 @@ const MissingConfigScreen: React.FC = () => (
         <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_ANON_KEY</code>
         korrekt gesetzt sind.
       </p>
-      <div className="p-4 bg-red-50/50 rounded-xl text-left border border-red-100">
-        <p className="text-[10px] font-black uppercase tracking-widest text-red-700 mb-2">Checkliste:</p>
-        <ul className="text-xs text-red-800 space-y-1">
+      <div className="p-4 bg-burgundy-tint/50 rounded-xl text-left border border-burgundy-tint">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-burgundy mb-2">Checkliste:</p>
+        <ul className="text-xs text-burgundy space-y-1">
           <li>• Vercel Dashboard → Project Settings → Environment Variables</li>
           <li>• Lokale Entwicklung: <code className="text-red-900 font-mono">.env.local</code> erstellt?</li>
           <li>• Wurde die App nach dem Ändern neu deployed?</li>

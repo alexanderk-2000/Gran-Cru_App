@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom';
 import { Wine, Category, WineStatus } from '../../types.ts';
 import { WineCard } from '../../components/WineCard.tsx';
+import { PageHeader, buttonClass, cardClass } from '../../components/PageHeader.tsx';
 import { ScannerOverlay } from '../../components/ScannerOverlay.tsx';
 import { ScanResultDialog } from '../../components/ScanResultDialog.tsx';
 import type { ScanResult } from '../../services/scanner.ts';
@@ -70,6 +71,13 @@ export const Inventory: React.FC<InventoryProps> = ({
     const allowed = new Set(['ready', 'holding', 'past', 'red', 'white', 'sparkling', 'fortified']);
     if (view && allowed.has(view)) return view;
     return null;
+  }, [location.search]);
+
+  // Sidebar quick actions deep-link here: ?add=1 opens capture, ?scan=1 opens the scanner
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('add') === '1') setIsAiModalOpen(true);
+    if (params.get('scan') === '1') setIsScannerOpen(true);
   }, [location.search]);
 
   const presetMeta = useMemo(() => {
@@ -507,85 +515,56 @@ Regeln:
   const allPocketBottleCount = pocketSummaries.find((item) => item.id === 'All')?.bottleCount ?? 0;
   const pocketDashboardEntries = pocketSummaries.filter((item) => item.id !== 'All');
 
+  const statusChips: Array<{ value: WineStatus | 'All'; label: string; dot: string }> = [
+    { value: 'All', label: 'Alle', dot: 'bg-charcoal' },
+    { value: WineStatus.READY, label: 'Trinkreif', dot: 'bg-sage-bar' },
+    { value: WineStatus.HOLD, label: 'Lagernd', dot: 'bg-gold-bar' },
+    { value: WineStatus.PAST_PEAK, label: 'Überreif', dot: 'bg-burgundy' }
+  ];
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="font-serif text-4xl font-bold text-charcoal">
-            {presetMeta.title}
-          </h2>
-          <p className="text-stone-gray font-medium tracking-wide">
-            {presetMeta.subtitle}
+    <div className="space-y-6 animate-in fade-in duration-700">
+      <PageHeader
+        eyebrow={wishlistOnly ? 'Keller · Wunschliste' : 'Keller'}
+        title={presetMeta.title}
+        description={presetMeta.subtitle}
+        actions={
+          <>
+            <input
+              ref={jsonFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleJsonImport}
+              className="hidden"
+            />
+            <button onClick={openJsonImportPicker} disabled={isJsonImporting} className={buttonClass.secondary}>
+              {isJsonImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              JSON importieren
+            </button>
+            <button onClick={() => setIsScannerOpen(true)} className={buttonClass.secondary}>
+              <ScanBarcode className="w-4 h-4" /> Scannen
+            </button>
+            <button
+              onClick={() => {
+                const mappedFromFilter = subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter;
+                setTargetSubcellar(mappedFromFilter);
+                setIsAiModalOpen(true);
+              }}
+              className={buttonClass.primary}
+            >
+              <Plus className="w-4 h-4" /> Wein erfassen
+            </button>
+          </>
+        }
+      />
+
+      <section aria-label="Pockets" className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-gray">
+            {draggedWineId ? 'Jetzt auf eine Pocket ziehen' : 'Pockets'}
           </p>
         </div>
-        <div className="flex gap-3">
-          <input
-            ref={jsonFileInputRef}
-            type="file"
-            accept=".json,application/json"
-            onChange={handleJsonImport}
-            className="hidden"
-          />
-          <button
-            onClick={openJsonImportPicker}
-            disabled={isJsonImporting}
-            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 disabled:opacity-50 uppercase tracking-wider text-[10px]"
-          >
-            {isJsonImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            JSON IMPORT
-          </button>
-          <button
-            onClick={() => setIsScannerOpen(true)}
-            className="flex items-center gap-2 px-5 py-3.5 bg-white border-2 border-burgundy/15 text-burgundy font-black rounded-2xl transition-all hover:border-burgundy/30 uppercase tracking-wider text-[10px]"
-          >
-            <ScanBarcode className="w-4 h-4" /> SCANNEN
-          </button>
-          <button
-            onClick={() => {
-              const mappedFromFilter = subcellarFilter === 'All' || subcellarFilter === MAIN_CELLAR_FILTER ? '' : subcellarFilter;
-              setTargetSubcellar(mappedFromFilter);
-              setIsAiModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-6 py-3.5 bg-burgundy hover:bg-burgundy-light text-white font-black rounded-2xl transition-all shadow-premium uppercase tracking-wider text-[10px]"
-          >
-            <Plus className="w-4 h-4" /> NEU ANLEGEN
-          </button>
-        </div>
-      </header>
-
-      <div className="flex flex-col md:flex-row gap-4 p-4 bg-white border-2 border-burgundy/5 rounded-[2rem] shadow-premium">
-        <div className="flex-1 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
-          <input
-            type="text" placeholder="Kollektion durchsuchen..." value={search} onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-12 pr-4 py-3.5 bg-alabaster border-2 border-transparent rounded-[1.25rem] text-sm focus:outline-none focus:border-burgundy/20 transition-all font-medium"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <FilterSelect label="Kategorie" value={categoryFilter} onChange={setCategoryFilter} options={[{ label: 'Alle Kategorien', value: 'All' }, { label: 'Genuss', value: 'Genuss' }, { label: 'Investment', value: 'Investment' }, { label: 'Rarität', value: 'Rarität' }]} />
-          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Jeder Status', value: 'All' }, { label: 'Trinkreif', value: WineStatus.READY }, { label: 'Lagernd', value: WineStatus.HOLD }, { label: 'Vergangen', value: WineStatus.PAST_PEAK }]} />
-          <FilterSelect label="Sortierung" value={sort} onChange={setSort} options={[{ label: 'Name A–Z', value: 'name-asc' }, { label: 'Neuester Jahrgang', value: 'vintage-desc' }, { label: 'Höchster Wert', value: 'value-desc' }, { label: 'Meiste Flaschen', value: 'quantity-desc' }]} />
-        </div>
-      </div>
-
-      <section className="rounded-[1.8rem] border-2 border-burgundy/5 bg-white p-4 shadow-premium">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-stone-gray">Pockets</p>
-            <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">
-              {draggedWineId ? 'Jetzt auf eine Pocket ziehen' : 'Wie Unterkonten im Hauptkeller'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsPocketModalOpen(true)}
-            className="inline-flex items-center gap-1 rounded-xl border border-burgundy/20 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy transition-all hover:border-burgundy/40 hover:bg-burgundy/5"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Pocket
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {pocketSummaries.map((pocket) => {
             const active = subcellarFilter === pocket.id;
             const canDrop = Boolean(draggedWineId) && pocket.id !== 'All';
@@ -594,6 +573,7 @@ Regeln:
               <button
                 key={pocket.id}
                 type="button"
+                aria-pressed={active}
                 onClick={() => setSubcellarFilter(pocket.id)}
                 onDragOver={(event) => handlePocketDragOver(event, pocket.id)}
                 onDrop={(event) => void handlePocketDrop(event, pocket.id)}
@@ -603,17 +583,60 @@ Regeln:
                 onDragLeave={() => {
                   if (isDropTarget) setDropTargetPocketId(null);
                 }}
-                className={`rounded-xl border px-3 py-2 text-left transition-all ${isDropTarget
-                    ? 'border-burgundy bg-burgundy/15 text-burgundy shadow-sm'
+                className={`shrink-0 min-h-11 rounded-[10px] border px-4 py-2 text-left transition-colors ${isDropTarget
+                    ? 'border-burgundy bg-burgundy-tint'
                     : active
-                      ? 'border-burgundy/40 bg-burgundy/10 text-burgundy'
-                      : 'border-stone-200 bg-alabaster/50 text-stone-700 hover:border-burgundy/20'
+                      ? 'border-burgundy bg-white'
+                      : 'border-line bg-transparent hover:bg-white'
                   }`}
               >
-                <p className="text-xs font-black uppercase tracking-[0.12em]">{pocket.label}</p>
-                <p className="mt-1 text-[11px] text-stone-600">
+                <span className="block text-sm font-semibold text-charcoal">{pocket.label}</span>
+                <span className="block text-xs tabular-nums text-stone-gray">
                   {pocket.wineCount} Weine · {pocket.bottleCount} Fl.
-                </p>
+                </span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setIsPocketModalOpen(true)}
+            className="shrink-0 min-h-11 inline-flex items-center gap-1.5 rounded-[10px] border border-dashed border-line-strong px-4 text-sm font-semibold text-charcoal-soft hover:bg-white"
+          >
+            <Plus className="h-4 w-4" />
+            Neue Pocket
+          </button>
+        </div>
+      </section>
+
+      <section className={`${cardClass} p-4 space-y-3`}>
+        <div className="flex flex-wrap gap-2.5">
+          <label className="relative flex-1 min-w-[240px]">
+            <span className="sr-only">Kollektion durchsuchen</span>
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-gray" />
+            <input
+              type="text" placeholder="Kollektion durchsuchen..." value={search} onChange={(e) => setSearch(e.target.value)}
+              className="w-full h-11 pl-10 pr-4 bg-white border border-line-strong rounded-[10px] text-sm focus:outline-none focus:border-burgundy focus:ring-2 focus:ring-burgundy/15"
+            />
+          </label>
+          <FilterSelect label="Kategorie" value={categoryFilter} onChange={setCategoryFilter} options={[{ label: 'Alle Kategorien', value: 'All' }, { label: 'Genuss', value: 'Genuss' }, { label: 'Investment', value: 'Investment' }, { label: 'Rarität', value: 'Rarität' }, { label: 'Daily Drinker', value: 'Daily Drinker' }]} />
+          <FilterSelect label="Sortierung" value={sort} onChange={setSort} options={[{ label: 'Name A–Z', value: 'name-asc' }, { label: 'Neuester Jahrgang', value: 'vintage-desc' }, { label: 'Höchster Wert', value: 'value-desc' }, { label: 'Meiste Flaschen', value: 'quantity-desc' }]} />
+        </div>
+        <div role="group" aria-label="Status filtern" className="flex flex-wrap gap-1.5">
+          {statusChips.map((chip) => {
+            const active = statusFilter === chip.value;
+            return (
+              <button
+                key={chip.value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setStatusFilter(chip.value)}
+                className={`inline-flex items-center gap-2 h-9 px-3.5 rounded-full border text-[13px] font-semibold transition-colors ${active
+                  ? 'bg-charcoal border-charcoal text-white'
+                  : 'bg-white border-line-strong text-charcoal hover:bg-alabaster'
+                  }`}
+              >
+                <span aria-hidden="true" className={`w-2 h-2 rounded-full ${active ? 'bg-white' : chip.dot}`} />
+                {chip.label}
               </button>
             );
           })}
@@ -622,7 +645,7 @@ Regeln:
 
       {isPocketModalOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-charcoal/35 p-4 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[2rem] border border-burgundy/10 bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-2xl border border-burgundy/10 bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="font-serif text-2xl text-charcoal">Neue Pocket</h3>
               <button
@@ -658,7 +681,7 @@ Regeln:
                   setIsPocketModalOpen(false);
                   setNewPocketName('');
                 }}
-                className="rounded-xl border border-stone-300 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-stone-700 transition-all hover:bg-alabaster"
+                className="rounded-xl border border-line-strong px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-charcoal-soft transition-all hover:bg-alabaster"
               >
                 Abbrechen
               </button>
@@ -666,7 +689,7 @@ Regeln:
                 type="button"
                 onClick={() => void createPocket()}
                 disabled={isPocketSaving || !normalizeSubcellar(newPocketName)}
-                className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white transition-all hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-all hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isPocketSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                 Anlegen
@@ -678,18 +701,18 @@ Regeln:
 
       {isAiModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-charcoal/40 backdrop-blur-md animate-in fade-in">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-burgundy/5 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-8 border-b border-alabaster flex justify-between items-center bg-alabaster/30">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-line overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-5 border-b border-line flex justify-between items-center">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-burgundy text-white rounded-2xl shadow-burgundy-glow"><Wand2 className="w-6 h-6" /></div>
+                <div className="p-2.5 bg-burgundy-tint text-burgundy rounded-xl"><Wand2 className="w-5 h-5" /></div>
                 <h3 className="font-serif text-2xl font-bold text-charcoal">Prompt für Weinrecherche</h3>
               </div>
-              <button onClick={() => setIsAiModalOpen(false)} className="p-2"><X /></button>
+              <button onClick={() => setIsAiModalOpen(false)} aria-label="Dialog schließen" className="p-2 rounded-lg hover:bg-alabaster"><X /></button>
             </div>
-            <div className="p-10 space-y-10 overflow-y-auto">
+            <div className="p-6 md:p-8 space-y-8 overflow-y-auto">
               <div className="space-y-4">
                 <div className="space-y-3">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
+                  <p className="text-[11px] font-semibold text-stone-gray uppercase tracking-widest">
                     1) Wein eingeben
                   </p>
                   <div className="flex gap-4">
@@ -699,12 +722,12 @@ Regeln:
                       value={aiInput}
                       onChange={(e) => setAiInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleGeneratePrompt()}
-                      className="flex-1 px-6 py-4 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-serif"
+                      className="flex-1 px-6 py-4 bg-alabaster border border-line rounded-2xl focus:outline-none focus:border-burgundy/30 font-serif"
                     />
                     <button
                       onClick={handleGeneratePrompt}
                       disabled={!aiInput.trim()}
-                      className="px-8 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]"
+                      className="px-8 bg-burgundy text-white rounded-2xl font-semibold hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[11px]"
                     >
                       PROMPT ERSTELLEN
                     </button>
@@ -714,12 +737,12 @@ Regeln:
                 {generatedPrompt ? (
                   <div className="space-y-3 rounded-2xl border border-burgundy/10 bg-alabaster/40 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest">
+                      <p className="text-[11px] font-semibold text-stone-gray uppercase tracking-widest">
                         2) Prompt kopieren
                       </p>
                       <button
                         onClick={handleCopyPrompt}
-                        className="inline-flex items-center gap-2 rounded-xl border border-burgundy/25 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-burgundy hover:bg-burgundy/5"
+                        className="inline-flex items-center gap-2 rounded-xl border border-burgundy/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-widest text-burgundy hover:bg-burgundy/5"
                       >
                         {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                         {promptCopied ? 'Kopiert' : 'Kopieren'}
@@ -731,8 +754,8 @@ Regeln:
                       rows={12}
                       className="w-full px-4 py-3 bg-white border-2 border-burgundy/10 rounded-2xl font-mono text-xs text-charcoal"
                     />
-                    <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-600">
-                      <p className="font-semibold text-stone-700">So gehst du vor:</p>
+                    <div className="rounded-xl border border-line bg-white px-4 py-3 text-xs text-charcoal-soft">
+                      <p className="font-semibold text-charcoal-soft">So gehst du vor:</p>
                       <ol className="mt-2 list-decimal pl-4 space-y-1">
                         <li>Prompt in ChatGPT oder ein anderes Tool einfügen.</li>
                         <li>Nur JSON als Antwort erzeugen lassen.</li>
@@ -743,13 +766,13 @@ Regeln:
                 ) : null}
 
                 <div className="flex items-center justify-center gap-4">
-                  <button onClick={manualAdd} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest">Manuell anlegen</button>
-                  <button onClick={openJsonImportPicker} disabled={isJsonImporting} className="text-[10px] font-black text-stone-gray hover:text-burgundy uppercase tracking-widest disabled:opacity-50">
+                  <button onClick={manualAdd} className="text-[11px] font-semibold text-stone-gray hover:text-burgundy uppercase tracking-widest">Manuell anlegen</button>
+                  <button onClick={openJsonImportPicker} disabled={isJsonImporting} className="text-[11px] font-semibold text-stone-gray hover:text-burgundy uppercase tracking-widest disabled:opacity-50">
                     {isJsonImporting ? 'Import läuft...' : 'JSON importieren'}
                   </button>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest text-center">
+                  <p className="text-[11px] font-semibold text-stone-gray uppercase tracking-widest text-center">
                     Unterkeller (optional)
                   </p>
                   <input
@@ -758,7 +781,7 @@ Regeln:
                     value={targetSubcellar}
                     onChange={(e) => setTargetSubcellar(e.target.value)}
                     placeholder={`${MAIN_CELLAR_LABEL} wenn leer`}
-                    className="w-full px-4 py-3 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 text-sm text-charcoal"
+                    className="w-full px-4 py-3 bg-alabaster border border-line rounded-2xl focus:outline-none focus:border-burgundy/30 text-sm text-charcoal"
                   />
                   <datalist id="subcellar-options">
                     {availableSubcellars.map((name) => (
@@ -767,7 +790,7 @@ Regeln:
                   </datalist>
                 </div>
                 <div className="pt-2 border-t border-alabaster/80 space-y-3">
-                  <p className="text-[10px] font-black text-stone-gray uppercase tracking-widest text-center">
+                  <p className="text-[11px] font-semibold text-stone-gray uppercase tracking-widest text-center">
                     Oder JSON-Code einfügen
                   </p>
                   <textarea
@@ -775,12 +798,12 @@ Regeln:
                     onChange={(e) => setJsonCodeInput(e.target.value)}
                     placeholder='{"name":"...","vintage":2024,...} oder {"success":true,"data":{...}}'
                     rows={6}
-                    className="w-full px-4 py-3 bg-alabaster border-2 border-burgundy/5 rounded-2xl focus:outline-none focus:border-burgundy/30 font-mono text-xs text-charcoal"
+                    className="w-full px-4 py-3 bg-alabaster border border-line rounded-2xl focus:outline-none focus:border-burgundy/30 font-mono text-xs text-charcoal"
                   />
                   <button
                     onClick={handleJsonCodeImport}
                     disabled={isJsonImporting || !jsonCodeInput.trim()}
-                    className="w-full py-3 bg-burgundy text-white rounded-2xl font-black hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[10px]"
+                    className="w-full py-3 bg-burgundy text-white rounded-2xl font-semibold hover:bg-burgundy-light transition-all disabled:opacity-50 uppercase tracking-widest text-[11px]"
                   >
                     {isJsonImporting ? 'Import läuft...' : 'JSON-Code importieren'}
                   </button>
@@ -792,9 +815,9 @@ Regeln:
       )}
 
       {showPocketDashboard ? (
-        <section className="rounded-[2rem] border-2 border-burgundy/5 bg-white p-6 shadow-premium">
-          <div className="mb-5 flex flex-col gap-1">
-            <h3 className="font-serif text-3xl text-charcoal">Hauptkeller Dashboard</h3>
+        <section className="space-y-4">
+          <div className="flex flex-col gap-0.5">
+            <h2 className="text-base font-semibold text-charcoal">Pockets im Überblick</h2>
             <p className="text-sm text-stone-gray">Wähle eine Pocket, um deren Weine zu öffnen.</p>
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -807,14 +830,16 @@ Regeln:
                   key={pocket.id}
                   type="button"
                   onClick={() => setSubcellarFilter(pocket.id)}
-                  className="rounded-2xl border border-burgundy/10 bg-alabaster/50 p-5 text-left transition-all hover:border-burgundy/30 hover:bg-white"
+                  className={`${cardClass} p-5 text-left transition-colors hover:border-line-strong flex flex-col gap-3`}
                 >
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-gray">Pocket</p>
-                  <p className="mt-1 font-serif text-2xl text-charcoal">{pocket.label}</p>
-                  <p className="mt-3 text-sm text-stone-gray">{pocket.wineCount} Weine · {pocket.bottleCount} Flaschen</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.12em] text-burgundy">{percentage}% vom Gesamtbestand</p>
-                  <span className="mt-4 inline-flex rounded-lg border border-burgundy/25 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-burgundy">
-                    Pocket öffnen
+                  <span className="font-serif text-2xl font-semibold text-charcoal">{pocket.label}</span>
+                  <span className="text-sm tabular-nums text-charcoal-soft">{pocket.wineCount} Weine · {pocket.bottleCount} Flaschen</span>
+                  <span className="block h-1.5 rounded-full bg-sand overflow-hidden" aria-hidden="true">
+                    <span className="block h-full bg-burgundy rounded-full" style={{ width: `${percentage}%` }} />
+                  </span>
+                  <span className="flex justify-between text-[13px]">
+                    <span className="tabular-nums text-stone-gray">{percentage} % vom Bestand</span>
+                    <span className="font-semibold text-burgundy">Öffnen</span>
                   </span>
                 </button>
               );
@@ -824,14 +849,14 @@ Regeln:
       ) : filteredWines.length > 0 ? (
         <div className="space-y-8 pb-20">
           {groupedWines.map((group) => (
-            <section key={group.key} className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-serif text-2xl text-charcoal">{group.label}</h3>
-                <span className="text-xs uppercase tracking-[0.14em] text-stone-gray">
+            <section key={group.key} className="space-y-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="font-serif text-2xl font-semibold text-charcoal">{group.label}</h2>
+                <span className="text-sm tabular-nums text-stone-gray">
                   {group.wines.length} Weine · {group.bottleCount} Flaschen
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {group.wines.map((wine) => (
                   <div
                     key={wine.id}
@@ -848,9 +873,15 @@ Regeln:
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-32 bg-white rounded-[3rem] border-2 border-dashed border-burgundy/10">
-          <Search className="w-16 h-16 text-burgundy/10 mb-6" />
-          <p className="text-stone-gray max-w-sm mx-auto">Starten Sie Ihre Kollektion.</p>
+        <div className="flex flex-col items-center justify-center gap-3 py-20 px-6 text-center bg-white rounded-[14px] border border-dashed border-line-strong">
+          <span className="w-14 h-14 rounded-full bg-sand flex items-center justify-center text-stone-gray" aria-hidden="true">
+            <Search className="w-6 h-6" />
+          </span>
+          <h2 className="text-lg font-semibold text-charcoal">Keine Weine gefunden</h2>
+          <p className="text-charcoal-soft max-w-sm">Filter anpassen oder den ersten Wein erfassen.</p>
+          <button type="button" onClick={() => setIsAiModalOpen(true)} className={buttonClass.primary}>
+            <Plus className="w-4 h-4" /> Wein erfassen
+          </button>
         </div>
       )}
 
@@ -885,7 +916,7 @@ interface FilterSelectProps<T extends string> {
 }
 
 const FilterSelect = <T extends string>({ label, value, onChange, options }: FilterSelectProps<T>) => (
-  <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)} className="min-w-0 flex-1 px-4 sm:px-6 py-3.5 bg-alabaster border-2 border-transparent rounded-[1.25rem] text-xs font-black text-charcoal focus:outline-none appearance-none hover:border-burgundy/10">
+  <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)} className="min-w-0 h-11 px-3.5 bg-white border border-line-strong rounded-[10px] text-sm text-charcoal focus:outline-none focus:border-burgundy focus:ring-2 focus:ring-burgundy/15">
     {options.map((opt) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
   </select>
 );
