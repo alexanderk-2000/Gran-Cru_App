@@ -1,18 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  AlertTriangle,
-  CalendarClock,
-  CheckCircle2,
-  Layers3,
-  ListChecks,
-  Plus,
-  ShoppingCart,
-  Wine as WineIcon
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Plus, ScanLine, Wine as WineIcon } from 'lucide-react';
 import { OccasionInstance, Wine, WineStatus } from '../types.ts';
 import { formatCurrency, getWineFamily, getWineStatus, type WineFamily } from '../utils.ts';
 import { storageService } from '../services/storage.ts';
+import { PageHeader, buttonClass, cardClass } from '../components/PageHeader.tsx';
 
 interface RecommendationRow {
   wine: Wine;
@@ -142,7 +134,7 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
   const overripeShare = ratio(pastPeakBottles, Math.max(1, totalBottles));
   const overripeRiskLabel = overripeShare < 0.1 ? 'niedrig' : overripeShare < 0.25 ? 'mittel' : 'hoch';
   const overripeRiskTone =
-    overripeRiskLabel === 'niedrig' ? 'text-sage' : overripeRiskLabel === 'mittel' ? 'text-gold-dim' : 'text-burgundy';
+    overripeRiskLabel === 'niedrig' ? 'text-charcoal' : overripeRiskLabel === 'mittel' ? 'text-gold-dim' : 'text-burgundy';
 
   const pricedWineCount = useMemo(
     () =>
@@ -184,7 +176,6 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     return base;
   }, [inventory]);
 
-  const familyTotal = Math.max(1, totalBottles);
 
   const recommendationRows = useMemo<RecommendationRow[]>(() => {
     const rows: RecommendationRow[] = inventory
@@ -343,277 +334,216 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
     return (
       <div className="space-y-8 animate-in fade-in duration-700">
         <DashboardHeader />
-        <section className="rounded-3xl bg-white p-10 shadow-[0_16px_36px_rgba(40,35,37,0.07)]">
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <WineIcon className="h-12 w-12 text-burgundy/25" />
-            <h3 className="mt-4 font-serif text-3xl text-charcoal">Noch kein Wein erfasst</h3>
-            <p className="mt-2 max-w-md text-sm text-stone-gray">
-              Legen Sie den ersten Wein an, damit Reifeprofil, Empfehlungen und Alerts automatisch erscheinen.
-            </p>
-            <Link
-              to="/inventory"
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-burgundy px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-white"
-            >
-              <Plus className="h-4 w-4" />
-              Ersten Wein hinzufügen
-            </Link>
-          </div>
+        <section className={`${cardClass} flex flex-col items-center justify-center gap-3 px-6 py-16 text-center`}>
+          <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-full bg-sand text-stone-gray">
+            <WineIcon className="h-6 w-6" />
+          </span>
+          <h2 className="font-serif text-3xl font-semibold text-charcoal">Noch kein Wein erfasst</h2>
+          <p className="max-w-md text-charcoal-soft">
+            Legen Sie den ersten Wein an, damit Reife-Profil, Empfehlungen und Aufgaben automatisch erscheinen.
+          </p>
+          <Link to="/inventory?add=1" className={`${buttonClass.primary} mt-2`}>
+            <Plus className="h-4 w-4" />
+            Ersten Wein erfassen
+          </Link>
         </section>
       </div>
     );
   }
 
   const maturityTotal = Math.max(1, readyBottles + holdingBottles + pastPeakBottles);
+  const familyRows = ([
+    ['red', familyDistribution.red, viewPath('red')],
+    ['white', familyDistribution.white, viewPath('white')],
+    ['sparkling', familyDistribution.sparkling, viewPath('sparkling')],
+    ['fortified', familyDistribution.fortified, viewPath('fortified')]
+  ] as const).map(([id, count, to]) => ({ id, label: familyLabel[id], count, to }));
+  const maxFamily = Math.max(1, ...familyRows.map((row) => row.count), familyDistribution.unknown);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       <DashboardHeader />
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard icon={Layers3} label="Gesamtbestand (Flaschen)" value={`${totalBottles} Fl.`} />
+      <section aria-label="Kennzahlen" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Flaschen im Keller" value={`${totalBottles}`} subline={`${inventory.length} Weine`} />
         <KpiCard
-          icon={ShoppingCart}
           label="Marktwert"
           value={pricedWineCount > 0 ? formatCurrency(marketValue) : '—'}
-          subline={pricedWineCount > 0 ? undefined : 'Preise fehlen'}
+          subline={pricedWineCount > 0 ? `${pricedWineCount} Weine mit Preis` : 'Preise fehlen'}
         />
-        <KpiCard icon={CheckCircle2} label="Trinkbereit (nächste 90 Tage)" value={`${readyBottles} Fl.`} accent="text-sage" />
+        <KpiCard label="Trinkbereit" value={`${readyBottles}`} unit="Fl." subline="nächste 90 Tage" />
         <KpiCard
-          icon={AlertTriangle}
           label="Überreif-Risiko"
-          value={`${overripeRiskLabel} · ${toPercent(overripeShare)}`}
+          value={toPercent(overripeShare)}
+          subline={`Risiko ${overripeRiskLabel}`}
           accent={overripeRiskTone}
         />
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h3 className="font-serif text-2xl text-charcoal">Reife-Profil</h3>
-              <p className="mt-1 text-sm text-stone-gray">Trinkbereit, Lagernd und Überreif nach Flaschenmenge.</p>
-            </div>
-            <Link to="/inventory" className="text-xs font-black uppercase tracking-[0.14em] text-burgundy">
-              Zur Kellerliste
-            </Link>
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <article className={`${cardClass} flex flex-col gap-5 p-6`}>
+          <CardTitle title="Reife-Profil" subtitle="Flaschen nach Trinkfenster" link={{ to: '/timeline', label: 'Zur Zeitachse' }} />
+          <div
+            role="img"
+            aria-label={`${readyBottles} trinkbereit, ${holdingBottles} lagernd, ${pastPeakBottles} überreif`}
+            className="flex h-3.5 w-full gap-0.5 overflow-hidden rounded-full bg-sand"
+          >
+            <span className="bg-sage-bar" style={{ width: toPercent(ratio(readyBottles, maturityTotal)) }} />
+            <span className="bg-gold-bar" style={{ width: toPercent(ratio(holdingBottles, maturityTotal)) }} />
+            <span className="bg-burgundy" style={{ width: toPercent(ratio(pastPeakBottles, maturityTotal)) }} />
           </div>
-
-          <div className="overflow-hidden rounded-full bg-alabaster">
-            <div className="flex h-3 w-full">
-              <Link
-                to={viewPath('ready')}
-                title="Trinkbereit"
-                className="bg-sage/80 transition-opacity hover:opacity-80"
-                style={{ width: toPercent(ratio(readyBottles, maturityTotal)) }}
-              />
-              <Link
-                to={viewPath('holding')}
-                title="Lagernd"
-                className="bg-gold/70 transition-opacity hover:opacity-80"
-                style={{ width: toPercent(ratio(holdingBottles, maturityTotal)) }}
-              />
-              <Link
-                to={viewPath('past')}
-                title="Überreif"
-                className="bg-burgundy/70 transition-opacity hover:opacity-80"
-                style={{ width: toPercent(ratio(pastPeakBottles, maturityTotal)) }}
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <SegmentLinkCard to={viewPath('ready')} label="Trinkbereit" value={`${readyBottles} Fl.`} tone="text-sage" share={toPercent(ratio(readyBottles, maturityTotal))} />
-            <SegmentLinkCard to={viewPath('holding')} label="Lagernd" value={`${holdingBottles} Fl.`} tone="text-gold-dim" share={toPercent(ratio(holdingBottles, maturityTotal))} />
-            <SegmentLinkCard to={viewPath('past')} label="Überreif" value={`${pastPeakBottles} Fl.`} tone="text-burgundy" share={toPercent(ratio(pastPeakBottles, maturityTotal))} />
+          <div className="grid grid-cols-3 gap-3">
+            <SegmentLink to={viewPath('ready')} label="Trinkbereit" value={readyBottles} dot="bg-sage-bar" share={toPercent(ratio(readyBottles, maturityTotal))} />
+            <SegmentLink to={viewPath('holding')} label="Lagernd" value={holdingBottles} dot="bg-gold-bar" share={toPercent(ratio(holdingBottles, maturityTotal))} />
+            <SegmentLink to={viewPath('past')} label="Überreif" value={pastPeakBottles} dot="bg-burgundy" share={toPercent(ratio(pastPeakBottles, maturityTotal))} />
           </div>
         </article>
 
-        <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <h3 className="font-serif text-2xl text-charcoal">Weinsorten-Verteilung</h3>
-          <p className="mt-1 text-sm text-stone-gray">Rot, Weiß, Schaumwein und Portwein nach Flaschen.</p>
-
-          <div className="mt-5 overflow-hidden rounded-full bg-alabaster">
-            <div className="flex h-3 w-full">
-              <DistributionBarSegment to={viewPath('red')} colorClass="bg-burgundy/80" width={toPercent(ratio(familyDistribution.red, familyTotal))} />
-              <DistributionBarSegment to={viewPath('white')} colorClass="bg-gold/70" width={toPercent(ratio(familyDistribution.white, familyTotal))} />
-              <DistributionBarSegment to={viewPath('sparkling')} colorClass="bg-sage/70" width={toPercent(ratio(familyDistribution.sparkling, familyTotal))} />
-              <DistributionBarSegment to={viewPath('fortified')} colorClass="bg-charcoal/55" width={toPercent(ratio(familyDistribution.fortified, familyTotal))} />
-              <DistributionBarSegment to="/inventory" colorClass="bg-stone-300" width={toPercent(ratio(familyDistribution.unknown, familyTotal))} />
-            </div>
-          </div>
-
-          <ul className="mt-4 space-y-2.5">
-            {([
-              ['red', familyDistribution.red, viewPath('red')],
-              ['white', familyDistribution.white, viewPath('white')],
-              ['sparkling', familyDistribution.sparkling, viewPath('sparkling')],
-              ['fortified', familyDistribution.fortified, viewPath('fortified')]
-            ] as const).map(([id, count, to]) => {
-              const share = toPercent(ratio(count, familyTotal));
-              return (
-                <li key={id}>
-                  <Link
-                    to={to}
-                    className="flex items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5 transition-colors hover:bg-alabaster"
-                  >
-                    <span className="text-sm text-charcoal">{familyLabel[id]}</span>
-                    <span className="text-sm text-stone-600 [font-variant-numeric:tabular-nums]">{count} Fl. · {share}</span>
-                  </Link>
-                </li>
-              );
-            })}
-            <li>
-              <Link
-                to="/inventory"
-                className="flex items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5 transition-colors hover:bg-alabaster"
-              >
-                <span className="text-sm text-charcoal">Unklassifiziert</span>
-                <span className="text-sm text-stone-600 [font-variant-numeric:tabular-nums]">
-                  {familyDistribution.unknown} Fl. · {toPercent(ratio(familyDistribution.unknown, familyTotal))}
-                </span>
-              </Link>
-            </li>
+        <article className={`${cardClass} flex flex-col gap-4 p-6`}>
+          <CardTitle title="Weinsorten" subtitle="Flaschen nach Weinart" />
+          <ul className="flex flex-col gap-1">
+            {familyRows.map((row) => (
+              <li key={row.id}>
+                <DistributionRow to={row.to} label={row.label} count={row.count} width={toPercent(ratio(row.count, maxFamily))} />
+              </li>
+            ))}
+            {familyDistribution.unknown > 0 ? (
+              <li>
+                <DistributionRow
+                  to="/inventory"
+                  label="Unklassifiziert"
+                  count={familyDistribution.unknown}
+                  width={toPercent(ratio(familyDistribution.unknown, maxFamily))}
+                  muted
+                />
+              </li>
+            ) : null}
           </ul>
           {familyDistribution.unknown > 0 ? (
-            <p className="mt-3 text-xs text-stone-500">
-              Enthält Weine ohne eindeutige Typ-Zuordnung.
-            </p>
+            <p className="text-xs text-stone-gray">Unklassifiziert: Weine ohne eindeutige Typ-Zuordnung.</p>
           ) : null}
         </article>
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h3 className="font-serif text-2xl text-charcoal">Empfohlene Öffnungen</h3>
-              <p className="mt-1 text-sm text-stone-gray">Priorität für die nächsten 12 Monate.</p>
-            </div>
-            <span className="rounded-full bg-alabaster px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-gray">
-              Top {Math.max(5, recommendationRows.length)}
-            </span>
+      <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-5">
+        <article className={`${cardClass} overflow-hidden xl:col-span-3`}>
+          <div className="px-6 pb-4 pt-6">
+            <CardTitle title="Empfohlene Öffnungen" subtitle="Priorität für die nächsten 12 Monate" link={{ to: '/timeline', label: 'Zeitachse' }} />
           </div>
-
           {recommendationRows.length === 0 ? (
-            <p className="rounded-2xl border border-stone-200 bg-alabaster/40 p-4 text-sm text-stone-gray">
-              Aktuell keine priorisierten Öffnungen. Prüfen Sie den Kellerstatus.
+            <p className="border-t border-line-soft px-6 py-5 text-sm text-charcoal-soft">
+              Aktuell keine priorisierten Öffnungen.
             </p>
           ) : (
-            <ul className="space-y-3">
+            <ul>
               {recommendationRows.map((row) => (
-                <li key={row.wine.id} className="rounded-2xl border border-stone-200 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-serif text-lg leading-tight text-charcoal">
-                        {row.wine.vintage} {row.wine.name}
-                      </p>
-                      <p className="mt-1 text-xs text-stone-gray">
-                        {row.wine.producer || 'Produzent unbekannt'} · Fenster {buildWindowText(row.wine)} · {row.statusLabel}
-                      </p>
-                      <p className="mt-1 text-sm text-stone-600">{row.reason}</p>
-                    </div>
-                    <div className="flex shrink-0 gap-2">
-                      <Link
-                        to={`/wine/${row.wine.id}`}
-                        className="rounded-lg border border-burgundy/25 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-burgundy"
-                      >
-                        Öffnen
-                      </Link>
-                      <Link
-                        to="/genussplan"
-                        className="rounded-lg border border-stone-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-stone-700"
-                      >
-                        Planen
-                      </Link>
-                    </div>
-                  </div>
+                <li key={row.wine.id} className="border-t border-line-soft">
+                  <Link
+                    to={`/wine/${row.wine.id}`}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-6 py-3.5 transition-colors hover:bg-alabaster sm:grid-cols-[minmax(0,1fr)_minmax(120px,180px)_56px]"
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-semibold text-charcoal">
+                        {row.wine.name} <span className="font-medium tabular-nums text-charcoal-soft">{row.wine.vintage}</span>
+                      </span>
+                      <span className="truncate text-[13px] text-stone-gray">
+                        {row.wine.producer || 'Produzent unbekannt'} · {row.reason}
+                      </span>
+                    </span>
+                    <span className="hidden flex-col gap-1.5 sm:flex">
+                      <WindowBar wine={row.wine} currentYear={currentYear} />
+                      <span className="text-xs tabular-nums text-charcoal-soft">Fenster {buildWindowText(row.wine)}</span>
+                    </span>
+                    <span className="text-right text-[13px] font-semibold tabular-nums">{row.wine.quantity} Fl.</span>
+                  </Link>
                 </li>
               ))}
             </ul>
           )}
         </article>
 
-        <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h3 className="font-serif text-2xl text-charcoal">Aufgaben & Alerts</h3>
-              <p className="mt-1 text-sm text-stone-gray">Operative Hinweise für den nächsten Schritt.</p>
-            </div>
-            <ListChecks className="h-5 w-5 text-burgundy/60" />
-          </div>
-
-          <ul className="space-y-3">
-            {alerts.map((alert) => (
-              <li key={alert.id} className="rounded-2xl border border-stone-200 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-charcoal">{alert.title}</p>
-                    <p className="mt-1 text-sm text-stone-600">{alert.detail}</p>
-                  </div>
-                  <Link
-                    to={alert.to}
-                    className="shrink-0 rounded-lg border border-stone-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-stone-700"
+        <article className={`${cardClass} flex flex-col gap-4 p-6 xl:col-span-2`}>
+          <CardTitle title="Aufgaben" subtitle="Was als Nächstes zu tun ist" />
+          <ul className="flex flex-col gap-2.5">
+            {alerts.map((alert) => {
+              const clear = alert.id === 'all-clear';
+              return (
+                <li key={alert.id} className="flex gap-3 rounded-[10px] bg-alabaster p-3.5">
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-white ${clear ? 'text-sage' : 'text-burgundy'}`}
                   >
-                    {alert.ctaLabel}
-                  </Link>
-                </div>
-              </li>
-            ))}
+                    {clear ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-sm font-semibold text-charcoal">{alert.title}</span>
+                    <span className="text-[13px] text-charcoal-soft">{alert.detail}</span>
+                    <Link to={alert.to} className="mt-1 text-[13px] font-semibold text-burgundy hover:text-burgundy-dark">
+                      {clear ? alert.ctaLabel : 'Ansehen'}
+                    </Link>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </article>
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <h3 className="font-serif text-2xl text-charcoal">Letzte Aktivitäten</h3>
-          <p className="mt-1 text-sm text-stone-gray">Zuletzt hinzugefügt oder getrunken.</p>
-          <div className="mt-4">
-            {activitiesLoading ? (
-              <p className="text-sm text-stone-gray">Aktivitäten werden geladen …</p>
-            ) : recentDrinks.length === 0 ? (
-              <p className="text-sm text-stone-gray">Noch keine Aktivität vorhanden.</p>
-            ) : (
-              <ul className="space-y-2.5">
-                {recentDrinks.map((item) => (
-                  <li key={item.id} className="flex items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5">
-                    <p className="text-sm text-charcoal">
-                      {(item.wines?.vintage ? `${item.wines.vintage} ` : '') + (item.wines?.name || 'Unbekannter Wein')}
-                    </p>
-                    <span className="text-xs text-stone-500">{new Date(item.created_at).toLocaleDateString('de-DE')}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <article className={`${cardClass} flex flex-col gap-3 p-6`}>
+          <CardTitle title="Zuletzt getrunken" link={{ to: '/drink-history', label: 'Alle ansehen' }} />
+          {activitiesLoading ? (
+            <p className="text-sm text-stone-gray">Aktivitäten werden geladen …</p>
+          ) : recentDrinks.length === 0 ? (
+            <p className="text-sm text-charcoal-soft">Noch keine Aktivität vorhanden.</p>
+          ) : (
+            <ul>
+              {recentDrinks.map((item) => (
+                <li key={item.id} className="flex items-baseline justify-between gap-3 border-t border-line-soft py-2.5">
+                  <span className="truncate text-sm text-charcoal">
+                    {(item.wines?.vintage ? `${item.wines.vintage} ` : '') + (item.wines?.name || 'Unbekannter Wein')}
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-stone-gray">
+                    {new Date(item.created_at).toLocaleDateString('de-DE')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
 
-        <article className="rounded-3xl bg-white p-6 shadow-[0_14px_34px_rgba(40,35,37,0.06)]">
-          <h3 className="font-serif text-2xl text-charcoal">Nächste Anlässe</h3>
-          <p className="mt-1 text-sm text-stone-gray">Geplante Termine aus Ihrer Anlass-Planung.</p>
-          <div className="mt-4">
-            {activitiesLoading ? (
-              <p className="text-sm text-stone-gray">Anlässe werden geladen …</p>
-            ) : nextOccasions.length === 0 ? (
-              <div className="rounded-2xl border border-stone-200 bg-alabaster/40 p-4">
-                <p className="text-sm text-stone-gray">Keine Anlässe vorhanden.</p>
-                <Link to="/genussplan" className="mt-2 inline-flex text-xs font-black uppercase tracking-[0.14em] text-burgundy">
-                  Anlass anlegen
-                </Link>
-              </div>
-            ) : (
-              <ul className="space-y-2.5">
-                {nextOccasions.map((instance) => (
-                  <li key={instance.id} className="flex items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5">
-                    <div>
-                      <p className="text-sm text-charcoal">{instance.occasion?.title || 'Anlass'}</p>
-                      <p className="text-xs text-stone-500">{new Date(instance.instance_date).toLocaleDateString('de-DE')}</p>
-                    </div>
-                    <CalendarClock className="h-4 w-4 text-stone-500" />
+        <article className={`${cardClass} flex flex-col gap-3 p-6`}>
+          <CardTitle title="Nächste Anlässe" link={{ to: '/genussplan', label: 'Planen' }} />
+          {activitiesLoading ? (
+            <p className="text-sm text-stone-gray">Anlässe werden geladen …</p>
+          ) : nextOccasions.length === 0 ? (
+            <div className="flex flex-col items-start gap-2 rounded-[10px] bg-alabaster p-4">
+              <p className="text-sm text-charcoal-soft">Keine Anlässe vorhanden.</p>
+              <Link to="/genussplan" className="text-[13px] font-semibold text-burgundy">Anlass anlegen</Link>
+            </div>
+          ) : (
+            <ul>
+              {nextOccasions.map((instance) => {
+                const date = new Date(instance.instance_date);
+                return (
+                  <li key={instance.id} className="flex items-center gap-3.5 border-t border-line-soft py-3">
+                    <span className="flex h-[52px] w-12 shrink-0 flex-col items-center justify-center rounded-[10px] border border-line leading-tight">
+                      <span className="text-[11px] font-semibold uppercase text-burgundy">
+                        {date.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '')}
+                      </span>
+                      <span className="text-lg font-bold tabular-nums">{date.getDate()}</span>
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-semibold text-charcoal">{instance.occasion?.title || 'Anlass'}</span>
+                      <span className={`truncate text-[13px] ${instance.wine_id ? 'text-charcoal-soft' : 'text-burgundy'}`}>
+                        {instance.wine_id ? 'Wein zugewiesen' : 'Noch kein Wein zugewiesen'}
+                      </span>
+                    </span>
                   </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                );
+              })}
+            </ul>
+          )}
         </article>
       </section>
     </div>
@@ -621,81 +551,133 @@ export const Dashboard: React.FC<{ wines: Wine[] }> = ({ wines }) => {
 };
 
 const DashboardHeader = () => (
-  <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-    <div>
-      <h2 className="font-serif text-[2.1rem] leading-tight text-charcoal">Portfolio</h2>
-      <p className="mt-1 text-sm text-stone-gray">Private Kellerverwaltung</p>
+  <PageHeader
+    eyebrow="Keller · Übersicht"
+    title="Dashboard"
+    description="Was heute zählt: trinkreife Flaschen, offene Aufgaben und die nächsten Anlässe."
+    actions={
+      <>
+        <Link to="/inventory?scan=1" className={buttonClass.secondary}>
+          <ScanLine className="h-4 w-4" />
+          Etikett scannen
+        </Link>
+        <Link to="/inventory?add=1" className={buttonClass.primary}>
+          <Plus className="h-4 w-4" />
+          Wein erfassen
+        </Link>
+      </>
+    }
+  />
+);
+
+const CardTitle = ({
+  title,
+  subtitle,
+  link
+}: {
+  title: string;
+  subtitle?: string;
+  link?: { to: string; label: string };
+}) => (
+  <div className="flex items-end justify-between gap-3">
+    <div className="flex flex-col gap-0.5">
+      <h2 className="text-base font-semibold text-charcoal">{title}</h2>
+      {subtitle ? <p className="text-[13px] text-stone-gray">{subtitle}</p> : null}
     </div>
-    <div className="flex flex-wrap items-center gap-2">
-      <Link
-        to="/inventory"
-        className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white"
-      >
-        <Plus className="h-4 w-4" />
-        Wein hinzufügen
+    {link ? (
+      <Link to={link.to} className="shrink-0 text-[13px] font-semibold text-burgundy hover:text-burgundy-dark">
+        {link.label}
       </Link>
-      <Link
-        to="/inventory"
-        className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-stone-700"
-      >
-        <ShoppingCart className="h-4 w-4" />
-        Einkauf erfassen
-      </Link>
-    </div>
-  </header>
+    ) : null}
+  </div>
 );
 
 const KpiCard = ({
-  icon: Icon,
   label,
   value,
+  unit,
   subline,
   accent
 }: {
-  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  unit?: string;
   subline?: string;
   accent?: string;
 }) => (
-  <article className="h-full min-h-[148px] rounded-2xl bg-white p-5 shadow-[0_10px_24px_rgba(40,35,37,0.06)]">
-    <div className="mb-3 inline-flex rounded-xl bg-alabaster p-2.5">
-      <Icon className={`h-4 w-4 ${accent || 'text-stone-gray'}`} />
-    </div>
-    <p className="text-xs text-stone-gray">{label}</p>
-    <p className={`mt-1 font-serif text-3xl leading-none text-charcoal [font-variant-numeric:tabular-nums] ${accent || ''}`}>{value}</p>
-    {subline ? <p className="mt-2 text-xs text-stone-500">{subline}</p> : null}
+  <article className={`${cardClass} flex flex-col gap-1.5 px-[22px] py-5`}>
+    <p className="text-[13px] text-stone-gray">{label}</p>
+    <p className={`font-serif text-[34px] font-semibold leading-tight tabular-nums ${accent || 'text-charcoal'}`}>
+      {value}
+      {unit ? <span className="ml-1 font-sans text-base font-medium text-stone-gray">{unit}</span> : null}
+    </p>
+    {subline ? <p className="text-[13px] text-charcoal-soft">{subline}</p> : null}
   </article>
 );
 
-const SegmentLinkCard = ({
+const SegmentLink = ({
   to,
   label,
   value,
-  tone,
+  dot,
   share
 }: {
   to: string;
   label: string;
-  value: string;
-  tone: string;
+  value: number;
+  dot: string;
   share: string;
 }) => (
-  <Link to={to} className="rounded-2xl border border-stone-200 bg-alabaster/40 p-3 transition-colors hover:bg-alabaster">
-    <p className="text-xs text-stone-500">{label}</p>
-    <p className={`mt-0.5 font-serif text-2xl ${tone}`}>{value}</p>
-    <p className="mt-1 text-xs text-stone-500">{share}</p>
+  <Link to={to} className="-m-2 flex flex-col gap-0.5 rounded-[10px] p-2 transition-colors hover:bg-alabaster">
+    <span className="flex items-center gap-1.5 text-[13px] text-charcoal-soft">
+      <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-[3px] ${dot}`} />
+      {label}
+    </span>
+    <span className="text-[22px] font-semibold tabular-nums text-charcoal">{value}</span>
+    <span className="text-xs tabular-nums text-stone-gray">{share}</span>
   </Link>
 );
 
-const DistributionBarSegment = ({
+const DistributionRow = ({
   to,
-  colorClass,
-  width
+  label,
+  count,
+  width,
+  muted
 }: {
   to: string;
-  colorClass: string;
+  label: string;
+  count: number;
   width: string;
+  muted?: boolean;
 }) => (
-  <Link to={to} className={`${colorClass} transition-opacity hover:opacity-80`} style={{ width }} />
+  <Link
+    to={to}
+    className="-mx-2 grid grid-cols-[96px_minmax(0,1fr)_40px] items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-alabaster"
+  >
+    <span className="text-[13px] text-charcoal-soft">{label}</span>
+    <span className="block h-2 overflow-hidden rounded-full bg-sand">
+      <span className={`block h-full rounded-full ${muted ? 'bg-stone-gray' : 'bg-burgundy'}`} style={{ width }} />
+    </span>
+    <span className="text-right text-[13px] font-semibold tabular-nums">{count}</span>
+  </Link>
 );
+
+/** Drink window on a fixed 30-year scale (current year − 10 … + 20) with a "today" marker. */
+const WindowBar = ({ wine, currentYear }: { wine: Wine; currentYear: number }) => {
+  const from = currentYear - 10;
+  const span = 30;
+  const clamp = (value: number) => Math.min(100, Math.max(0, value));
+  const start = typeof wine.drink_start === 'number' ? wine.drink_start : currentYear;
+  const end = typeof wine.drink_end === 'number' ? wine.drink_end : start;
+  const left = clamp(((start - from) / span) * 100);
+  const right = clamp(((end - from) / span) * 100);
+  const status = getWineStatus(wine);
+  const fill = status === WineStatus.READY ? 'bg-sage-bar' : status === WineStatus.HOLD ? 'bg-gold-bar' : 'bg-burgundy';
+  return (
+    <span className="relative block h-1.5 rounded-full bg-sand" aria-hidden="true">
+      <span className={`absolute inset-y-0 rounded-full ${fill}`} style={{ left: `${left}%`, width: `${Math.max(2, right - left)}%` }} />
+      <span className="absolute -inset-y-1 w-0.5 bg-charcoal" style={{ left: `${(10 / span) * 100}%` }} />
+    </span>
+  );
+};

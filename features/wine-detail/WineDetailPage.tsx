@@ -21,9 +21,9 @@ import { imageStorageService, type ImageSlot } from '../../services/imageStorage
 import { evaluateWineDrinkability, formatCurrency } from '../../utils.ts';
 import { BottleFormat, Category, CriticScore, Tasting, Wine, WineDetails, WineType } from '../../types.ts';
 
-const LUXURY_BG = '#FDFBF7';
-const ACCENT_BURGUNDY = '#5B1E2D';
-const ACCENT_GOLD = '#C8A24A';
+const LUXURY_BG = '#F9F7F2';
+const ACCENT_BURGUNDY = '#6D071A';
+const ACCENT_GOLD = '#C5A065';
 
 const TAB_ITEMS = [
   { id: 'overview', label: 'Übersicht' },
@@ -820,10 +820,10 @@ const pairingIconLabel = (category?: string): string => {
 };
 
 const toneClass: Record<WindowMetrics['statusTone'], string> = {
-  ready: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-  hold: 'bg-amber-50 text-amber-700 border-amber-100',
-  past: 'bg-rose-50 text-rose-700 border-rose-100',
-  unknown: 'bg-stone-100 text-stone-500 border-stone-200'
+  ready: 'bg-sage-light text-sage border-sage-light',
+  hold: 'bg-gold-tint text-gold-dim border-gold-tint',
+  past: 'bg-burgundy-tint text-burgundy border-burgundy-tint',
+  unknown: 'bg-sand text-charcoal-soft border-sand'
 };
 
 const InlineToast = memo(function InlineToast({ message, onClose }: { message: ToastMessage | null; onClose: () => void }) {
@@ -837,14 +837,14 @@ const InlineToast = memo(function InlineToast({ message, onClose }: { message: T
 
   const colorClass =
     message.tone === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      ? 'border-sage-light bg-sage-light text-sage'
       : message.tone === 'info'
-        ? 'border-stone-300 bg-white text-stone-700'
-        : 'border-rose-200 bg-rose-50 text-rose-700';
+        ? 'border-line-strong bg-white text-charcoal-soft'
+        : 'border-burgundy-tint bg-burgundy-tint text-burgundy';
 
   return (
     <div className="fixed left-1/2 top-6 z-[80] w-[min(92vw,560px)] -translate-x-1/2">
-      <div className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.08)] ${colorClass}`}>
+      <div className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 ${colorClass}`}>
         <p className="text-sm leading-5">{message.text}</p>
         <button
           type="button"
@@ -863,11 +863,11 @@ const DetailSkeleton = memo(function DetailSkeleton() {
   return (
     <div className="min-h-screen px-6 pb-14 pt-8" style={{ backgroundColor: LUXURY_BG }}>
       <div className="mx-auto max-w-6xl space-y-6">
-        <div className="h-44 animate-pulse rounded-3xl border border-stone-200 bg-white" />
-        <div className="h-12 animate-pulse rounded-2xl border border-stone-200 bg-white" />
+        <div className="h-44 animate-pulse rounded-2xl border border-line bg-white" />
+        <div className="h-12 animate-pulse rounded-2xl border border-line bg-white" />
         <div className="grid gap-6 md:grid-cols-3">
-          <div className="h-56 animate-pulse rounded-3xl border border-stone-200 bg-white md:col-span-2" />
-          <div className="h-56 animate-pulse rounded-3xl border border-stone-200 bg-white" />
+          <div className="h-56 animate-pulse rounded-2xl border border-line bg-white md:col-span-2" />
+          <div className="h-56 animate-pulse rounded-2xl border border-line bg-white" />
         </div>
       </div>
     </div>
@@ -895,7 +895,7 @@ const StickyTabNav = memo(function StickyTabNav({
 
   return (
     <div className="sticky top-3 z-20 mt-6">
-      <div className="rounded-2xl border border-stone-200/80 bg-white/90 p-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.04)] backdrop-blur">
+      <div className="rounded-2xl border border-line/80 bg-white/90 p-1.5 backdrop-blur">
         <div ref={containerRef} className="-mx-1 flex overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TAB_ITEMS.map((tab) => {
             const label = tab.id === 'notes' ? `${tab.label} (${tastingCount})` : tab.label;
@@ -908,7 +908,7 @@ const StickyTabNav = memo(function StickyTabNav({
                   buttonRefs.current[tab.id] = node;
                 }}
                 onClick={() => onChange(tab.id)}
-                className={`relative mx-1 whitespace-nowrap rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors ${isActive ? 'bg-[#5B1E2D] text-white shadow-[0_8px_18px_rgba(91,30,45,0.25)]' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+                className={`relative mx-1 whitespace-nowrap rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors ${isActive ? 'bg-burgundy text-white' : 'text-charcoal-soft hover:bg-sand hover:text-charcoal'
                   }`}
                 aria-current={isActive ? 'page' : undefined}
               >
@@ -977,115 +977,107 @@ const HeaderCard = memo(function HeaderCard({
   const disabled = isSaving;
 
   return (
-    <header className="px-6 pt-7">
-      <div className="mx-auto max-w-6xl">
-        <section className="relative overflow-hidden rounded-[32px] border border-[#5B1E2D]/10 bg-gradient-to-br from-white via-[#fdfaf5] to-[#f6efe6] p-6 shadow-[0_18px_42px_rgba(48,20,24,0.08)] md:p-8">
-          <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-[#c8a24a]/15 blur-2xl" />
-          <div className="pointer-events-none absolute -bottom-12 left-20 h-40 w-40 rounded-full bg-[#5B1E2D]/10 blur-2xl" />
-          <div className="relative z-10">
-            <div className="mb-7 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <button
-                type="button"
-                onClick={onBack}
-                className="inline-flex items-center gap-2 rounded-full border border-stone-300 bg-white/90 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 transition-colors hover:border-stone-400 hover:text-stone-900"
-              >
-                <ArrowLeft className="h-4 w-4" /> Zurück
-              </button>
+    <header className="flex flex-col gap-5">
+      <nav aria-label="Brotkrumen" className="flex items-center gap-2 text-[13px] text-stone-gray">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex min-h-8 items-center gap-1.5 font-semibold text-burgundy hover:text-burgundy-dark"
+        >
+          <ArrowLeft className="h-4 w-4" /> Zurück
+        </button>
+        {wine.subcellar ? (
+          <>
+            <span aria-hidden="true">/</span>
+            <span>{wine.subcellar}</span>
+          </>
+        ) : null}
+        <span aria-hidden="true">/</span>
+        <span aria-current="page" className="truncate text-charcoal">{wine.name}</span>
+      </nav>
 
-              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-stone-200 bg-white/90 p-2">
-                <button
-                  type="button"
-                  onClick={onOpenEdit}
-                  disabled={disabled}
-                  className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-50"
-                >
-                  <Edit3 className="h-4 w-4" />
-                  Bearbeiten
-                </button>
-                <button
-                  type="button"
-                  onClick={onOpenPurchase}
-                  disabled={disabled}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#c8a24a] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
-                  <Plus className="h-4 w-4" />
-                  Nachkauf
-                </button>
-                <button
-                  type="button"
-                  onClick={onDelete}
-                  disabled={disabled}
-                  className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Löschen
-                </button>
-              </div>
-            </div>
-
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-              <div className="min-w-0 flex-1">
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-stone-300 bg-white/80 px-3 py-1 font-serif text-lg text-stone-700">{wine.vintage || 'NV'}</span>
-                  {wine.region ? <Badge variant="sage">{wine.region}</Badge> : null}
-                  {wine.wine_type ? <Badge variant="gold">{wine.wine_type}</Badge> : null}
-                  {wine.category ? <Badge variant="bordeaux">{wine.category}</Badge> : null}
-                  <ConfidenceBadge confidence={wine.confidence} missingFields={wine.missing_fields} />
-                </div>
-
-                <h1 className="font-serif text-[2rem] leading-[1.05] text-stone-900 md:text-[3.25rem]">{wine.name}</h1>
-
-                <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-stone-600 md:text-lg">
-                  <span>{wine.producer || 'Produzent unbekannt'}</span>
-                  {wine.appellation ? (
-                    <>
-                      <span className="h-1 w-1 rounded-full bg-stone-300" />
-                      <span>{wine.appellation}</span>
-                    </>
-                  ) : null}
-                </p>
-              </div>
-
-              <div className="w-full rounded-3xl border border-[#5B1E2D]/15 bg-white/95 p-5 shadow-[0_10px_26px_rgba(0,0,0,0.08)]">
-                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">Bestand</p>
-                <div className="mb-5 flex items-center justify-between">
-                  <button
-                    type="button"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:opacity-40"
-                    onClick={() => onAdjust(-1)}
-                    disabled={disabled || wine.quantity <= 0}
-                    aria-label="Bestand reduzieren"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <div className="text-center">
-                    <p className="font-serif text-4xl leading-none text-stone-900">{wine.quantity}</p>
-                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">Flaschen</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:opacity-40"
-                    onClick={() => onAdjust(1)}
-                    disabled={disabled}
-                    aria-label="Bestand erhöhen"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onDrink}
-                  disabled={disabled || wine.quantity <= 0}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
-                  style={{ backgroundColor: ACCENT_BURGUNDY }}
-                >
-                  <GlassWater className="h-4 w-4" /> Flasche trinken
-                </button>
-              </div>
-            </div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {wine.wine_type ? <Badge variant="gold">{wine.wine_type}</Badge> : null}
+            {wine.category ? <Badge variant="bordeaux">{wine.category}</Badge> : null}
+            <ConfidenceBadge confidence={wine.confidence} missingFields={wine.missing_fields} />
           </div>
-        </section>
+
+          <div className="flex flex-col gap-1">
+            <h1 className="font-serif text-[2rem] font-semibold leading-[1.08] text-charcoal md:text-[44px]">
+              {wine.name} <span className="tabular-nums text-burgundy">{wine.vintage || 'NV'}</span>
+            </h1>
+            <p className="text-base text-charcoal-soft">
+              {[wine.producer || 'Produzent unbekannt', wine.appellation, wine.region].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onDrink}
+              disabled={disabled || wine.quantity <= 0}
+              className="inline-flex h-12 items-center gap-2 rounded-[10px] bg-burgundy px-5 text-[15px] font-semibold text-white transition-colors hover:bg-burgundy-dark disabled:opacity-40"
+            >
+              <GlassWater className="h-[18px] w-[18px]" /> Flasche trinken
+            </button>
+            <button
+              type="button"
+              onClick={onOpenEdit}
+              disabled={disabled}
+              className="inline-flex h-12 items-center gap-2 rounded-[10px] border border-line-strong bg-white px-4 text-[15px] font-semibold text-charcoal transition-colors hover:bg-alabaster disabled:opacity-50"
+            >
+              <Edit3 className="h-4 w-4" /> Bearbeiten
+            </button>
+            <button
+              type="button"
+              onClick={onOpenPurchase}
+              disabled={disabled}
+              className="inline-flex h-12 items-center gap-2 rounded-[10px] border border-line-strong bg-white px-4 text-[15px] font-semibold text-charcoal transition-colors hover:bg-alabaster disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" /> Nachkauf
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={disabled}
+              aria-label="In den Papierkorb"
+              title="In den Papierkorb"
+              className="inline-flex h-12 w-12 items-center justify-center rounded-[10px] border border-line-strong bg-white text-burgundy transition-colors hover:bg-burgundy-tint disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-white p-5">
+          <span className="text-[13px] text-stone-gray">Bestand</span>
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line-strong text-charcoal transition-colors hover:bg-alabaster disabled:opacity-40"
+              onClick={() => onAdjust(-1)}
+              disabled={disabled || wine.quantity <= 0}
+              aria-label="Bestand reduzieren"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <p className="text-center">
+              <span className="block font-serif text-4xl font-semibold leading-none tabular-nums text-charcoal" aria-live="polite">{wine.quantity}</span>
+              <span className="mt-1 block text-xs text-stone-gray">Flaschen</span>
+            </p>
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line-strong text-charcoal transition-colors hover:bg-alabaster disabled:opacity-40"
+              onClick={() => onAdjust(1)}
+              disabled={disabled}
+              aria-label="Bestand erhöhen"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
     </header>
   );
@@ -1111,21 +1103,21 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
           : `seit ${formatYearDelta(metrics.yearsToEnd)} überschritten`;
 
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+    <section className="rounded-2xl border border-line bg-white p-6">
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <h3 className="font-serif text-xl text-stone-900">Trinkreife</h3>
-          <p className="mt-1 text-sm text-stone-500">
+          <h3 className="font-serif text-xl text-charcoal">Trinkreife</h3>
+          <p className="mt-1 text-sm text-stone-gray">
             {metrics.known && metrics.start !== null && metrics.end !== null
               ? `${metrics.start} bis ${metrics.end}`
               : 'Fensterdaten unvollständig'}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="rounded-full border border-stone-200 px-3 py-1 text-xs uppercase tracking-[0.16em] text-stone-600">
+          <span className="rounded-full border border-line px-3 py-1 text-xs uppercase tracking-[0.16em] text-charcoal-soft">
             Index {metrics.drinkabilityIndex}/100
           </span>
-          <span className="rounded-full border border-stone-200 px-3 py-1 text-xs uppercase tracking-[0.16em] text-stone-600">
+          <span className="rounded-full border border-line px-3 py-1 text-xs uppercase tracking-[0.16em] text-charcoal-soft">
             Unsicherheit {metrics.uncertaintyLabel}
           </span>
           <span className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.16em] ${toneClass[metrics.statusTone]}`}>
@@ -1136,7 +1128,7 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
 
       {metrics.known && metrics.start !== null && metrics.end !== null && metrics.currentPosition !== null ? (
         <>
-          <div className="relative rounded-full bg-stone-100">
+          <div className="relative rounded-full bg-sand">
             <div className="h-2 rounded-full" style={{ background: `linear-gradient(90deg, ${ACCENT_GOLD}22 0%, ${ACCENT_BURGUNDY} 50%, ${ACCENT_GOLD}22 100%)` }} />
 
             <span
@@ -1154,49 +1146,49 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
             ) : null}
           </div>
 
-          <div className="mt-3 flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-stone-500">
+          <div className="mt-3 flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-stone-gray">
             <span>Start {metrics.start}</span>
             <span>Heute {metrics.currentYear}</span>
             <span>Ende {metrics.end}</span>
           </div>
 
-          {metrics.peak !== null ? <p className="mt-3 text-xs text-stone-500">Peak: {metrics.peak}</p> : null}
+          {metrics.peak !== null ? <p className="mt-3 text-xs text-stone-gray">Peak: {metrics.peak}</p> : null}
         </>
       ) : (
-        <div className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4 text-sm text-stone-500">
+        <div className="rounded-2xl border border-line bg-alabaster/60 p-4 text-sm text-stone-gray">
           Für diesen Wein fehlen vollständige Start-/Enddaten des Trinkfensters.
         </div>
       )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Fenster-Fortschritt</p>
-          <p className="mt-1 text-sm font-semibold text-stone-800">
+        <div className="rounded-2xl border border-line bg-alabaster/70 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-gray">Fenster-Fortschritt</p>
+          <p className="mt-1 text-sm font-semibold text-charcoal">
             {metrics.windowProgressPercent !== null ? `${metrics.windowProgressPercent}%` : '—'}
           </p>
         </div>
-        <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Bis Peak</p>
-          <p className="mt-1 text-sm font-semibold text-stone-800">{peakTimingLabel}</p>
+        <div className="rounded-2xl border border-line bg-alabaster/70 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-gray">Bis Peak</p>
+          <p className="mt-1 text-sm font-semibold text-charcoal">{peakTimingLabel}</p>
         </div>
-        <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Bis Fensterende</p>
-          <p className="mt-1 text-sm font-semibold text-stone-800">{endTimingLabel}</p>
+        <div className="rounded-2xl border border-line bg-alabaster/70 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-gray">Bis Fensterende</p>
+          <p className="mt-1 text-sm font-semibold text-charcoal">{endTimingLabel}</p>
         </div>
-        <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Fensterlänge</p>
-          <p className="mt-1 text-sm font-semibold text-stone-800">
+        <div className="rounded-2xl border border-line bg-alabaster/70 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-stone-gray">Fensterlänge</p>
+          <p className="mt-1 text-sm font-semibold text-charcoal">
             {metrics.windowLengthYears !== null ? `${metrics.windowLengthYears} Jahre` : '—'}
           </p>
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Nächster Schritt</p>
-        <p className="mt-1 text-sm text-stone-700">{metrics.nextAction}</p>
+      <div className="mt-4 rounded-2xl border border-line bg-alabaster/70 px-4 py-3">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-stone-gray">Nächster Schritt</p>
+        <p className="mt-1 text-sm text-charcoal-soft">{metrics.nextAction}</p>
       </div>
 
-      <p className="mt-4 text-sm leading-relaxed text-stone-600">{metrics.explanation}</p>
+      <p className="mt-4 text-sm leading-relaxed text-charcoal-soft">{metrics.explanation}</p>
     </section>
   );
 });
@@ -1204,9 +1196,9 @@ const DrinkingWindowCard = memo(function DrinkingWindowCard({ metrics }: { metri
 const ShortDescriptionCard = memo(function ShortDescriptionCard({ description }: { description?: string | null }) {
   const cleaned = (description ?? '').trim();
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-      <h3 className="font-serif text-xl text-stone-900">Kurzbeschreibung</h3>
-      <p className="mt-3 text-sm leading-relaxed text-stone-600">
+    <section className="rounded-2xl border border-line bg-white p-6">
+      <h3 className="font-serif text-xl text-charcoal">Kurzbeschreibung</h3>
+      <p className="mt-3 text-sm leading-relaxed text-charcoal-soft">
         {cleaned || 'Für diesen Wein ist noch keine Kurzbeschreibung hinterlegt.'}
       </p>
     </section>
@@ -1224,7 +1216,7 @@ const FactValue = memo(function FactValue({
 }) {
   const cleaned = value.trim();
   if (!cleaned || cleaned === '—') {
-    return <p className="text-sm text-stone-400">—</p>;
+    return <p className="text-sm text-stone-gray">—</p>;
   }
 
   const piped = splitByDelimiter(cleaned, '|');
@@ -1234,7 +1226,7 @@ const FactValue = memo(function FactValue({
         {piped.map((chunk) => (
           <span
             key={`${label}-${chunk}`}
-            className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-xs text-stone-700"
+            className="rounded-full border border-line bg-alabaster px-2.5 py-1 text-xs text-charcoal-soft"
           >
             {chunk}
           </span>
@@ -1250,7 +1242,7 @@ const FactValue = memo(function FactValue({
         {commaSeparated.map((chunk) => (
           <span
             key={`${label}-${chunk}`}
-            className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-700"
+            className="rounded-full border border-line bg-white px-2.5 py-1 text-xs text-charcoal-soft"
           >
             {chunk}
           </span>
@@ -1260,7 +1252,7 @@ const FactValue = memo(function FactValue({
   }
 
   return (
-    <p className={`${compact ? 'text-sm' : 'text-[15px]'} leading-6 text-stone-800 break-words`}>
+    <p className={`${compact ? 'text-sm' : 'text-[15px]'} leading-6 text-charcoal break-words`}>
       {cleaned}
     </p>
   );
@@ -1268,16 +1260,16 @@ const FactValue = memo(function FactValue({
 
 const FactsDefinitionList = memo(function FactsDefinitionList({ items }: { items: FactItem[] }) {
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-      <h3 className="mb-1 font-serif text-xl text-stone-900">Quick Facts</h3>
-      <p className="mb-4 text-xs uppercase tracking-[0.14em] text-stone-500">Kernwerte auf einen Blick</p>
+    <section className="rounded-2xl border border-line bg-white p-6">
+      <h3 className="mb-1 font-serif text-xl text-charcoal">Quick Facts</h3>
+      <p className="mb-4 text-xs uppercase tracking-[0.14em] text-stone-gray">Kernwerte auf einen Blick</p>
       <ul className="space-y-2">
         {items.map((item) => (
           <li
             key={item.label}
-            className="grid grid-cols-1 gap-1 rounded-2xl border border-stone-100 bg-stone-50/60 px-3 py-2.5 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-4"
+            className="grid grid-cols-1 gap-1 rounded-2xl border border-line-soft bg-alabaster/60 px-3 py-2.5 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-4"
           >
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{item.label}</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-gray">{item.label}</p>
             <FactValue label={item.label} value={item.value} compact />
           </li>
         ))}
@@ -1298,22 +1290,22 @@ const ProfessionalFactsCard = memo(function ProfessionalFactsCard({ items }: { i
   const ungrouped = items.filter((item) => extractFactOrder(item.label) === Number.MAX_SAFE_INTEGER);
 
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-      <h3 className="mb-1 font-serif text-xl text-stone-900">Professionelles Weinprofil</h3>
-      <p className="mb-6 text-xs uppercase tracking-[0.14em] text-stone-500">Strukturiert nach Herkunft, Ausbau und Reife</p>
+    <section className="rounded-2xl border border-line bg-white p-6">
+      <h3 className="mb-1 font-serif text-xl text-charcoal">Professionelles Weinprofil</h3>
+      <p className="mb-6 text-xs uppercase tracking-[0.14em] text-stone-gray">Strukturiert nach Herkunft, Ausbau und Reife</p>
       <div className="space-y-6">
         {grouped
           .filter((group) => group.items.length > 0)
           .map((group) => (
-            <article key={group.title} className="rounded-2xl border border-stone-200 bg-white">
-              <header className="border-b border-stone-100 px-4 py-3">
-                <h4 className="font-serif text-lg text-stone-900">{group.title}</h4>
-                <p className="text-xs text-stone-500">{group.subtitle}</p>
+            <article key={group.title} className="rounded-2xl border border-line bg-white">
+              <header className="border-b border-line-soft px-4 py-3">
+                <h4 className="font-serif text-lg text-charcoal">{group.title}</h4>
+                <p className="text-xs text-stone-gray">{group.subtitle}</p>
               </header>
-              <dl className="divide-y divide-stone-100 px-4">
+              <dl className="divide-y divide-line-soft px-4">
                 {group.items.map((item) => (
                   <div key={item.label} className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
-                    <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">
+                    <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-gray">
                       {normalizeFactLabel(item.label)}
                     </dt>
                     <dd className="min-w-0">
@@ -1326,14 +1318,14 @@ const ProfessionalFactsCard = memo(function ProfessionalFactsCard({ items }: { i
           ))}
 
         {ungrouped.length > 0 ? (
-          <article className="rounded-2xl border border-stone-200 bg-white">
-            <header className="border-b border-stone-100 px-4 py-3">
-              <h4 className="font-serif text-lg text-stone-900">Weitere Angaben</h4>
+          <article className="rounded-2xl border border-line bg-white">
+            <header className="border-b border-line-soft px-4 py-3">
+              <h4 className="font-serif text-lg text-charcoal">Weitere Angaben</h4>
             </header>
-            <dl className="divide-y divide-stone-100 px-4">
+            <dl className="divide-y divide-line-soft px-4">
               {ungrouped.map((item) => (
                 <div key={item.label} className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
-                  <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">
+                  <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-gray">
                     {normalizeFactLabel(item.label)}
                   </dt>
                   <dd className="min-w-0">
@@ -1358,9 +1350,9 @@ const RatingsCard = memo(function RatingsCard({ ratings }: { ratings: Normalized
 
   if (ratings.length === 0) {
     return (
-      <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-        <h3 className="font-serif text-xl text-stone-900">Bewertungen</h3>
-        <p className="mt-3 text-sm text-stone-500">Noch keine externen Bewertungen vorhanden.</p>
+      <section className="rounded-2xl border border-line bg-white p-6">
+        <h3 className="font-serif text-xl text-charcoal">Bewertungen</h3>
+        <p className="mt-3 text-sm text-stone-gray">Noch keine externen Bewertungen vorhanden.</p>
       </section>
     );
   }
@@ -1369,21 +1361,21 @@ const RatingsCard = memo(function RatingsCard({ ratings }: { ratings: Normalized
   const hasMore = ratings.length > 8;
 
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-      <h3 className="mb-4 font-serif text-xl text-stone-900">Bewertungen</h3>
+    <section className="rounded-2xl border border-line bg-white p-6">
+      <h3 className="mb-4 font-serif text-xl text-charcoal">Bewertungen</h3>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {visible.map((rating) => (
-          <div key={`${rating.critic}-${rating.scoreLabel}`} className="rounded-2xl border border-stone-200 bg-stone-50/50 p-3 text-center">
-            <p className="font-serif text-2xl text-stone-900">{rating.scoreLabel}</p>
-            <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-stone-500">{rating.critic}</p>
-            {rating.year ? <p className="mt-0.5 text-[10px] text-stone-400">Jg. {rating.year}</p> : null}
+          <div key={`${rating.critic}-${rating.scoreLabel}`} className="rounded-2xl border border-line bg-alabaster/50 p-3 text-center">
+            <p className="font-serif text-2xl text-charcoal">{rating.scoreLabel}</p>
+            <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-stone-gray">{rating.critic}</p>
+            {rating.year ? <p className="mt-0.5 text-[11px] text-stone-gray">Jg. {rating.year}</p> : null}
           </div>
         ))}
       </div>
       {hasMore ? (
         <button
           type="button"
-          className="mt-4 text-sm font-medium text-stone-700 underline decoration-stone-300 underline-offset-4"
+          className="mt-4 text-sm font-medium text-charcoal-soft underline decoration-stone-300 underline-offset-4"
           onClick={() => setExpanded((prev) => !prev)}
         >
           {expanded ? 'Weniger anzeigen' : `Mehr anzeigen (${ratings.length - 8})`}
@@ -1396,13 +1388,13 @@ const RatingsCard = memo(function RatingsCard({ ratings }: { ratings: Normalized
 const AromaCard = memo(function AromaCard({ aromas }: { aromas: { primary: AromaEntry[]; secondary: AromaEntry[] } }) {
   const renderGroup = (title: string, entries: AromaEntry[]) => (
     <div>
-      <h4 className="mb-3 text-xs uppercase tracking-[0.16em] text-stone-500">{title}</h4>
+      <h4 className="mb-3 text-xs uppercase tracking-[0.16em] text-stone-gray">{title}</h4>
       {entries.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {entries.map((entry) => (
             <span
               key={`${title}-${entry.tag}`}
-              className={`rounded-full border px-3 py-1.5 text-sm ${title === 'Primary' ? 'border-[color:#5B1E2D]/25 bg-[color:#5B1E2D]/10 text-[color:#5B1E2D]' : 'border-stone-200 bg-white text-stone-700'
+              className={`rounded-full border px-3 py-1.5 text-sm ${title === 'Primary' ? 'border-[color:#5B1E2D]/25 bg-[color:#5B1E2D]/10 text-[color:#5B1E2D]' : 'border-line bg-white text-charcoal-soft'
                 }`}
             >
               {entry.tag}
@@ -1410,14 +1402,14 @@ const AromaCard = memo(function AromaCard({ aromas }: { aromas: { primary: Aroma
           ))}
         </div>
       ) : (
-        <p className="text-sm text-stone-500">Keine Angaben</p>
+        <p className="text-sm text-stone-gray">Keine Angaben</p>
       )}
     </div>
   );
 
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-      <h3 className="mb-5 flex items-center gap-2 font-serif text-xl text-stone-900">
+    <section className="rounded-2xl border border-line bg-white p-6">
+      <h3 className="mb-5 flex items-center gap-2 font-serif text-xl text-charcoal">
         <Wind className="h-5 w-5" style={{ color: ACCENT_BURGUNDY }} /> Aromatik
       </h3>
       <div className="space-y-6">
@@ -1438,8 +1430,8 @@ const StructureCard = memo(function StructureCard({ rows }: { rows: StructureRow
   ];
 
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-      <h3 className="mb-5 flex items-center gap-2 font-serif text-xl text-stone-900">
+    <section className="rounded-2xl border border-line bg-white p-6">
+      <h3 className="mb-5 flex items-center gap-2 font-serif text-xl text-charcoal">
         <Activity className="h-5 w-5" style={{ color: ACCENT_BURGUNDY }} /> Struktur
       </h3>
 
@@ -1449,17 +1441,17 @@ const StructureCard = memo(function StructureCard({ rows }: { rows: StructureRow
           return (
             <div key={bar.label}>
               <div className="mb-2 flex items-center justify-between gap-4">
-                <span className="text-xs uppercase tracking-[0.16em] text-stone-500">{bar.label}</span>
-                <span className="text-xs text-stone-500">{barValue ?? bar.description ?? '—'}</span>
+                <span className="text-xs uppercase tracking-[0.16em] text-stone-gray">{bar.label}</span>
+                <span className="text-xs text-stone-gray">{barValue ?? bar.description ?? '—'}</span>
               </div>
               {barValue === null ? (
-                <div className="h-1.5 rounded-full bg-stone-100" />
+                <div className="h-1.5 rounded-full bg-sand" />
               ) : (
                 <div className="flex gap-1">
                   {[1, 2, 3, 4, 5].map((idx) => (
                     <span
                       key={`${bar.label}-${idx}`}
-                      className={`h-1.5 flex-1 rounded-full ${idx <= barValue ? 'bg-[color:#5B1E2D]' : 'bg-stone-100'}`}
+                      className={`h-1.5 flex-1 rounded-full ${idx <= barValue ? 'bg-[color:#5B1E2D]' : 'bg-sand'}`}
                     />
                   ))}
                 </div>
@@ -1474,22 +1466,22 @@ const StructureCard = memo(function StructureCard({ rows }: { rows: StructureRow
 
 const PairingsCard = memo(function PairingsCard({ pairings }: { pairings: PairingItem[] }) {
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-      <h3 className="mb-5 flex items-center gap-2 font-serif text-xl text-stone-900">
+    <section className="rounded-2xl border border-line bg-white p-6">
+      <h3 className="mb-5 flex items-center gap-2 font-serif text-xl text-charcoal">
         <Utensils className="h-5 w-5" style={{ color: ACCENT_BURGUNDY }} /> Pairing
       </h3>
 
       {pairings.length === 0 ? (
-        <p className="text-sm text-stone-500">Keine Pairing-Daten vorhanden.</p>
+        <p className="text-sm text-stone-gray">Keine Pairing-Daten vorhanden.</p>
       ) : (
         <div className="space-y-3">
           {pairings.map((pairing) => (
-            <article key={`${pairing.item}-${pairing.category ?? ''}`} className="rounded-2xl border border-stone-200 bg-stone-50/40 p-4">
+            <article key={`${pairing.item}-${pairing.category ?? ''}`} className="rounded-2xl border border-line bg-alabaster/40 p-4">
               <div className="mb-1 flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-stone-900">{pairing.item}</p>
-                <span className="text-[11px] uppercase tracking-[0.14em] text-stone-500">{pairingIconLabel(pairing.category)}</span>
+                <p className="text-sm font-medium text-charcoal">{pairing.item}</p>
+                <span className="text-[11px] uppercase tracking-[0.14em] text-stone-gray">{pairingIconLabel(pairing.category)}</span>
               </div>
-              {pairing.note ? <p className="text-sm leading-6 text-stone-600">{pairing.note}</p> : null}
+              {pairing.note ? <p className="text-sm leading-6 text-charcoal-soft">{pairing.note}</p> : null}
             </article>
           ))}
         </div>
@@ -1500,27 +1492,27 @@ const PairingsCard = memo(function PairingsCard({ pairings }: { pairings: Pairin
 
 const NotesTimeline = memo(function NotesTimeline({ tastings, onCreateNote, disabled }: { tastings: Tasting[]; onCreateNote: () => void; disabled: boolean }) {
   return (
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+    <section className="rounded-2xl border border-line bg-white p-6">
       <div className="mb-5 flex items-center justify-between gap-4">
-        <h3 className="font-serif text-xl text-stone-900">Verkostungen</h3>
+        <h3 className="font-serif text-xl text-charcoal">Verkostungen</h3>
         <button
           type="button"
           onClick={onCreateNote}
           disabled={disabled}
-          className="rounded-full border border-stone-300 px-4 py-2 text-xs uppercase tracking-[0.16em] text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-50"
+          className="rounded-full border border-line-strong px-4 py-2 text-xs uppercase tracking-[0.16em] text-charcoal-soft transition-colors hover:bg-sand disabled:opacity-50"
         >
           Flasche trinken
         </button>
       </div>
 
       {tastings.length === 0 ? (
-        <p className="text-sm text-stone-500">Noch keine Verkostungen vorhanden.</p>
+        <p className="text-sm text-stone-gray">Noch keine Verkostungen vorhanden.</p>
       ) : (
         <ol className="space-y-5">
           {tastings.map((tasting) => (
-            <li key={tasting.id} className="rounded-2xl border border-stone-200 p-4">
+            <li key={tasting.id} className="rounded-2xl border border-line p-4">
               <div className="mb-2 flex items-center justify-between gap-4">
-                <time className="text-xs uppercase tracking-[0.16em] text-stone-500">
+                <time className="text-xs uppercase tracking-[0.16em] text-stone-gray">
                   {new Date(tasting.date).toLocaleDateString('de-DE')}
                 </time>
                 <div className="flex items-center gap-0.5" aria-label={`Bewertung ${tasting.rating} von 5`}>
@@ -1532,7 +1524,7 @@ const NotesTimeline = memo(function NotesTimeline({ tastings, onCreateNote, disa
                   ))}
                 </div>
               </div>
-              <p className="font-serif text-base leading-relaxed text-stone-800">“{tasting.note}”</p>
+              <p className="font-serif text-base leading-relaxed text-charcoal">“{tasting.note}”</p>
             </li>
           ))}
         </ol>
@@ -1545,8 +1537,8 @@ const SourceFooter = memo(function SourceFooter({ sources }: { sources: SourceLi
   if (sources.length === 0) return null;
 
   return (
-    <footer className="mx-auto mt-10 max-w-6xl border-t border-stone-200 px-6 pt-8">
-      <h4 className="mb-4 text-xs uppercase tracking-[0.18em] text-stone-500">Quellen</h4>
+    <footer className="mt-10 border-t border-line pt-8">
+      <h4 className="mb-4 text-xs uppercase tracking-[0.18em] text-stone-gray">Quellen</h4>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((source) => (
           <a
@@ -1554,10 +1546,10 @@ const SourceFooter = memo(function SourceFooter({ sources }: { sources: SourceLi
             href={source.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-2xl border border-stone-200 bg-white px-4 py-3 transition-colors hover:border-stone-300"
+            className="rounded-2xl border border-line bg-white px-4 py-3 transition-colors hover:border-line-strong"
           >
-            <p className="line-clamp-2 text-sm text-stone-800">{source.title}</p>
-            <p className="mt-1 text-xs text-stone-500">{source.domain}</p>
+            <p className="line-clamp-2 text-sm text-charcoal">{source.title}</p>
+            <p className="mt-1 text-xs text-stone-gray">{source.domain}</p>
           </a>
         ))}
       </div>
@@ -1640,11 +1632,11 @@ const Dialog = memo(function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_20px_50px_rgba(0,0,0,0.20)]"
+        className="w-full max-w-md rounded-2xl border border-line bg-white p-6"
       >
         <div className="mb-5 flex items-center justify-between gap-4">
-          <h3 id={titleId} className="font-serif text-2xl text-stone-900">{title}</h3>
-          <button type="button" onClick={onClose} className="rounded-full p-1 text-stone-500 hover:bg-stone-100" aria-label="Dialog schließen">
+          <h3 id={titleId} className="font-serif text-2xl text-charcoal">{title}</h3>
+          <button type="button" onClick={onClose} className="rounded-full p-1 text-stone-gray hover:bg-sand" aria-label="Dialog schließen">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -2033,15 +2025,15 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
 
   if (!wine || !metrics || !structureRows) {
     return (
-      <div className="min-h-screen px-6 py-12" style={{ backgroundColor: LUXURY_BG }}>
+      <div className="py-12">
         <InlineToast message={toast} onClose={() => setToast(null)} />
-        <div className="mx-auto max-w-3xl rounded-3xl border border-stone-200 bg-white p-8 text-center">
-          <h2 className="font-serif text-2xl text-stone-900">Wein nicht gefunden</h2>
-          <p className="mt-2 text-sm text-stone-500">Der Datensatz ist nicht verfügbar oder wurde gelöscht.</p>
+        <div className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-8 text-center">
+          <h2 className="font-serif text-2xl text-charcoal">Wein nicht gefunden</h2>
+          <p className="mt-2 text-sm text-stone-gray">Der Datensatz ist nicht verfügbar oder wurde gelöscht.</p>
           <button
             type="button"
             onClick={() => navigate('/inventory')}
-            className="mt-6 rounded-full border border-stone-300 px-5 py-2 text-sm text-stone-700 hover:bg-stone-100"
+            className="mt-6 rounded-full border border-line-strong px-5 py-2 text-sm text-charcoal-soft hover:bg-sand"
           >
             Zur Übersicht
           </button>
@@ -2051,18 +2043,17 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
   }
 
   return (
-    <div className="min-h-screen pb-16" style={{ backgroundColor: LUXURY_BG }}>
+    <div className="space-y-8 pb-16">
       <InlineToast key={toast?.id ?? 0} message={toast} onClose={() => setToast(null)} />
 
       {/* Hero wine image */}
       {heroImage && (
-        <div className="relative w-full h-64 md:h-80 overflow-hidden">
+        <div className="relative w-full h-56 md:h-72 overflow-hidden rounded-[14px] bg-sand">
           <img
             src={heroImage}
             alt={wine.name}
             className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#FDFBF7] via-transparent to-transparent" />
         </div>
       )}
 
@@ -2077,7 +2068,7 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
         onAdjust={handleAdjustStock}
       />
 
-      <main className="mx-auto max-w-6xl px-6">
+      <main>
         <StickyTabNav active={activeTab} onChange={handleJumpToSection} tastingCount={tastings.length} />
 
         <div className="mt-8 space-y-8">
@@ -2096,8 +2087,8 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
           </section>
 
           <section id="section-terroir" className="grid gap-6 scroll-mt-24 lg:grid-cols-2">
-            <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-              <h3 className="mb-4 flex items-center gap-2 font-serif text-xl text-stone-900">
+            <section className="rounded-2xl border border-line bg-white p-6">
+              <h3 className="mb-4 flex items-center gap-2 font-serif text-xl text-charcoal">
                 <MapPin className="h-5 w-5" style={{ color: ACCENT_BURGUNDY }} /> Herkunft & Terroir
               </h3>
               <dl className="space-y-2 text-sm">
@@ -2110,8 +2101,8 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
               </dl>
             </section>
 
-            <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-              <h3 className="mb-4 font-serif text-xl text-stone-900">Ausbau</h3>
+            <section className="rounded-2xl border border-line bg-white p-6">
+              <h3 className="mb-4 font-serif text-xl text-charcoal">Ausbau</h3>
               <dl className="space-y-2 text-sm">
                 <TerroirRow label="Gärung" value={wine.fermentation ?? aiDetails?.vinification?.fermentation_vessel} />
                 <TerroirRow label="Ausbau" value={wine.aging_process ?? aiDetails?.vinification?.aging_vessel} />
@@ -2131,8 +2122,8 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
           </section>
 
           <section id="section-cellar" className="scroll-mt-24">
-            <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-              <h3 className="mb-4 font-serif text-xl text-stone-900">Bestand & Einkauf</h3>
+            <section className="rounded-2xl border border-line bg-white p-6">
+              <h3 className="mb-4 font-serif text-xl text-charcoal">Bestand & Einkauf</h3>
               <dl className="space-y-2 text-sm">
                 <TerroirRow label="Bestand" value={`${wine.quantity} Flaschen`} />
                 <TerroirRow label="Unterkeller" value={wine.subcellar} />
@@ -2154,21 +2145,21 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
 
       <Dialog open={isPurchaseModalOpen} title="Nachkauf" onClose={() => setIsPurchaseModalOpen(false)}>
         <div className="space-y-5">
-          <div className="flex items-center justify-between rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2">
+          <div className="flex items-center justify-between rounded-2xl border border-line bg-alabaster px-3 py-2">
             <button
               type="button"
               onClick={() => setPurchaseQty((prev) => Math.max(1, prev - 1))}
-              className="rounded-full p-2 text-stone-700 hover:bg-white"
+              className="rounded-full p-2 text-charcoal-soft hover:bg-white"
             >
               <Minus className="h-4 w-4" />
             </button>
-            <span className="font-serif text-2xl text-stone-900">{purchaseQty}</span>
-            <button type="button" onClick={() => setPurchaseQty((prev) => prev + 1)} className="rounded-full p-2 text-stone-700 hover:bg-white">
+            <span className="font-serif text-2xl text-charcoal">{purchaseQty}</span>
+            <button type="button" onClick={() => setPurchaseQty((prev) => prev + 1)} className="rounded-full p-2 text-charcoal-soft hover:bg-white">
               <Plus className="h-4 w-4" />
             </button>
           </div>
 
-          <label className="block text-sm text-stone-700">
+          <label className="block text-sm text-charcoal-soft">
             Preis pro Flasche
             <input
               type="text"
@@ -2176,7 +2167,7 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
               placeholder="z. B. 8,99"
               value={purchasePrice}
               onChange={(event) => setPurchasePrice(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-stone-900 outline-none focus:border-stone-500"
+              className="mt-1 w-full rounded-xl border border-line-strong px-3 py-2 text-charcoal outline-none focus:border-stone-500"
             />
           </label>
 
@@ -2202,8 +2193,8 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
         >
           <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
             {/* Image upload section */}
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Fotos</h4>
+            <section className="space-y-3 rounded-2xl border border-line p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-gray">Fotos</h4>
               <div className="grid grid-cols-3 gap-3">
                 {(['bottle', 'label', 'case'] as const).map((slot) => (
                   <ImageUploader
@@ -2218,8 +2209,8 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
               </div>
             </section>
 
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Basisdaten</h4>
+            <section className="space-y-3 rounded-2xl border border-line p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-gray">Basisdaten</h4>
               <FormField label="Name" value={editForm.name} onChange={(value) => updateEditField('name', value)} required />
               <FormField label="Produzent" value={editForm.producer} onChange={(value) => updateEditField('producer', value)} />
               <FormField label="Jahrgang" value={editForm.vintage} onChange={(value) => updateEditField('vintage', value)} type="number" required />
@@ -2231,8 +2222,8 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
               <FormField label="Lage / Vineyard" value={editForm.vineyard} onChange={(value) => updateEditField('vineyard', value)} />
             </section>
 
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Keller & Klassifikation</h4>
+            <section className="space-y-3 rounded-2xl border border-line p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-gray">Keller & Klassifikation</h4>
               <SelectField
                 label="Kategorie"
                 value={editForm.category}
@@ -2293,24 +2284,24 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
               />
             </section>
 
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Rebsorten</h4>
+            <section className="space-y-3 rounded-2xl border border-line p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-gray">Rebsorten</h4>
               <GrapesField
                 value={editForm.grapes}
                 onChange={(next) => setEditForm((prev) => ({ ...prev, grapes: next }))}
               />
             </section>
 
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Struktur</h4>
+            <section className="space-y-3 rounded-2xl border border-line p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-gray">Struktur</h4>
               <StructureSlidersField
                 value={editForm.structure}
                 onChange={(next) => setEditForm((prev) => ({ ...prev, structure: next }))}
               />
             </section>
 
-            <section className="space-y-3 rounded-2xl border border-stone-200 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Kritiker-Scores</h4>
+            <section className="space-y-3 rounded-2xl border border-line p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-gray">Kritiker-Scores</h4>
               <ScoresField
                 value={editForm.scores}
                 onChange={(next) => setEditForm((prev) => ({ ...prev, scores: next }))}
@@ -2336,9 +2327,9 @@ export const WineDetail: React.FC<{ onDrink: (wine: Wine) => void }> = ({ onDrin
 const TerroirRow = memo(function TerroirRow({ label, value }: { label: string; value: string | null | undefined }) {
   const safeValue = toNullableString(value) ?? '—';
   return (
-    <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-4 border-b border-stone-100 pb-2 last:border-none last:pb-0">
-      <dt className="text-xs uppercase tracking-[0.16em] text-stone-500">{label}</dt>
-      <dd className="text-sm leading-6 text-stone-800">{safeValue}</dd>
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-4 border-b border-line-soft pb-2 last:border-none last:pb-0">
+      <dt className="text-xs uppercase tracking-[0.16em] text-stone-gray">{label}</dt>
+      <dd className="text-sm leading-6 text-charcoal">{safeValue}</dd>
     </div>
   );
 });
@@ -2357,14 +2348,14 @@ const FormField = memo(function FormField({
   required?: boolean;
 }) {
   return (
-    <label className="block text-sm text-stone-700">
+    <label className="block text-sm text-charcoal-soft">
       {label}
       <input
         type={type}
         required={required}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-stone-900 outline-none focus:border-stone-500"
+        className="mt-1 w-full rounded-xl border border-line-strong px-3 py-2 text-charcoal outline-none focus:border-stone-500"
       />
     </label>
   );
@@ -2382,12 +2373,12 @@ const SelectField = memo(function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm text-stone-700">
+    <label className="block text-sm text-charcoal-soft">
       {label}
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-stone-900 outline-none focus:border-stone-500"
+        className="mt-1 w-full rounded-xl border border-line-strong bg-white px-3 py-2 text-charcoal outline-none focus:border-stone-500"
       >
         {options.map((option) => (
           <option key={`${label}-${option.value}`} value={option.value}>
@@ -2422,7 +2413,7 @@ const GrapesField = memo(function GrapesField({
             placeholder="Rebsorte, z. B. Cabernet Sauvignon"
             value={row.name}
             onChange={(event) => updateRow(index, { name: event.target.value })}
-            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+            className="flex-1 rounded-xl border border-line-strong px-3 py-2 text-sm text-charcoal outline-none focus:border-stone-500"
           />
           <input
             type="number"
@@ -2431,12 +2422,12 @@ const GrapesField = memo(function GrapesField({
             max={100}
             value={row.percentage}
             onChange={(event) => updateRow(index, { percentage: event.target.value })}
-            className="w-20 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+            className="w-20 rounded-xl border border-line-strong px-3 py-2 text-sm text-charcoal outline-none focus:border-stone-500"
           />
           <button
             type="button"
             onClick={() => removeRow(index)}
-            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
+            className="rounded-lg p-2 text-stone-gray transition-colors hover:bg-alabaster hover:text-burgundy"
             aria-label="Rebsorte entfernen"
           >
             <X className="h-4 w-4" />
@@ -2446,7 +2437,7 @@ const GrapesField = memo(function GrapesField({
       <button
         type="button"
         onClick={() => onChange([...value, { name: '', percentage: '' }])}
-        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
+        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-line-strong px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-gray transition-colors hover:border-burgundy/40 hover:text-burgundy"
       >
         <Plus className="h-3.5 w-3.5" /> Rebsorte hinzufügen
       </button>
@@ -2482,8 +2473,8 @@ const StructureSlidersField = memo(function StructureSlidersField({
         return (
           <div key={key} className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-stone-700">{label}</span>
-              <label className="flex items-center gap-2 text-xs text-stone-500">
+              <span className="text-sm text-charcoal-soft">{label}</span>
+              <label className="flex items-center gap-2 text-xs text-stone-gray">
                 <input
                   type="checkbox"
                   checked={isSet}
@@ -2502,9 +2493,9 @@ const StructureSlidersField = memo(function StructureSlidersField({
               value={current ?? 3}
               disabled={!isSet}
               onChange={(event) => onChange({ ...value, [key]: Number(event.target.value) })}
-              className="w-full accent-[#5B1E2D] disabled:opacity-40"
+              className="w-full accent-burgundy disabled:opacity-40"
             />
-            <div className="flex justify-between text-[10px] uppercase tracking-[0.1em] text-stone-400">
+            <div className="flex justify-between text-[11px] uppercase tracking-[0.1em] text-stone-gray">
               <span>{lowLabel}</span>
               <span>{isSet ? current : '—'}</span>
               <span>{highLabel}</span>
@@ -2539,26 +2530,26 @@ const ScoresField = memo(function ScoresField({
             placeholder="Kritiker, z. B. Parker"
             value={row.critic}
             onChange={(event) => updateRow(index, { critic: event.target.value })}
-            className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+            className="flex-1 rounded-xl border border-line-strong px-3 py-2 text-sm text-charcoal outline-none focus:border-stone-500"
           />
           <input
             type="text"
             placeholder="Score"
             value={row.score}
             onChange={(event) => updateRow(index, { score: event.target.value })}
-            className="w-20 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+            className="w-20 rounded-xl border border-line-strong px-3 py-2 text-sm text-charcoal outline-none focus:border-stone-500"
           />
           <input
             type="number"
             placeholder="Jahr"
             value={row.year}
             onChange={(event) => updateRow(index, { year: event.target.value })}
-            className="w-24 rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 outline-none focus:border-stone-500"
+            className="w-24 rounded-xl border border-line-strong px-3 py-2 text-sm text-charcoal outline-none focus:border-stone-500"
           />
           <button
             type="button"
             onClick={() => removeRow(index)}
-            className="rounded-lg p-2 text-stone-400 transition-colors hover:bg-alabaster hover:text-burgundy"
+            className="rounded-lg p-2 text-stone-gray transition-colors hover:bg-alabaster hover:text-burgundy"
             aria-label="Score entfernen"
           >
             <X className="h-4 w-4" />
@@ -2568,7 +2559,7 @@ const ScoresField = memo(function ScoresField({
       <button
         type="button"
         onClick={() => onChange([...value, { critic: '', score: '', year: '' }])}
-        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 transition-colors hover:border-burgundy/40 hover:text-burgundy"
+        className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-line-strong px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-gray transition-colors hover:border-burgundy/40 hover:text-burgundy"
       >
         <Plus className="h-3.5 w-3.5" /> Score hinzufügen
       </button>

@@ -162,7 +162,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
             className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
             onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
         >
-            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
                 {/* Header */}
                 <div className="mb-5 flex items-center justify-between">
                     <div>
@@ -170,7 +170,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                             {result.type === 'barcode' ? '🔍 Barcode erkannt' : '📸 Etikett erkannt'}
                         </h3>
                         {result.raw && (
-                            <p className="mt-0.5 text-xs text-stone-400 font-mono truncate max-w-[260px]">
+                            <p className="mt-0.5 text-xs text-stone-gray font-mono truncate max-w-[260px]">
                                 {result.raw}
                             </p>
                         )}
@@ -178,7 +178,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                     <button
                         onClick={onClose}
                         disabled={busy}
-                        className="rounded-full p-2 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 disabled:opacity-40"
+                        className="rounded-full p-2 text-stone-gray transition-colors hover:bg-sand hover:text-charcoal-soft disabled:opacity-40"
                     >
                         <X className="h-5 w-5" />
                     </button>
@@ -187,44 +187,44 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                 {/* Form */}
                 <div className="space-y-3">
                     <div>
-                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-stone-500">Name</label>
+                        <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-stone-gray">Name</label>
                         <input
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             disabled={busy}
-                            className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-medium focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
+                            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm font-medium focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
                             placeholder="Weinname"
                         />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>
-                            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-stone-500">Produzent</label>
+                            <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-stone-gray">Produzent</label>
                             <input
                                 value={producer}
                                 onChange={(e) => setProducer(e.target.value)}
                                 disabled={busy}
-                                className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-medium focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
+                                className="w-full rounded-xl border border-line px-3 py-2.5 text-sm font-medium focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
                                 placeholder="Weingut"
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-stone-500">Jahrgang</label>
+                            <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-stone-gray">Jahrgang</label>
                             <input
                                 value={vintage}
                                 onChange={(e) => setVintage(e.target.value)}
                                 disabled={busy}
                                 type="number"
-                                className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-medium focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
+                                className="w-full rounded-xl border border-line px-3 py-2.5 text-sm font-medium focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
                             />
                         </div>
                     </div>
                     <div>
-                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-stone-500">Barcode</label>
+                        <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-stone-gray">Barcode</label>
                         <input
                             value={barcode}
                             onChange={(e) => setBarcode(e.target.value)}
                             disabled={busy}
-                            className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-mono focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
+                            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm font-mono focus:border-burgundy/30 focus:outline-none transition-colors disabled:opacity-50"
                             placeholder="Optional"
                         />
                     </div>
@@ -232,7 +232,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
 
                 {/* Duplicate warning */}
                 {duplicates.length > 0 && (
-                    <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+                    <div className="mt-3 flex items-start gap-2 rounded-xl bg-gold-tint px-3 py-2.5 text-xs text-gold-dim">
                         <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                         <span>
                             Möglicherweise bereits im Keller: {duplicates.map((d) => `${d.name}${d.vintage ? ` (${d.vintage})` : ''}`).join(', ')}
@@ -242,7 +242,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
 
                 {/* Validation errors */}
                 {validationErrors.length > 0 && (
-                    <div className="mt-3 rounded-xl bg-red-50 px-3 py-2.5 text-xs text-red-600 space-y-1">
+                    <div className="mt-3 rounded-xl bg-burgundy-tint px-3 py-2.5 text-xs text-burgundy space-y-1">
                         {validationErrors.map((message) => (
                             <p key={message}>{message}</p>
                         ))}
@@ -253,8 +253,8 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                 <button
                     onClick={handleEnrich}
                     disabled={busy || !name.trim()}
-                    className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition-all ${enriched
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-all ${enriched
+                            ? 'border-sage-light bg-sage-light text-sage'
                             : 'border-burgundy/15 bg-white text-burgundy hover:border-burgundy/30'
                         } disabled:opacity-40`}
                 >
@@ -269,7 +269,7 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
 
                 {/* Error */}
                 {error && (
-                    <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+                    <p className="mt-3 rounded-xl bg-burgundy-tint px-3 py-2 text-xs text-burgundy">{error}</p>
                 )}
 
                 {/* Actions */}
@@ -277,14 +277,14 @@ export const ScanResultDialog: React.FC<ScanResultDialogProps> = ({
                     <button
                         onClick={onClose}
                         disabled={busy}
-                        className="flex-1 rounded-xl border-2 border-stone-200 px-4 py-3 text-xs font-black uppercase tracking-wider text-stone-600 transition-all hover:border-stone-300 disabled:opacity-40"
+                        className="flex-1 rounded-xl border border-line px-4 py-3 text-xs font-semibold uppercase tracking-wider text-charcoal-soft transition-all hover:border-line-strong disabled:opacity-40"
                     >
                         Abbrechen
                     </button>
                     <button
                         onClick={handleSave}
                         disabled={busy || !name.trim()}
-                        className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-xs font-black uppercase tracking-wider text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
+                        className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white shadow-premium transition-all hover:bg-burgundy-light disabled:opacity-40"
                     >
                         {isSaving ? (
                             <><Loader2 className="h-4 w-4 animate-spin" /> Speichern…</>

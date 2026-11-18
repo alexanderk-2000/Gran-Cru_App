@@ -25,3 +25,12 @@ body {
 .custom-blur {
   backdrop-filter: blur(8px);
 }
+
+/* Playfair defaults to old-style figures; numbers in headings/KPIs must line up */
+.font-serif {
+  font-variant-numeric: lining-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: lining-nums tabular-nums;
+}
