@@ -1,6 +1,6 @@
 import {
   loadEnvFiles,
-  createSupabaseClient,
+  createFirebaseClient,
   authenticate,
   fetchActiveWines,
   getPath,
@@ -116,9 +116,9 @@ const firstFilledValue = (obj, paths) => {
 
 const run = async () => {
   await loadEnvFiles();
-  const supabase = createSupabaseClient();
-  const authMode = await authenticate(supabase);
-  const wines = await fetchActiveWines(supabase);
+  const client = createFirebaseClient();
+  const authMode = await authenticate(client);
+  const wines = await fetchActiveWines(client);
 
   const perField = FIELD_MAP.map((field) => {
     let aiPresent = 0;

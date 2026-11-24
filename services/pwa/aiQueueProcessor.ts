@@ -1,5 +1,5 @@
 import { isOnline } from './networkState.ts';
-import { getAccessToken } from '../supabase.ts';
+import { getAccessToken } from '../firebase.ts';
 import {
   getPendingAiQueueItems,
   markAiQueueStatus,

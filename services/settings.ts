@@ -1,5 +1,8 @@
 
-import { supabase } from './supabase.ts';
+import { doc, getDocFromServer, setDoc, updateDoc } from 'firebase/firestore';
+import { db, waitForAuth } from './firebase.ts';
+
+const settingsDoc = (uid: string) => doc(db, 'users', uid);
 
 export type AIProvider = 'gemini' | 'openai' | 'openrouter';
 
@@ -42,7 +45,7 @@ export const settingsService = {
             }
         }
 
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = await waitForAuth();
 
         // No user = demo mode, use localStorage + defaults
         if (!user) {
@@ -58,19 +61,12 @@ export const settingsService = {
 
         // Try to get from database
         try {
-            const { data, error } = await supabase
-                .from('user_settings')
-                .select('*')
-                .eq('user_id', user.id)
-                .single();
-
-            if (error) {
-                if (error.code === 'PGRST116') {
-                    // No settings exist, create them
-                    return await settingsService.createDefaultSettings();
-                }
-                throw error;
+            const snapshot = await getDocFromServer(settingsDoc(user.uid));
+            if (!snapshot.exists()) {
+                // No settings exist, create them
+                return await settingsService.createDefaultSettings();
             }
+            const data = { ...(snapshot.data() as Partial<UserSettings>), user_id: user.uid } as UserSettings;
 
             // Save to localStorage for faster access next time
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
@@ -80,7 +76,7 @@ export const settingsService = {
             console.error('Error fetching settings:', e);
             // Fallback to defaults + cache
             return {
-                user_id: user.id,
+                user_id: user.uid,
                 ...DEFAULT_SETTINGS,
                 ...cached,
                 created_at: new Date().toISOString(),
@@ -91,19 +87,17 @@ export const settingsService = {
 
     // Create default settings for new user
     createDefaultSettings: async (): Promise<UserSettings> => {
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = await waitForAuth();
         if (!user) throw new Error('No user logged in');
 
-        const { data, error } = await supabase
-            .from('user_settings')
-            .insert([{
-                user_id: user.id,
-                ...DEFAULT_SETTINGS
-            }])
-            .select()
-            .single();
-
-        if (error) throw error;
+        const timestamp = new Date().toISOString();
+        const data: UserSettings = {
+            user_id: user.uid,
+            ...DEFAULT_SETTINGS,
+            created_at: timestamp,
+            updated_at: timestamp
+        };
+        await setDoc(settingsDoc(user.uid), data);
 
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
         return data as UserSettings;
@@ -111,7 +105,7 @@ export const settingsService = {
 
     // Update user settings
     updateSettings: async (settings: Partial<UserSettings>): Promise<UserSettings> => {
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = await waitForAuth();
 
         // Update localStorage immediately
         const currentLocal = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -130,17 +124,16 @@ export const settingsService = {
         }
 
         // Update database
-        const { data, error } = await supabase
-            .from('user_settings')
-            .update({
-                ...settings,
-                updated_at: new Date().toISOString()
-            })
-            .eq('user_id', user.id)
-            .select()
-            .single();
-
-        if (error) throw error;
+        const { user_id: _ignoredUserId, created_at: _ignoredCreatedAt, ...changes } = settings;
+        const ref = settingsDoc(user.uid);
+        const existing = await getDocFromServer(ref);
+        const timestamp = new Date().toISOString();
+        if (existing.exists()) {
+            await updateDoc(ref, { ...changes, updated_at: timestamp });
+        } else {
+            await setDoc(ref, { user_id: user.uid, ...DEFAULT_SETTINGS, ...changes, created_at: timestamp, updated_at: timestamp });
+        }
+        const data = { ...(existing.exists() ? existing.data() : DEFAULT_SETTINGS), ...changes, user_id: user.uid, updated_at: timestamp } as UserSettings;
 
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
         return data as UserSettings;

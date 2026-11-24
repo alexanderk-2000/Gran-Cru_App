@@ -8,7 +8,7 @@
 import { enqueueAiQueueItem } from './pwa/aiQueue.ts';
 import { isOnline } from './pwa/networkState.ts';
 import { storageService } from './storage.ts';
-import { getAccessToken } from './supabase.ts';
+import { getAccessToken } from './firebase.ts';
 
 /* ---------- Types ---------- */
 

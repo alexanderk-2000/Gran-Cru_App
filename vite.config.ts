@@ -9,7 +9,9 @@ export default defineConfig({
       output: {
         manualChunks: {
           react: ['react', 'react-dom', 'react-router-dom'],
-          supabase: ['@supabase/supabase-js'],
+          firebase: ['firebase/app', 'firebase/auth'],
+          firestore: ['firebase/firestore'],
+          'firebase-storage': ['firebase/storage'],
           icons: ['lucide-react']
         }
       }

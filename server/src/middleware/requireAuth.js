@@ -1,23 +1,15 @@
-// The /api/ai/* routes had no auth check at all: any request that could
-// reach the server could trigger paid OpenAI/Gemini/OpenRouter (now
-// OpenRouter-only) calls. This validates the Supabase session JWT the
-// client already holds (anonymous/demo sessions included - they still
-// carry a valid access token) before letting a request reach the AI
-// runtime.
+// Every /api/ai/* route incurs paid OpenRouter cost, so each request must
+// carry a valid Firebase ID token (anonymous/demo users have one too).
 //
-// Deliberately a plain fetch against GoTrue's REST endpoint instead of
-// the @supabase/supabase-js SDK: constructing a SupabaseClient always
-// eagerly builds a RealtimeClient too, which throws ("native WebSocket
-// not found") on Node <22 with no polyfill - exactly the Node version CI
-// runs on. Verifying a bearer token needs none of that.
-export const createRequireAuth = ({ supabaseUrl, supabaseAnonKey }) => {
-  const userEndpoint = supabaseUrl ? `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/user` : null;
-
+// `verifyIdToken` is injected so the middleware stays testable; app.js
+// wires it to firebase-admin. Returning null from `isConfigured` means the
+// server has no Firebase project to verify against.
+export const createRequireAuth = ({ verifyIdToken, isConfigured = () => true }) => {
   return async (req, res, next) => {
-    if (!userEndpoint || !supabaseAnonKey) {
+    if (!isConfigured()) {
       return res.status(500).json({
         success: false,
-        error: 'Server auth not configured (SUPABASE_URL / SUPABASE_ANON_KEY missing).'
+        error: 'Server auth not configured (FIREBASE_PROJECT_ID missing).'
       });
     }
 
@@ -28,25 +20,17 @@ export const createRequireAuth = ({ supabaseUrl, supabaseAnonKey }) => {
     }
 
     try {
-      const response = await fetch(userEndpoint, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          apikey: supabaseAnonKey
-        }
-      });
-
-      if (!response.ok) {
+      const decoded = await verifyIdToken(token);
+      if (!decoded?.uid) {
         return res.status(401).json({ success: false, error: 'Invalid or expired session' });
       }
-
-      const user = await response.json();
-      if (!user?.id) {
+      req.userId = decoded.uid;
+      return next();
+    } catch (error) {
+      const code = typeof error?.code === 'string' ? error.code : '';
+      if (code.startsWith('auth/')) {
         return res.status(401).json({ success: false, error: 'Invalid or expired session' });
       }
-
-      req.userId = user.id;
-      next();
-    } catch {
       return res.status(502).json({ success: false, error: 'Auth service unreachable' });
     }
   };

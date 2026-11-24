@@ -1,4 +1,4 @@
-# Architektur IST (Stand 2026-02-13)
+# Architektur IST (Stand 2026-11-24)
 
 ## Systemübersicht
 
@@ -15,7 +15,7 @@ flowchart LR
   AiModules["server/src/ai/providers + prompts + normalize"]
   ApiRoutes["server/src/routes/*"]
   Cache["server/src/cache/aiCache.js"]
-  DB["Supabase (RLS + Tables)"]
+  DB["Firebase: Auth + Firestore (users/{uid}/...) + Storage"]
   Providers["OpenRouter (Gemini / GPT / Nemotron)"]
 
   UI --> Domain
@@ -32,6 +32,27 @@ flowchart LR
   AiRuntime --> Cache
   AiRuntime --> Providers
 ```
+
+## Firebase (seit 2026-11)
+
+Supabase wurde vollständig durch Firebase ersetzt (Region `us-central1`, Blaze-Tarif mit Freikontingent):
+
+| Vorher (Supabase) | Jetzt (Firebase) |
+|---|---|
+| Supabase Auth (E-Mail + anonym) | Firebase Authentication (E-Mail + anonym) |
+| Postgres-Tabellen + RLS | Firestore `users/{uid}/<tabelle>/{id}` + `firestore.rules` |
+| FK-Cascades, `updated_at`-Trigger | Firestore-Batches in `services/storage.legacy.ts` |
+| `wine_catalog` (global) + pg_trgm-Suche | `users/{uid}/wine_catalog` + `domain/wine/catalogSearch.ts` (gleiche Trigramm-Formel) |
+| Storage-Bucket `wine-images` (signierte URLs) | Cloud Storage `users/{uid}/wine-images/...` (Download-URLs ohne Ablauf) + `storage.rules` |
+| Express-Server (lokal, auf Vercel nicht deployt) | Cloud Function `api` (`server/functions.js`), Hosting-Rewrite `/api/**` |
+| Vercel Hosting | Firebase Hosting (`firebase.json`) |
+
+Wichtige Entscheidungen:
+
+- **Zeitstempel bleiben ISO-Strings.** Die Delta-Sync-Cursor in `services/pwa/syncEngine.ts` vergleichen Strings; so blieb die Sync-Schicht unverändert.
+- **Lesen nur vom Server** (`getDocsFromServer`): `getDocs()` liefert offline still einen leeren Cache, was die Hard-Delete-Reconciliation den lokalen Dexie-Cache löschen ließe.
+- **Keine Composite-Indizes:** Filter auf zweite Felder (z. B. `type == 'consume'` beim Delta-Pull) passieren clientseitig.
+- **Weinkatalog pro Nutzer** statt global: bei einer Ein-Personen-App gleichwertig und datenschutzfreundlicher.
 
 ## Umgesetzte Refactor-Bausteine
 

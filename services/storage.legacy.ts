@@ -1,7 +1,51 @@
 
+import {
+  collection,
+  doc,
+  getCountFromServer,
+  getDocFromServer,
+  getDocsFromServer,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+  type DocumentReference,
+  type Query,
+  type QueryConstraint
+} from 'firebase/firestore';
+import {
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInAnonymously as firebaseSignInAnonymously,
+  signInWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
 import { Wine, Tasting, Occasion, OccasionInstance, OccasionWinePoolEntry, RepeatRule, CellarPocket } from '../types.ts';
 import { PRE_SEED_WINES } from '../constants.ts';
-import { supabase } from './supabase.ts';
+import { auth, db, getCurrentUid, requireUid, waitForAuth } from './firebase.ts';
+import {
+  buildCatalogCanonicalKey,
+  normalizeCatalogToken,
+  PG_TRGM_THRESHOLD,
+  trigramSimilarity
+} from '../domain/wine/catalogSearch.ts';
+
+/**
+ * Firestore-backed storage service.
+ *
+ * Data model: everything a user owns lives below `users/{uid}/...`
+ * (one subcollection per former Supabase table), so the security rules
+ * are a single owner check (see firestore.rules). Timestamps stay ISO-8601
+ * strings exactly as before: they sort lexicographically, so the
+ * delta-sync cursors in services/pwa/syncEngine.ts keep working unchanged.
+ *
+ * Reads always go to the server (getDocsFromServer) - the plain getDocs()
+ * silently falls back to an (empty) cache when offline, which would make
+ * the sync engine's hard-delete reconciliation wipe the local Dexie cache.
+ * Failing loudly offline is what the offline adapter expects.
+ */
 
 /**
  * Grundlegende Hilfsmethoden für den lokalen Speicher (ESM kompatibel)
@@ -9,17 +53,91 @@ import { supabase } from './supabase.ts';
 export const getItem = (key: string) => localStorage.getItem(key);
 export const setItem = (key: string, value: string) => localStorage.setItem(key, value);
 export const removeItem = (key: string) => localStorage.removeItem(key);
-const OCCASIONS_SCHEMA_MODE_KEY = 'occasions_schema_mode'; // modern | legacy
 
-const isOccasionSchemaColumnError = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') return false;
-  const maybe = error as { code?: string; message?: string };
-  const code = maybe.code || '';
-  const message = (maybe.message || '').toLowerCase();
-  return (
-    code === 'PGRST204' &&
-    (message.includes('repeat_weekdays') || message.includes('max_occurrences') || message.includes('drink_anchor_date'))
-  );
+type CollectionName =
+  | 'wines'
+  | 'inventory_events'
+  | 'occasions'
+  | 'occasion_instances'
+  | 'occasion_wine_pool'
+  | 'tastings'
+  | 'cellar_pockets'
+  | 'wine_catalog';
+
+const nowIso = () => new Date().toISOString();
+
+const newId = (): string =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+
+const userCollection = (uid: string, name: CollectionName) => collection(db, 'users', uid, name);
+const userDoc = (uid: string, name: CollectionName, id: string) => doc(db, 'users', uid, name, id);
+
+const fetchAll = async <T>(q: Query): Promise<T[]> => {
+  const snapshot = await getDocsFromServer(q);
+  return snapshot.docs.map((d) => ({ ...(d.data() as Record<string, unknown>), id: d.id }) as T);
+};
+
+const fetchCollection = async <T>(uid: string, name: CollectionName, ...constraints: QueryConstraint[]): Promise<T[]> =>
+  fetchAll<T>(query(userCollection(uid, name), ...constraints));
+
+const fetchOne = async <T>(ref: DocumentReference): Promise<T | null> => {
+  const snapshot = await getDocFromServer(ref);
+  if (!snapshot.exists()) return null;
+  return { ...(snapshot.data() as Record<string, unknown>), id: snapshot.id } as T;
+};
+
+/** Firestore batches are capped at 500 operations. */
+const commitInChunks = async (ops: Array<(batch: ReturnType<typeof writeBatch>) => void>) => {
+  for (let i = 0; i < ops.length; i += 450) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + 450).forEach((op) => op(batch));
+    await batch.commit();
+  }
+};
+
+const byString = <T>(key: keyof T, direction: 'asc' | 'desc' = 'asc') => (a: T, b: T) => {
+  const left = String(a[key] ?? '');
+  const right = String(b[key] ?? '');
+  const result = left < right ? -1 : left > right ? 1 : 0;
+  return direction === 'asc' ? result : -result;
+};
+
+const isActiveWine = (wine: Partial<Wine>) => !wine.deleted_at;
+
+// Column defaults of the former Postgres `wines` table.
+const WINE_DEFAULTS: Record<string, unknown> = {
+  category: 'Rotwein',
+  wine_type: 'Stillwein',
+  format: '0.75L',
+  quantity: 0,
+  purchase_price: 0,
+  market_price: 0,
+  grapes: [],
+  aromas: [],
+  structure: {},
+  pairings: [],
+  scores: [],
+  confidence: 'medium',
+  missing_fields: [],
+  wishlist: false,
+  ai_details: {},
+  ai_sources: [],
+  is_favorite: false,
+  deleted_at: null,
+  deleted_by: null,
+  deleted_reason: null
+};
+
+const withDefaults = <T extends Record<string, unknown>>(payload: T, defaults: Record<string, unknown>): T => {
+  const result: Record<string, unknown> = { ...payload };
+  for (const [key, value] of Object.entries(defaults)) {
+    if (result[key] === undefined) {
+      result[key] = Array.isArray(value) ? [...value] : value && typeof value === 'object' ? { ...value } : value;
+    }
+  }
+  return result as T;
 };
 
 const normalizeOccasionRow = (row: any): Occasion => ({
@@ -28,14 +146,6 @@ const normalizeOccasionRow = (row: any): Occasion => ({
   repeat_weekdays: Array.isArray(row?.repeat_weekdays) ? row.repeat_weekdays : null,
   max_occurrences: typeof row?.max_occurrences === 'number' ? row.max_occurrences : null
 });
-
-const stripOccasionRepeatFields = (payload: Record<string, any>) => {
-  const legacy = { ...payload };
-  delete legacy.repeat_weekdays;
-  delete legacy.max_occurrences;
-  delete legacy.drink_anchor_date;
-  return legacy;
-};
 
 const removeNilValues = <T extends Record<string, any>>(payload: T): Partial<T> => {
   const clean: Partial<T> = {};
@@ -47,27 +157,33 @@ const removeNilValues = <T extends Record<string, any>>(payload: T): Partial<T> 
   return clean;
 };
 
-const normalizeCatalogToken = (value: unknown): string =>
-  String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-
-const buildCatalogCanonicalKey = (name: string, producer?: string | null, vintage?: number | null): string => {
-  const normalizedName = normalizeCatalogToken(name);
-  const normalizedProducer = normalizeCatalogToken(producer || '');
-  const normalizedVintage = Number.isFinite(vintage as number) ? String(vintage) : 'nv';
-  return [normalizedVintage, normalizedProducer, normalizedName].filter(Boolean).join('::');
+const withoutId = <T extends { id?: unknown }>(payload: T): Omit<T, 'id'> => {
+  const { id: _id, ...rest } = payload;
+  return rest;
 };
+
+// --- Wine catalog (formerly a Postgres trigger + pg_trgm search) ---
+
+/** Firestore document ids may not contain '/'; canonical keys never do, but be safe. */
+const catalogDocId = (canonicalKey: string) => canonicalKey.replace(/\//g, '_');
 
 const confidenceFromInt = (value: unknown): Wine['confidence'] => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'medium';
   if (value >= 80) return 'high';
   if (value <= 45) return 'low';
   return 'medium';
+};
+
+const confidenceToInt = (value: unknown): number => {
+  const normalized = String(value || 'medium').toLowerCase();
+  if (normalized === 'high') return 90;
+  if (normalized === 'low') return 40;
+  return 65;
+};
+
+const trimOrNull = (value: unknown): string | null => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text === '' ? null : text;
 };
 
 const toShortDescription = (details: unknown): string | undefined => {
@@ -78,30 +194,52 @@ const toShortDescription = (details: unknown): string | undefined => {
   return typeof shortText === 'string' && shortText.trim() !== '' ? shortText.trim() : undefined;
 };
 
-const isSupabaseMissingColumnError = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') return false;
-  const maybe = error as { code?: string; message?: string };
-  return maybe.code === 'PGRST204' && typeof maybe.message === 'string' && maybe.message.includes("Could not find the '");
-};
+/** Mirror of the former `sync_wine_row_to_catalog()` trigger. */
+const buildCatalogEntry = (wine: Partial<Wine>): Record<string, unknown> | null => {
+  const nameNorm = normalizeCatalogToken(wine.name);
+  if (!nameNorm) return null;
+  const producerNorm = normalizeCatalogToken(wine.producer);
+  const vintage = typeof wine.vintage === 'number' && Number.isFinite(wine.vintage) ? wine.vintage : null;
+  const details = wine.ai_details && typeof wine.ai_details === 'object' ? wine.ai_details : {};
+  const baseVinification = (details as any).vinification && typeof (details as any).vinification === 'object'
+    ? (details as any).vinification
+    : {};
+  const vinification = removeNilValues({
+    ...baseVinification,
+    fermentation_vessel: trimOrNull(wine.fermentation),
+    aging_vessel: trimOrNull(wine.aging_process)
+  });
 
-const extractMissingColumnName = (error: unknown): string | null => {
-  if (!isSupabaseMissingColumnError(error)) return null;
-  const message = (error as { message?: string }).message || '';
-  const match = message.match(/Could not find the '([^']+)' column/);
-  return match?.[1] || null;
-};
-
-const isSupabaseMissingRelationError = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') return false;
-  const maybe = error as { code?: string; message?: string };
-  const code = maybe.code || '';
-  const message = (maybe.message || '').toLowerCase();
-  return (
-    code === '42P01' ||
-    message.includes('relation') && message.includes('does not exist') ||
-    message.includes("could not find the 'cellar_pockets'") ||
-    message.includes("could not find the 'name' column of 'cellar_pockets'")
-  );
+  return {
+    canonical_key: buildCatalogCanonicalKey(String(wine.name), wine.producer || null, vintage),
+    name: String(wine.name).trim(),
+    producer: trimOrNull(wine.producer),
+    vintage,
+    region: trimOrNull(wine.region),
+    country: trimOrNull(wine.country),
+    appellation: trimOrNull(wine.appellation),
+    vineyard: trimOrNull(wine.vineyard),
+    wine_type: trimOrNull(wine.wine_type),
+    grapes: wine.grapes ?? [],
+    alcohol_percent: wine.alcohol_percent ?? null,
+    drink_start: wine.drink_start ?? null,
+    peak_year: wine.peak_year ?? null,
+    drink_end: wine.drink_end ?? null,
+    aromas: wine.aromas ?? [],
+    structure: wine.structure ?? {},
+    pairings: wine.pairings ?? [],
+    vinification,
+    scores: wine.scores ?? [],
+    details,
+    sources: wine.ai_sources ?? [],
+    confidence: confidenceToInt(wine.confidence),
+    missing_fields: wine.missing_fields ?? [],
+    inferred_fields: [],
+    name_norm: nameNorm,
+    producer_norm: producerNorm,
+    search_norm: [nameNorm, producerNorm, vintage === null ? '' : String(vintage)].filter(Boolean).join(' '),
+    updated_at: nowIso()
+  };
 };
 
 const mapCatalogRowToAiPayload = (row: any): Record<string, any> => {
@@ -136,16 +274,112 @@ const mapCatalogRowToAiPayload = (row: any): Record<string, any> => {
   };
 };
 
+type InventoryEventType = 'purchase' | 'adjustment' | 'loss' | 'transfer' | 'consume' | 'soft_delete' | 'restore';
+
+const buildInventoryEvent = (uid: string, event: {
+  wine_id: string;
+  type: InventoryEventType;
+  delta: number;
+  source: string;
+  note?: string | null;
+}) => ({
+  id: newId(),
+  user_id: uid,
+  wine_id: event.wine_id,
+  type: event.type,
+  delta: event.delta,
+  source: event.source || 'detail',
+  note: event.note ?? null,
+  created_at: nowIso()
+});
+
+type ConsumptionRow = {
+  id: string;
+  wine_id: string;
+  user_id: string;
+  type: string;
+  delta: number;
+  source: string;
+  created_at: string;
+  wines: { name: string; producer?: string; vintage?: number } | null;
+};
+
+/** Client-side replacement for PostgREST's `wines(name,producer,vintage)` embed. */
+const attachWineSummaries = async (uid: string, events: Array<Omit<ConsumptionRow, 'wines'>>): Promise<ConsumptionRow[]> => {
+  const wineIds = [...new Set(events.map((event) => event.wine_id).filter(Boolean))];
+  const wines = await Promise.all(wineIds.map((id) => fetchOne<Wine>(userDoc(uid, 'wines', id))));
+  const byId = new Map(wines.filter((wine): wine is Wine => !!wine).map((wine) => [wine.id, wine]));
+  return events.map((event) => {
+    const wine = byId.get(event.wine_id);
+    return {
+      ...event,
+      wines: wine ? { name: wine.name, producer: wine.producer, vintage: wine.vintage } : null
+    };
+  });
+};
+
+/**
+ * Hard-delete cascade that Postgres foreign keys used to do: events,
+ * tastings and pool entries go with the wine, occasion instances keep
+ * existing but lose their wine reference (ON DELETE SET NULL).
+ */
+const buildWineDeleteOps = async (uid: string, wineId: string) => {
+  const [events, tastings, pool, instances] = await Promise.all([
+    fetchCollection<{ id: string }>(uid, 'inventory_events', where('wine_id', '==', wineId)),
+    fetchCollection<{ id: string }>(uid, 'tastings', where('wine_id', '==', wineId)),
+    fetchCollection<{ id: string }>(uid, 'occasion_wine_pool', where('wine_id', '==', wineId)),
+    fetchCollection<{ id: string }>(uid, 'occasion_instances', where('wine_id', '==', wineId))
+  ]);
+  const timestamp = nowIso();
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+  events.forEach((row) => ops.push((batch) => batch.delete(userDoc(uid, 'inventory_events', row.id))));
+  tastings.forEach((row) => ops.push((batch) => batch.delete(userDoc(uid, 'tastings', row.id))));
+  pool.forEach((row) => ops.push((batch) => batch.delete(userDoc(uid, 'occasion_wine_pool', row.id))));
+  instances.forEach((row) => ops.push((batch) => batch.update(userDoc(uid, 'occasion_instances', row.id), {
+    wine_id: null,
+    updated_at: timestamp
+  })));
+  ops.push((batch) => batch.delete(userDoc(uid, 'wines', wineId)));
+  return ops;
+};
+
+/**
+ * Update a wine and append an inventory event atomically - replaces the
+ * old "update, insert event, roll back the update if the insert failed"
+ * dance, which a Firestore batch makes unnecessary.
+ */
+const updateWineWithEvent = async (
+  uid: string,
+  wineId: string,
+  changes: Partial<Wine>,
+  event: Parameters<typeof buildInventoryEvent>[1] | null
+): Promise<Wine> => {
+  const batch = writeBatch(db);
+  const timestamp = nowIso();
+  batch.update(userDoc(uid, 'wines', wineId), { ...changes, updated_at: timestamp });
+  if (event) {
+    const payload = buildInventoryEvent(uid, event);
+    batch.set(userDoc(uid, 'inventory_events', payload.id), payload);
+  }
+  await batch.commit();
+  const updated = await fetchOne<Wine>(userDoc(uid, 'wines', wineId));
+  if (!updated) throw new Error('Wein nicht gefunden.');
+  return updated;
+};
+
+const getActiveWine = async (uid: string, wineId: string): Promise<Wine | null> => {
+  const wine = await fetchOne<Wine>(userDoc(uid, 'wines', wineId));
+  return wine && isActiveWine(wine) ? wine : null;
+};
+
 export const storageService = {
   // --- AUTHENTIFIZIERUNG ---
   getCurrentUser: async () => {
-    // getSession() reads the cached session from local storage and works offline;
-    // getUser() would revalidate against the Auth server and fail without network.
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user;
+    // Reads the locally persisted session - works offline.
+    const user = await waitForAuth();
     if (!user) return null;
     return {
-      id: user.id,
+      id: user.uid,
       email: user.email || '',
       currency: 'EUR',
       target_date: '2044-12-31'
@@ -153,833 +387,526 @@ export const storageService = {
   },
 
   logout: async () => {
-    await supabase.auth.signOut();
+    await signOut(auth);
     window.location.reload();
   },
 
   signUp: async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-    return data.user;
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    try {
+      await sendEmailVerification(credential.user);
+    } catch (error) {
+      console.warn('Could not send verification email:', error);
+    }
+    return credential.user;
   },
 
   signIn: async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    return data.user;
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    return credential.user;
   },
 
   signInAnonymously: async () => {
-    const { data, error } = await supabase.auth.signInAnonymously();
-    if (error) throw error;
-    if (data.user) await storageService.seedIfNewUser(data.user.id);
-    return data.user;
+    const credential = await firebaseSignInAnonymously(auth);
+    if (credential.user) await storageService.seedIfNewUser(credential.user.uid);
+    return credential.user;
   },
 
   seedIfNewUser: async (userId: string) => {
-    const { count, error: countError } = await supabase
-      .from('wines')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-    if (countError) {
-      console.error('Failed to check existing wines before seeding demo user:', countError);
-      return;
-    }
-    if (count === 0) {
-      const seeded = PRE_SEED_WINES.map(w => ({
-        ...w,
-        user_id: userId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+    try {
+      const countSnapshot = await getCountFromServer(userCollection(userId, 'wines'));
+      if (countSnapshot.data().count > 0) return;
+      const timestamp = nowIso();
+      await commitInChunks(PRE_SEED_WINES.map((wine) => (batch) => {
+        const id = newId();
+        batch.set(userDoc(userId, 'wines', id), withDefaults({
+          ...wine,
+          id,
+          user_id: userId,
+          created_at: timestamp,
+          updated_at: timestamp
+        } as Record<string, unknown>, WINE_DEFAULTS));
       }));
-      const { error: insertError } = await supabase.from('wines').insert(seeded);
-      if (insertError) {
-        console.error('Failed to seed demo wines:', insertError);
-      }
+    } catch (error) {
+      console.error('Failed to seed demo wines:', error);
     }
   },
 
   // --- WEINBESTAND ---
   getWines: async (): Promise<Wine[]> => {
-    const { data, error } = await supabase
-      .from('wines')
-      .select('*')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data as Wine[]) || [];
+    const uid = await requireUid();
+    const wines = await fetchCollection<Wine>(uid, 'wines', orderBy('created_at', 'desc'));
+    return wines.filter(isActiveWine);
   },
 
   /**
-   * Delta-sync counterpart to getWines()/getDeletedWines(): a single query
-   * covering both active and deleted wines (deleted_at is just a column on
-   * the same row), filtered to what changed since `cursor`. Pass `null` for
-   * a first-sync bootstrap (returns everything). Used by
-   * services/pwa/syncEngine.ts instead of a full-table pull every cycle.
+   * Delta-sync counterpart to getWines()/getDeletedWines(): covers both
+   * active and deleted wines, filtered to what changed since `cursor`.
+   * Pass `null` for a first-sync bootstrap (returns everything).
    */
   getWinesUpdatedSince: async (cursor: string | null): Promise<Wine[]> => {
-    let query = supabase.from('wines').select('*').order('updated_at', { ascending: true });
-    if (cursor) query = query.gt('updated_at', cursor);
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data as Wine[]) || [];
+    const uid = await requireUid();
+    const constraints: QueryConstraint[] = cursor
+      ? [where('updated_at', '>', cursor), orderBy('updated_at', 'asc')]
+      : [orderBy('updated_at', 'asc')];
+    return fetchCollection<Wine>(uid, 'wines', ...constraints);
   },
 
   getCellarPockets: async (): Promise<CellarPocket[]> => {
-    const { data, error } = await supabase
-      .from('cellar_pockets')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      if (isSupabaseMissingRelationError(error)) return [];
-      throw error;
-    }
-    return (data as CellarPocket[]) || [];
+    const uid = await requireUid();
+    return fetchCollection<CellarPocket>(uid, 'cellar_pockets', orderBy('created_at', 'asc'));
   },
 
   createCellarPocket: async (name: string): Promise<CellarPocket | null> => {
     const normalizedName = String(name || '').trim();
     if (!normalizedName) return null;
+    const uid = await requireUid();
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Nicht eingeloggt.');
+    // Names are unique per user (former UNIQUE (user_id, name) constraint).
+    const existing = await fetchCollection<CellarPocket>(uid, 'cellar_pockets', where('name', '==', normalizedName));
+    if (existing.length > 0) return existing[0];
 
-    const insertPayload = {
-      user_id: user.id,
-      name: normalizedName
+    const timestamp = nowIso();
+    const pocket: CellarPocket = {
+      id: newId(),
+      user_id: uid,
+      name: normalizedName,
+      created_at: timestamp,
+      updated_at: timestamp
     };
-
-    const { data, error } = await supabase
-      .from('cellar_pockets')
-      .insert([insertPayload])
-      .select()
-      .single();
-
-    if (!error) return data as CellarPocket;
-
-    if (isSupabaseMissingRelationError(error)) return null;
-
-    const isUniqueViolation = (error as { code?: string }).code === '23505';
-    if (isUniqueViolation) {
-      const { data: existing, error: fetchError } = await supabase
-        .from('cellar_pockets')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('name', normalizedName)
-        .maybeSingle();
-      if (fetchError) throw fetchError;
-      return (existing as CellarPocket) || null;
-    }
-
-    throw error;
+    await setDoc(userDoc(uid, 'cellar_pockets', pocket.id), pocket);
+    return pocket;
   },
 
   getWineById: async (id: string): Promise<Wine | null> => {
-    const { data, error } = await supabase
-      .from('wines')
-      .select('*')
-      .eq('id', id)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (error) throw error;
-    return (data as Wine) || null;
+    const uid = await requireUid();
+    return getActiveWine(uid, id);
   },
 
   saveWine: async (wine: Partial<Wine>): Promise<Wine> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const payload = { ...wine, user_id: user?.id, updated_at: new Date().toISOString() };
+    const uid = await requireUid();
+    const timestamp = nowIso();
+    const existing = wine.id ? await fetchOne<Wine>(userDoc(uid, 'wines', wine.id)) : null;
+    const previousQuantity = existing && typeof existing.quantity === 'number' ? existing.quantity : null;
 
-    let previousQuantity: number | null = null;
-    if (wine.id) {
-      const { data: existing } = await supabase.from('wines').select('quantity').eq('id', wine.id).maybeSingle();
-      previousQuantity = typeof existing?.quantity === 'number' ? existing.quantity : null;
-    }
-
-    const attemptPayload: Record<string, any> = { ...payload };
-    let savedWine: Wine | null = null;
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      const { data, error } = wine.id
-        ? await supabase.from('wines').update(attemptPayload).eq('id', wine.id).select().single()
-        : await supabase
-            .from('wines')
-            .insert([{ ...attemptPayload, created_at: new Date().toISOString() }])
-            .select()
-            .single();
-
-      if (!error) {
-        savedWine = data as Wine;
-        break;
-      }
-
-      const missingColumn = extractMissingColumnName(error);
-      if (!missingColumn || !(missingColumn in attemptPayload)) {
-        throw error;
-      }
-
-      delete attemptPayload[missingColumn];
-    }
-
-    if (!savedWine) {
-      throw new Error('Speichern fehlgeschlagen: wiederholter Schema-Konflikt.');
+    let savedWine: Wine;
+    const batch = writeBatch(db);
+    if (existing) {
+      const changes = { ...withoutId(wine), user_id: uid, updated_at: timestamp };
+      batch.update(userDoc(uid, 'wines', existing.id), changes);
+      savedWine = { ...existing, ...changes, id: existing.id } as Wine;
+    } else {
+      const id = wine.id || newId();
+      savedWine = withDefaults({
+        ...wine,
+        id,
+        user_id: uid,
+        created_at: timestamp,
+        updated_at: timestamp
+      } as Record<string, unknown>, WINE_DEFAULTS) as unknown as Wine;
+      batch.set(userDoc(uid, 'wines', id), savedWine);
     }
 
     // Keep the event log the single source of truth for stock changes,
     // regardless of which UI path (capture, edit form, import) touched quantity.
-    if (user && typeof savedWine.quantity === 'number') {
+    if (typeof savedWine.quantity === 'number') {
       const delta = previousQuantity === null ? savedWine.quantity : savedWine.quantity - previousQuantity;
       if (delta !== 0) {
-        await supabase.from('inventory_events').insert([{
+        const event = buildInventoryEvent(uid, {
           wine_id: savedWine.id,
-          user_id: user.id,
           type: previousQuantity === null ? 'purchase' : 'adjustment',
           delta,
           source: previousQuantity === null ? 'capture' : 'edit'
-        }]);
+        });
+        batch.set(userDoc(uid, 'inventory_events', event.id), event);
       }
     }
 
+    const catalogEntry = buildCatalogEntry(savedWine);
+    if (catalogEntry) {
+      batch.set(userDoc(uid, 'wine_catalog', catalogDocId(String(catalogEntry.canonical_key))), catalogEntry);
+    }
+
+    await batch.commit();
     return savedWine;
   },
 
-  findWineInCatalog: async (query: { name: string; producer?: string; vintage?: number | null }): Promise<Record<string, any> | null> => {
-    const name = (query.name || '').trim();
-    const producer = (query.producer || '').trim();
-    const vintage = typeof query.vintage === 'number' && Number.isFinite(query.vintage) ? query.vintage : null;
+  findWineInCatalog: async (searchQuery: { name: string; producer?: string; vintage?: number | null }): Promise<Record<string, any> | null> => {
+    const name = (searchQuery.name || '').trim();
+    const producer = (searchQuery.producer || '').trim();
+    const vintage = typeof searchQuery.vintage === 'number' && Number.isFinite(searchQuery.vintage) ? searchQuery.vintage : null;
     if (!name) return null;
+    const uid = await getCurrentUid();
+    if (!uid) return null;
 
     const canonicalKey = buildCatalogCanonicalKey(name, producer || null, vintage);
-    const exact = await supabase
-      .from('wine_catalog')
-      .select('*')
-      .eq('canonical_key', canonicalKey)
-      .maybeSingle();
-    if (exact.data) return mapCatalogRowToAiPayload(exact.data);
+    const exact = await fetchOne<Record<string, any>>(userDoc(uid, 'wine_catalog', catalogDocId(canonicalKey)));
+    if (exact) return mapCatalogRowToAiPayload(exact);
 
-    const { data: fuzzy, error: fuzzyError } = await supabase.rpc('search_wine_catalog', {
-      q_name: name,
-      q_producer: producer || null,
-      q_vintage: vintage
-    });
+    // Fuzzy match - same scoring as the former search_wine_catalog() SQL function.
+    const entries = await fetchCollection<Record<string, any>>(uid, 'wine_catalog');
+    const qn = normalizeCatalogToken(name);
+    const qp = normalizeCatalogToken(producer);
+    const ranked = entries
+      .map((entry) => {
+        const nameSimilarity = trigramSimilarity(String(entry.name_norm || ''), qn);
+        const producerSimilarity = qp ? trigramSimilarity(String(entry.producer_norm || ''), qp) : 0;
+        const matches = (qn !== '' && nameSimilarity >= PG_TRGM_THRESHOLD) || (qp !== '' && producerSimilarity >= PG_TRGM_THRESHOLD);
+        const vintageBonus = vintage === null ? 0 : entry.vintage === vintage ? 0.05 : -0.05;
+        return { entry, matches, score: 0.75 * nameSimilarity + (qp ? 0.25 * producerSimilarity : 0) + vintageBonus };
+      })
+      .filter((candidate) => candidate.matches)
+      .sort((a, b) => b.score - a.score);
 
-    if (!fuzzyError && Array.isArray(fuzzy) && fuzzy.length > 0) {
-      const best = fuzzy[0];
-      const score = typeof best?.score === 'number' ? best.score : Number(best?.score ?? 0);
-      if (best?.id && Number.isFinite(score) && score >= 0.35) {
-        const { data: row } = await supabase
-          .from('wine_catalog')
-          .select('*')
-          .eq('id', best.id)
-          .maybeSingle();
-        if (row) return mapCatalogRowToAiPayload(row);
-      }
-    }
+    const best = ranked[0];
+    if (best && best.score >= 0.35) return mapCatalogRowToAiPayload(best.entry);
 
-    const normalizedName = normalizeCatalogToken(name);
-    const fallbackByNorm = await supabase
-      .from('wine_catalog')
-      .select('*')
-      .ilike('name_norm', `%${normalizedName}%`)
-      .limit(1)
-      .maybeSingle();
-    if (fallbackByNorm.data) return mapCatalogRowToAiPayload(fallbackByNorm.data);
-    if (!fallbackByNorm.error || !isSupabaseMissingColumnError(fallbackByNorm.error)) return null;
-
-    const fallbackByName = await supabase
-      .from('wine_catalog')
-      .select('*')
-      .ilike('name', `%${name}%`)
-      .limit(1)
-      .maybeSingle();
-    if (fallbackByName.data) return mapCatalogRowToAiPayload(fallbackByName.data);
-    return null;
+    const substringMatch = entries.find((entry) => String(entry.name_norm || '').includes(qn));
+    return substringMatch ? mapCatalogRowToAiPayload(substringMatch) : null;
   },
 
   adjustStock: async (id: string, delta: number, context?: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: wine } = await supabase
-      .from('wines')
-      .select('quantity')
-      .eq('id', id)
-      .is('deleted_at', null)
-      .single();
+    const uid = await requireUid();
+    const wine = await getActiveWine(uid, id);
     if (!wine) return null;
-    const { data, error } = await supabase.from('wines').update({
-      quantity: Math.max(0, wine.quantity + delta),
-      updated_at: new Date().toISOString()
-    }).eq('id', id).select().single();
-    if (error) throw error;
-
-    if (user && delta !== 0) {
-      const { error: eventError } = await supabase.from('inventory_events').insert([{
-        wine_id: id,
-        user_id: user.id,
-        type: 'adjustment',
-        delta,
-        source: context || 'manual'
-      }]);
-      if (eventError) {
-        await supabase.from('wines').update({ quantity: wine.quantity, updated_at: new Date().toISOString() }).eq('id', id);
-        throw eventError;
-      }
-    }
-    return data;
+    return updateWineWithEvent(
+      uid,
+      id,
+      { quantity: Math.max(0, (wine.quantity || 0) + delta) },
+      delta !== 0 ? { wine_id: id, type: 'adjustment', delta, source: context || 'manual' } : null
+    );
   },
 
   recordPurchase: async (purchase: { wine_id: string; quantity: number; price_per_bottle: number; date: string }) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: wine } = await supabase
-      .from('wines')
-      .select('*')
-      .eq('id', purchase.wine_id)
-      .is('deleted_at', null)
-      .single();
+    const uid = await requireUid();
+    const wine = await getActiveWine(uid, purchase.wine_id);
     if (!wine) return null;
-    const newQuantity = wine.quantity + purchase.quantity;
-    const newPrice = ((wine.purchase_price * wine.quantity) + (purchase.price_per_bottle * purchase.quantity)) / (newQuantity || 1);
-    const { data, error } = await supabase.from('wines').update({
-      quantity: newQuantity,
-      purchase_price: newPrice,
-      updated_at: new Date().toISOString()
-    }).eq('id', purchase.wine_id).select().single();
-    if (error) throw error;
-
-    if (user) {
-      const { error: eventError } = await supabase.from('inventory_events').insert([{
-        wine_id: purchase.wine_id,
-        user_id: user.id,
-        type: 'purchase',
-        delta: purchase.quantity,
-        source: 'purchase',
-        note: purchase.date
-      }]);
-      if (eventError) {
-        await supabase.from('wines').update({
-          quantity: wine.quantity,
-          purchase_price: wine.purchase_price,
-          updated_at: new Date().toISOString()
-        }).eq('id', purchase.wine_id);
-        throw eventError;
-      }
-    }
-    return data as Wine;
+    const currentQuantity = wine.quantity || 0;
+    const newQuantity = currentQuantity + purchase.quantity;
+    const newPrice = (((wine.purchase_price || 0) * currentQuantity) + (purchase.price_per_bottle * purchase.quantity)) / (newQuantity || 1);
+    return updateWineWithEvent(
+      uid,
+      purchase.wine_id,
+      { quantity: newQuantity, purchase_price: newPrice },
+      { wine_id: purchase.wine_id, type: 'purchase', delta: purchase.quantity, source: 'purchase', note: purchase.date }
+    );
   },
 
   recordLoss: async (wineId: string, quantity: number, reason?: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Nicht eingeloggt.');
-
-    const { data: wine, error: wineError } = await supabase
-      .from('wines')
-      .select('*')
-      .eq('id', wineId)
-      .is('deleted_at', null)
-      .single();
-    if (wineError) throw wineError;
+    const uid = await requireUid();
+    const wine = await getActiveWine(uid, wineId);
     if (!wine) throw new Error('Wein nicht gefunden.');
 
     const lostQuantity = Math.min(quantity, wine.quantity);
-    if (lostQuantity <= 0) return wine as Wine;
-    const nextQuantity = Math.max(0, wine.quantity - lostQuantity);
-
-    const { data: updatedWine, error: updateError } = await supabase
-      .from('wines')
-      .update({ quantity: nextQuantity, updated_at: new Date().toISOString() })
-      .eq('id', wineId)
-      .select()
-      .single();
-    if (updateError) throw updateError;
-
-    const { error: eventError } = await supabase.from('inventory_events').insert([{
-      wine_id: wineId,
-      user_id: user.id,
-      type: 'loss',
-      delta: -lostQuantity,
-      source: 'detail',
-      note: reason
-    }]);
-    if (eventError) {
-      await supabase.from('wines').update({ quantity: wine.quantity, updated_at: new Date().toISOString() }).eq('id', wineId);
-      throw eventError;
-    }
-    return updatedWine as Wine;
+    if (lostQuantity <= 0) return wine;
+    return updateWineWithEvent(
+      uid,
+      wineId,
+      { quantity: Math.max(0, wine.quantity - lostQuantity) },
+      { wine_id: wineId, type: 'loss', delta: -lostQuantity, source: 'detail', note: reason }
+    );
   },
 
   transferWine: async (wineId: string, targetSubcellar: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: wine, error: wineError } = await supabase
-      .from('wines')
-      .select('subcellar')
-      .eq('id', wineId)
-      .is('deleted_at', null)
-      .single();
-    if (wineError) throw wineError;
+    const uid = await requireUid();
+    const wine = await getActiveWine(uid, wineId);
     if (!wine) return null;
-
     const previousSubcellar = wine.subcellar || '';
-    const { data, error } = await supabase.from('wines').update({
-      subcellar: targetSubcellar || null,
-      updated_at: new Date().toISOString()
-    }).eq('id', wineId).select().single();
-    if (error) throw error;
-
-    if (user) {
-      const { error: eventError } = await supabase.from('inventory_events').insert([{
+    return updateWineWithEvent(
+      uid,
+      wineId,
+      { subcellar: (targetSubcellar || null) as Wine['subcellar'] },
+      {
         wine_id: wineId,
-        user_id: user.id,
         type: 'transfer',
         delta: 0,
         source: 'pocket',
         note: `${previousSubcellar || 'Hauptkeller'} -> ${targetSubcellar || 'Hauptkeller'}`
-      }]);
-      if (eventError) {
-        await supabase.from('wines').update({ subcellar: wine.subcellar, updated_at: new Date().toISOString() }).eq('id', wineId);
-        throw eventError;
       }
-    }
-    return data as Wine;
+    );
   },
 
   consumeBottle: async (wineId: string, source: string = 'detail'): Promise<Wine> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Nicht eingeloggt.');
-
-    const { data: wine, error: wineError } = await supabase
-      .from('wines')
-      .select('*')
-      .eq('id', wineId)
-      .is('deleted_at', null)
-      .single();
-    if (wineError) throw wineError;
+    const uid = await requireUid();
+    const wine = await getActiveWine(uid, wineId);
     if (!wine) throw new Error('Wein nicht gefunden.');
     if (wine.quantity <= 0) throw new Error('Keine Flaschen mehr im Bestand.');
-
-    const nextQuantity = Math.max(0, wine.quantity - 1);
-
-    const { data: updatedWine, error: updateError } = await supabase
-      .from('wines')
-      .update({
-        quantity: nextQuantity,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', wineId)
-      .select()
-      .single();
-    if (updateError) throw updateError;
-
-    const { error: eventError } = await supabase
-      .from('inventory_events')
-      .insert([{
-        wine_id: wineId,
-        user_id: user.id,
-        type: 'consume',
-        delta: -1,
-        source
-      }]);
-
-    if (eventError) {
-      await supabase
-        .from('wines')
-        .update({ quantity: wine.quantity, updated_at: new Date().toISOString() })
-        .eq('id', wineId);
-      throw eventError;
-    }
-    return updatedWine as Wine;
+    return updateWineWithEvent(
+      uid,
+      wineId,
+      { quantity: Math.max(0, wine.quantity - 1) },
+      { wine_id: wineId, type: 'consume', delta: -1, source }
+    );
   },
 
-  getConsumptionHistory: async (): Promise<Array<{
-    id: string;
-    wine_id: string;
-    user_id: string;
-    type: string;
-    delta: number;
-    source: string;
-    created_at: string;
-    wines: { name: string; producer?: string; vintage?: number } | null;
-  }>> => {
-    const { data, error } = await supabase
-      .from('inventory_events')
-      .select('id,wine_id,user_id,type,delta,source,created_at,wines(name,producer,vintage)')
-      .eq('type', 'consume')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    const rows = (data || []) as Array<{
-      id: string;
-      wine_id: string;
-      user_id: string;
-      type: string;
-      delta: number;
-      source: string;
-      created_at: string;
-      wines: { name: string; producer?: string; vintage?: number }[] | { name: string; producer?: string; vintage?: number } | null;
-    }>;
-
-    return rows.map((row) => ({
-      ...row,
-      wines: Array.isArray(row.wines) ? row.wines[0] || null : row.wines
-    }));
+  getConsumptionHistory: async (): Promise<ConsumptionRow[]> => {
+    const uid = await requireUid();
+    const events = await fetchCollection<Omit<ConsumptionRow, 'wines'>>(uid, 'inventory_events', where('type', '==', 'consume'));
+    events.sort(byString('created_at', 'desc'));
+    return attachWineSummaries(uid, events);
   },
 
   /**
    * Delta-sync counterpart to getConsumptionHistory(): inventory_events is
-   * append-only, so created_at alone is a correct cursor. getConsumptionHistory()
-   * pulled every event of every type ever recorded, unbounded, every cycle -
-   * this bounds it to what's new since the last sync.
+   * append-only, so created_at alone is a correct cursor. Filtering by type
+   * happens client-side so no composite index is needed.
    */
-  getConsumptionHistorySince: async (cursor: string | null): Promise<Array<{
-    id: string;
-    wine_id: string;
-    user_id: string;
-    type: string;
-    delta: number;
-    source: string;
-    created_at: string;
-    wines: { name: string; producer?: string; vintage?: number } | null;
-  }>> => {
-    let query = supabase
-      .from('inventory_events')
-      .select('id,wine_id,user_id,type,delta,source,created_at,wines(name,producer,vintage)')
-      .eq('type', 'consume')
-      .order('created_at', { ascending: true });
-    if (cursor) query = query.gt('created_at', cursor);
-    const { data, error } = await query;
-    if (error) throw error;
-    const rows = (data || []) as Array<{
-      id: string;
-      wine_id: string;
-      user_id: string;
-      type: string;
-      delta: number;
-      source: string;
-      created_at: string;
-      wines: { name: string; producer?: string; vintage?: number }[] | { name: string; producer?: string; vintage?: number } | null;
-    }>;
-
-    return rows.map((row) => ({
-      ...row,
-      wines: Array.isArray(row.wines) ? row.wines[0] || null : row.wines
-    }));
+  getConsumptionHistorySince: async (cursor: string | null): Promise<ConsumptionRow[]> => {
+    const uid = await requireUid();
+    const constraints: QueryConstraint[] = cursor
+      ? [where('created_at', '>', cursor), orderBy('created_at', 'asc')]
+      : [orderBy('created_at', 'asc')];
+    const events = (await fetchCollection<Omit<ConsumptionRow, 'wines'>>(uid, 'inventory_events', ...constraints))
+      .filter((event) => event.type === 'consume');
+    return attachWineSummaries(uid, events);
   },
 
   // --- SOFT DELETE & PAPIERKORB ---
   softDeleteWine: async (id: string, reason?: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('wines').update({
-      deleted_at: new Date().toISOString(),
-      deleted_by: user?.id ?? null,
-      deleted_reason: reason ?? null,
-      updated_at: new Date().toISOString()
-    }).eq('id', id);
-    if (error) throw error;
-
-    if (user) {
-      await supabase.from('inventory_events').insert([{
-        wine_id: id,
-        user_id: user.id,
-        type: 'soft_delete',
-        delta: 0,
-        source: 'trash',
-        note: reason
-      }]);
-    }
+    const uid = await requireUid();
+    const timestamp = nowIso();
+    await updateWineWithEvent(
+      uid,
+      id,
+      { deleted_at: timestamp, deleted_by: uid, deleted_reason: (reason ?? null) as Wine['deleted_reason'] },
+      { wine_id: id, type: 'soft_delete', delta: 0, source: 'trash', note: reason }
+    );
   },
 
   getDeletedWines: async (): Promise<Wine[]> => {
-    const { data, error } = await supabase
-      .from('wines')
-      .select('*')
-      .not('deleted_at', 'is', null)
-      .order('deleted_at', { ascending: false });
-    if (error) throw error;
-    return (data as Wine[]) || [];
+    const uid = await requireUid();
+    const wines = await fetchCollection<Wine>(uid, 'wines');
+    return wines.filter((wine) => !isActiveWine(wine)).sort(byString('deleted_at', 'desc'));
   },
 
   restoreWine: async (id: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('wines').update({
-      deleted_at: null,
-      deleted_by: null,
-      deleted_reason: null,
-      updated_at: new Date().toISOString()
-    }).eq('id', id);
-    if (error) throw error;
-
-    if (user) {
-      await supabase.from('inventory_events').insert([{
-        wine_id: id,
-        user_id: user.id,
-        type: 'restore',
-        delta: 0,
-        source: 'trash'
-      }]);
-    }
+    const uid = await requireUid();
+    await updateWineWithEvent(
+      uid,
+      id,
+      { deleted_at: null, deleted_by: null, deleted_reason: null as unknown as Wine['deleted_reason'] },
+      { wine_id: id, type: 'restore', delta: 0, source: 'trash' }
+    );
   },
 
   permanentlyDeleteWine: async (id: string) => {
-    const { error } = await supabase.from('wines').delete().eq('id', id);
-    if (error) throw error;
+    const uid = await requireUid();
+    await commitInChunks(await buildWineDeleteOps(uid, id));
   },
 
   emptyTrash: async () => {
-    const { error } = await supabase
-      .from('wines')
-      .delete()
-      .not('deleted_at', 'is', null);
-    if (error) throw error;
+    const uid = await requireUid();
+    const deleted = await storageService.getDeletedWines();
+    const ops = (await Promise.all(deleted.map((wine) => buildWineDeleteOps(uid, wine.id)))).flat();
+    await commitInChunks(ops);
   },
 
   // --- EVENTS & TASTINGS ---
   getOccasions: async (): Promise<Occasion[]> => {
-    const { data, error } = await supabase
-      .from('occasions')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return ((data as any[]) || []).map(normalizeOccasionRow);
+    const uid = await requireUid();
+    const rows = await fetchCollection<Occasion>(uid, 'occasions', orderBy('created_at', 'desc'));
+    return rows.map(normalizeOccasionRow);
   },
 
   /** Delta-sync counterpart to getOccasions() - see getWinesUpdatedSince(). */
   getOccasionsUpdatedSince: async (cursor: string | null): Promise<Occasion[]> => {
-    let query = supabase.from('occasions').select('*').order('updated_at', { ascending: true });
-    if (cursor) query = query.gt('updated_at', cursor);
-    const { data, error } = await query;
-    if (error) throw error;
-    return ((data as any[]) || []).map(normalizeOccasionRow);
+    const uid = await requireUid();
+    const constraints: QueryConstraint[] = cursor
+      ? [where('updated_at', '>', cursor), orderBy('updated_at', 'asc')]
+      : [orderBy('updated_at', 'asc')];
+    const rows = await fetchCollection<Occasion>(uid, 'occasions', ...constraints);
+    return rows.map(normalizeOccasionRow);
   },
 
   getOccasionInstances: async (): Promise<OccasionInstance[]> => {
-    const { data, error } = await supabase
-      .from('occasion_instances')
-      .select('*, occasion:occasions(*)')
-      .order('instance_date', { ascending: true });
-    if (error) throw error;
-    return (data as any[]) || [];
+    const uid = await requireUid();
+    const [instances, occasions] = await Promise.all([
+      fetchCollection<OccasionInstance>(uid, 'occasion_instances', orderBy('instance_date', 'asc')),
+      fetchCollection<Occasion>(uid, 'occasions')
+    ]);
+    const byId = new Map(occasions.map((occasion) => [occasion.id, normalizeOccasionRow(occasion)]));
+    return instances.map((instance) => ({ ...instance, occasion: byId.get(instance.occasion_id) }));
   },
 
   /** Delta-sync counterpart to getOccasionInstances() - see getWinesUpdatedSince(). */
   getOccasionInstancesUpdatedSince: async (cursor: string | null): Promise<OccasionInstance[]> => {
-    let query = supabase.from('occasion_instances').select('*').order('updated_at', { ascending: true });
-    if (cursor) query = query.gt('updated_at', cursor);
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data as OccasionInstance[]) || [];
+    const uid = await requireUid();
+    const constraints: QueryConstraint[] = cursor
+      ? [where('updated_at', '>', cursor), orderBy('updated_at', 'asc')]
+      : [orderBy('updated_at', 'asc')];
+    return fetchCollection<OccasionInstance>(uid, 'occasion_instances', ...constraints);
   },
 
   getOccasionInstancesByOccasion: async (occasionId: string): Promise<OccasionInstance[]> => {
-    const { data, error } = await supabase
-      .from('occasion_instances')
-      .select('*, occasion:occasions(*)')
-      .eq('occasion_id', occasionId)
-      .order('instance_date', { ascending: true });
-    if (error) throw error;
-    return (data as OccasionInstance[]) || [];
+    const uid = await requireUid();
+    const [instances, occasion] = await Promise.all([
+      fetchCollection<OccasionInstance>(uid, 'occasion_instances', where('occasion_id', '==', occasionId)),
+      fetchOne<Occasion>(userDoc(uid, 'occasions', occasionId))
+    ]);
+    const normalizedOccasion = occasion ? normalizeOccasionRow(occasion) : undefined;
+    return instances
+      .sort(byString('instance_date', 'asc'))
+      .map((instance) => ({ ...instance, occasion: normalizedOccasion }));
   },
 
   getOccasionWinePool: async (occasionId: string): Promise<OccasionWinePoolEntry[]> => {
-    const { data, error } = await supabase
-      .from('occasion_wine_pool')
-      .select('*, wine:wines(*)')
-      .eq('occasion_id', occasionId)
-      .order('created_at', { ascending: true });
-    if (error) throw error;
-    return (data as OccasionWinePoolEntry[]) || [];
+    const uid = await requireUid();
+    const entries = (await fetchCollection<OccasionWinePoolEntry>(uid, 'occasion_wine_pool', where('occasion_id', '==', occasionId)))
+      .sort(byString('created_at', 'asc'));
+    const wines = await Promise.all(entries.map((entry) => fetchOne<Wine>(userDoc(uid, 'wines', entry.wine_id))));
+    return entries.map((entry, index) => ({ ...entry, wine: wines[index] || undefined }));
   },
 
   /**
-   * Delta-sync counterpart to getOccasionWinePool(): fetches pool entries
-   * for ALL of the user's occasions in one query, filtered by `updated_at`
-   * since `cursor`, instead of one query per occasion (N+1 - see
-   * docs/WEITERENTWICKLUNGSPOTENZIAL_2026-07-22.md, architecture finding #4).
+   * Delta-sync counterpart to getOccasionWinePool(): pool entries for ALL
+   * of the user's occasions in one query, filtered by `updated_at`.
    */
   getOccasionWinePoolUpdatedSince: async (cursor: string | null): Promise<OccasionWinePoolEntry[]> => {
-    let query = supabase.from('occasion_wine_pool').select('*').order('updated_at', { ascending: true });
-    if (cursor) query = query.gt('updated_at', cursor);
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data as OccasionWinePoolEntry[]) || [];
+    const uid = await requireUid();
+    const constraints: QueryConstraint[] = cursor
+      ? [where('updated_at', '>', cursor), orderBy('updated_at', 'asc')]
+      : [orderBy('updated_at', 'asc')];
+    return fetchCollection<OccasionWinePoolEntry>(uid, 'occasion_wine_pool', ...constraints);
   },
 
   saveOccasionWinePool: async (
     occasionId: string,
     entries: Array<{ wine_id: string; bottles_reserved: number; priority: 'low' | 'medium' | 'high' }>
   ): Promise<OccasionWinePoolEntry[]> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Nicht eingeloggt.');
+    const uid = await requireUid();
+    const timestamp = nowIso();
 
-    const clean = entries
+    // Unique per (occasion_id, wine_id): dedupe the input, then upsert
+    // against what already exists.
+    const clean = new Map<string, { wine_id: string; bottles_reserved: number; priority: 'low' | 'medium' | 'high' }>();
+    entries
       .filter((entry) => !!entry.wine_id)
-      .map((entry) => ({
-        occasion_id: occasionId,
-        user_id: user.id,
+      .forEach((entry) => clean.set(entry.wine_id, {
         wine_id: entry.wine_id,
         bottles_reserved: Math.max(1, Math.round(entry.bottles_reserved || 1)),
         priority: entry.priority || 'medium'
       }));
 
-    const keepWineIds = clean.map((entry) => entry.wine_id);
+    const current = await fetchCollection<OccasionWinePoolEntry>(uid, 'occasion_wine_pool', where('occasion_id', '==', occasionId));
+    const currentByWine = new Map(current.map((row) => [row.wine_id, row]));
 
-    if (keepWineIds.length > 0) {
-      const { error: upsertError } = await supabase
-        .from('occasion_wine_pool')
-        .upsert(clean, { onConflict: 'occasion_id,wine_id' });
-      if (upsertError) throw upsertError;
-
-      const { data: currentRows, error: currentError } = await supabase
-        .from('occasion_wine_pool')
-        .select('id,wine_id')
-        .eq('occasion_id', occasionId)
-        .eq('user_id', user.id);
-      if (currentError) throw currentError;
-
-      const deleteIds = (currentRows || [])
-        .filter((row) => !keepWineIds.includes(row.wine_id))
-        .map((row) => row.id);
-
-      if (deleteIds.length > 0) {
-        const { error: deleteError } = await supabase
-          .from('occasion_wine_pool')
-          .delete()
-          .in('id', deleteIds);
-        if (deleteError) throw deleteError;
+    const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+    clean.forEach((entry) => {
+      const existing = currentByWine.get(entry.wine_id);
+      if (existing) {
+        ops.push((batch) => batch.update(userDoc(uid, 'occasion_wine_pool', existing.id), {
+          bottles_reserved: entry.bottles_reserved,
+          priority: entry.priority,
+          updated_at: timestamp
+        }));
+      } else {
+        const id = newId();
+        ops.push((batch) => batch.set(userDoc(uid, 'occasion_wine_pool', id), {
+          id,
+          occasion_id: occasionId,
+          user_id: uid,
+          ...entry,
+          created_at: timestamp,
+          updated_at: timestamp
+        }));
       }
-    } else {
-      const { error: clearError } = await supabase
-        .from('occasion_wine_pool')
-        .delete()
-        .eq('occasion_id', occasionId)
-        .eq('user_id', user.id);
-      if (clearError) throw clearError;
-    }
+    });
+    current
+      .filter((row) => !clean.has(row.wine_id))
+      .forEach((row) => ops.push((batch) => batch.delete(userDoc(uid, 'occasion_wine_pool', row.id))));
 
+    await commitInChunks(ops);
     return storageService.getOccasionWinePool(occasionId);
   },
 
   updateInstanceWine: async (instanceId: string, wineId: string | null) => {
-    const { error } = await supabase
-      .from('occasion_instances')
-      .update({
-        wine_id: wineId,
-        auto_assigned: false,
-        assignment_score: null,
-        assignment_reason: wineId ? 'Manuell zugeordnet' : null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', instanceId);
-    if (error) throw error;
+    const uid = await requireUid();
+    await updateDoc(userDoc(uid, 'occasion_instances', instanceId), {
+      wine_id: wineId,
+      auto_assigned: false,
+      assignment_score: null,
+      assignment_reason: wineId ? 'Manuell zugeordnet' : null,
+      updated_at: nowIso()
+    });
   },
 
   updateInstanceStatus: async (instanceId: string, status: string) => {
-    const { error } = await supabase
-      .from('occasion_instances')
-      .update({ status: status, updated_at: new Date().toISOString() })
-      .eq('id', instanceId);
-    if (error) throw error;
+    const uid = await requireUid();
+    await updateDoc(userDoc(uid, 'occasion_instances', instanceId), { status, updated_at: nowIso() });
   },
 
   applyAutoAssignments: async (
     updates: Array<{ instanceId: string; wineId: string; score: number; reason: string }>
   ) => {
     if (updates.length === 0) return;
-    for (const update of updates) {
-      const { error } = await supabase
-        .from('occasion_instances')
-        .update({
-          wine_id: update.wineId,
-          auto_assigned: true,
-          assignment_score: update.score,
-          assignment_reason: update.reason,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', update.instanceId);
-      if (error) throw error;
-    }
+    const uid = await requireUid();
+    const timestamp = nowIso();
+    await commitInChunks(updates.map((update) => (batch) => batch.update(userDoc(uid, 'occasion_instances', update.instanceId), {
+      wine_id: update.wineId,
+      auto_assigned: true,
+      assignment_score: update.score,
+      assignment_reason: update.reason,
+      updated_at: timestamp
+    })));
   },
 
   clearAutoAssignmentsForOccasion: async (occasionId: string) => {
-    const { error } = await supabase
-      .from('occasion_instances')
-      .update({
-        wine_id: null,
-        auto_assigned: false,
-        assignment_score: null,
-        assignment_reason: null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('occasion_id', occasionId)
-      .eq('status', 'planned')
-      .eq('auto_assigned', true);
-    if (error) throw error;
+    const uid = await requireUid();
+    const instances = (await fetchCollection<OccasionInstance>(uid, 'occasion_instances', where('occasion_id', '==', occasionId)))
+      .filter((instance) => instance.status === 'planned' && instance.auto_assigned === true);
+    const timestamp = nowIso();
+    await commitInChunks(instances.map((instance) => (batch) => batch.update(userDoc(uid, 'occasion_instances', instance.id), {
+      wine_id: null,
+      auto_assigned: false,
+      assignment_score: null,
+      assignment_reason: null,
+      updated_at: timestamp
+    })));
   },
 
   saveOccasion: async (occ: Partial<Occasion>): Promise<Occasion> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const payload = removeNilValues({ ...occ, user_id: user?.id }) as Record<string, any>;
-    const schemaMode = getItem(OCCASIONS_SCHEMA_MODE_KEY);
-    const shouldUseLegacyPayload = schemaMode === 'legacy';
-    const initialPayload = shouldUseLegacyPayload ? stripOccasionRepeatFields(payload) : payload;
+    const uid = await requireUid();
+    const timestamp = nowIso();
+    const payload = removeNilValues({ ...withoutId(occ), user_id: uid }) as Record<string, any>;
 
-    let data: any = null;
-    let error: any = null;
-
-    if (occ.id) {
-      const result = await supabase.from('occasions').update(initialPayload).eq('id', occ.id).select().single();
-      data = result.data;
-      error = result.error;
+    const existing = occ.id ? await fetchOne<Occasion>(userDoc(uid, 'occasions', occ.id)) : null;
+    let saved: Occasion;
+    if (existing) {
+      const changes = { ...payload, updated_at: timestamp };
+      await updateDoc(userDoc(uid, 'occasions', existing.id), changes);
+      saved = { ...existing, ...changes, id: existing.id } as Occasion;
     } else {
-      // Never send id on insert; let DB default generate it.
-      const insertPayload = removeNilValues({
-        ...initialPayload,
-        id: undefined
-      });
-      const result = await supabase.from('occasions').insert([insertPayload]).select().single();
-      data = result.data;
-      error = result.error;
+      const id = newId();
+      saved = withDefaults({
+        ...payload,
+        id,
+        created_at: timestamp,
+        updated_at: timestamp
+      }, { repeat_rule: 'none', repeat_interval: 1 }) as unknown as Occasion;
+      await setDoc(userDoc(uid, 'occasions', id), saved);
     }
 
-    // Backward-compatible fallback for distributed databases where new columns are not migrated yet.
-    if (!error && !shouldUseLegacyPayload) {
-      setItem(OCCASIONS_SCHEMA_MODE_KEY, 'modern');
-    }
-
-    if (error && isOccasionSchemaColumnError(error)) {
-      const legacyPayload = stripOccasionRepeatFields(payload);
-      setItem(OCCASIONS_SCHEMA_MODE_KEY, 'legacy');
-      if (occ.id) {
-        const legacyResult = await supabase
-          .from('occasions')
-          .update(legacyPayload)
-          .eq('id', occ.id)
-          .select()
-          .single();
-        data = legacyResult.data;
-        error = legacyResult.error;
-      } else {
-        const legacyInsertPayload = removeNilValues({
-          ...legacyPayload,
-          id: undefined
-        });
-        const legacyResult = await supabase
-          .from('occasions')
-          .insert([legacyInsertPayload])
-          .select()
-          .single();
-        data = legacyResult.data;
-        error = legacyResult.error;
-      }
-    }
-
-    if (error) throw error;
-
-    const savedOcc = normalizeOccasionRow(data);
+    const savedOcc = normalizeOccasionRow(saved);
     await storageService.syncInstances(savedOcc);
     return savedOcc;
   },
 
   deleteOccasion: async (id: string) => {
-    await supabase.from('occasions').delete().eq('id', id);
+    const uid = await requireUid();
+    // Former ON DELETE CASCADE to occasion_instances and occasion_wine_pool.
+    const [instances, pool] = await Promise.all([
+      fetchCollection<{ id: string }>(uid, 'occasion_instances', where('occasion_id', '==', id)),
+      fetchCollection<{ id: string }>(uid, 'occasion_wine_pool', where('occasion_id', '==', id))
+    ]);
+    const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+    instances.forEach((row) => ops.push((batch) => batch.delete(userDoc(uid, 'occasion_instances', row.id))));
+    pool.forEach((row) => ops.push((batch) => batch.delete(userDoc(uid, 'occasion_wine_pool', row.id))));
+    ops.push((batch) => batch.delete(userDoc(uid, 'occasions', id)));
+    await commitInChunks(ops);
   },
 
   syncInstances: async (occ: Occasion) => {
+    const uid = await requireUid();
     const dates = storageService.generateDates(
       occ.start_date,
       occ.end_date,
@@ -990,39 +917,36 @@ export const storageService = {
       occ.drink_anchor_date ?? undefined
     );
 
-    const instances = dates.map((date) => ({
-      occasion_id: occ.id,
-      user_id: occ.user_id,
-      instance_date: date
-    }));
-
-    const { error: upsertError } = await supabase
-      .from('occasion_instances')
-      .upsert(instances, {
-        onConflict: 'user_id, occasion_id, instance_date',
-        ignoreDuplicates: true
-      });
-    if (upsertError) throw upsertError;
-
-    const { data: existing, error: existingError } = await supabase
-      .from('occasion_instances')
-      .select('id, instance_date, status')
-      .eq('occasion_id', occ.id)
-      .eq('user_id', occ.user_id);
-    if (existingError) throw existingError;
-
+    const existing = await fetchCollection<OccasionInstance>(uid, 'occasion_instances', where('occasion_id', '==', occ.id));
+    const existingDates = new Set(existing.map((row) => row.instance_date));
     const generated = new Set(dates);
-    const deletableIds = (existing || [])
-      .filter((row) => !generated.has(row.instance_date) && row.status !== 'consumed')
-      .map((row) => row.id);
+    const timestamp = nowIso();
 
-    if (deletableIds.length > 0) {
-      const { error: deleteError } = await supabase
-        .from('occasion_instances')
-        .delete()
-        .in('id', deletableIds);
-      if (deleteError) throw deleteError;
-    }
+    const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+    // Insert missing dates (former upsert ... ignoreDuplicates).
+    dates
+      .filter((date) => !existingDates.has(date))
+      .forEach((date) => {
+        const id = newId();
+        ops.push((batch) => batch.set(userDoc(uid, 'occasion_instances', id), {
+          id,
+          occasion_id: occ.id,
+          user_id: uid,
+          instance_date: date,
+          wine_id: null,
+          status: 'planned',
+          auto_assigned: false,
+          assignment_score: null,
+          assignment_reason: null,
+          created_at: timestamp,
+          updated_at: timestamp
+        }));
+      });
+    existing
+      .filter((row) => !generated.has(row.instance_date) && row.status !== 'consumed')
+      .forEach((row) => ops.push((batch) => batch.delete(userDoc(uid, 'occasion_instances', row.id))));
+
+    await commitInChunks(ops);
   },
 
   generateDates: (
@@ -1113,41 +1037,44 @@ export const storageService = {
   },
 
   getTastings: async (wineId: string): Promise<Tasting[]> => {
-    const { data } = await supabase.from('tastings').select('*').eq('wine_id', wineId).order('date', { ascending: false });
-    return (data as Tasting[]) || [];
+    const uid = await requireUid();
+    const tastings = await fetchCollection<Tasting>(uid, 'tastings', where('wine_id', '==', wineId));
+    return tastings.sort(byString('date', 'desc'));
   },
 
   /**
-   * Delta-sync counterpart to getTastings(): fetches tastings for ALL of
-   * the user's wines in one query instead of one query per wine (N+1 - see
-   * docs/WEITERENTWICKLUNGSPOTENZIAL_2026-07-22.md, architecture finding #4).
-   * tastings are insert-only (no update path), so created_at is a correct
-   * cursor.
+   * Delta-sync counterpart to getTastings(): tastings for ALL of the user's
+   * wines in one query. Tastings are insert-only, so created_at is a
+   * correct cursor.
    */
   getTastingsCreatedSince: async (cursor: string | null): Promise<Tasting[]> => {
-    let query = supabase.from('tastings').select('*').order('created_at', { ascending: true });
-    if (cursor) query = query.gt('created_at', cursor);
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data as Tasting[]) || [];
+    const uid = await requireUid();
+    const constraints: QueryConstraint[] = cursor
+      ? [where('created_at', '>', cursor), orderBy('created_at', 'asc')]
+      : [orderBy('created_at', 'asc')];
+    return fetchCollection<Tasting>(uid, 'tastings', ...constraints);
   },
 
   addTasting: async (tasting: Partial<Tasting>): Promise<Tasting> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from('tastings').insert([{ ...tasting, user_id: user?.id, date: new Date().toISOString() }]).select().single();
-    if (error) throw error;
+    const uid = await requireUid();
+    const timestamp = nowIso();
+    const saved = {
+      ...withoutId(tasting),
+      id: newId(),
+      user_id: uid,
+      date: timestamp,
+      created_at: timestamp
+    } as Tasting;
+    await setDoc(userDoc(uid, 'tastings', saved.id), saved);
     await storageService.adjustStock(tasting.wine_id!, -1);
-    return data as Tasting;
+    return saved;
   },
 
   /**
    * ID-only reconciliation for hard deletes: delta pulls above only see
-   * updated/created rows, never rows that were actually DELETEd (wines via
-   * permanentlyDeleteWine/emptyTrash, occasions - and cascaded instances/pool
-   * entries - via deleteOccasion). Fetching just the id column for
-   * everything the user currently has lets syncEngine diff against the
-   * local Dexie cache and drop anything no longer present remotely,
-   * without needing a tombstone table.
+   * updated/created documents, never deleted ones. Fetching every id lets
+   * syncEngine diff against the local Dexie cache and drop anything no
+   * longer present remotely, without needing a tombstone collection.
    */
   getSyncReconciliationIds: async (): Promise<{
     wines: string[];
@@ -1155,22 +1082,19 @@ export const storageService = {
     occasion_instances: string[];
     occasion_wine_pool: string[];
   }> => {
+    const uid = await requireUid();
+    const ids = async (name: CollectionName) => (await getDocsFromServer(userCollection(uid, name))).docs.map((d) => d.id);
     const [wines, occasions, occasionInstances, occasionWinePool] = await Promise.all([
-      supabase.from('wines').select('id'),
-      supabase.from('occasions').select('id'),
-      supabase.from('occasion_instances').select('id'),
-      supabase.from('occasion_wine_pool').select('id')
+      ids('wines'),
+      ids('occasions'),
+      ids('occasion_instances'),
+      ids('occasion_wine_pool')
     ]);
-    if (wines.error) throw wines.error;
-    if (occasions.error) throw occasions.error;
-    if (occasionInstances.error) throw occasionInstances.error;
-    if (occasionWinePool.error) throw occasionWinePool.error;
-
     return {
-      wines: (wines.data || []).map((row) => row.id as string),
-      occasions: (occasions.data || []).map((row) => row.id as string),
-      occasion_instances: (occasionInstances.data || []).map((row) => row.id as string),
-      occasion_wine_pool: (occasionWinePool.data || []).map((row) => row.id as string)
+      wines,
+      occasions,
+      occasion_instances: occasionInstances,
+      occasion_wine_pool: occasionWinePool
     };
   }
 };

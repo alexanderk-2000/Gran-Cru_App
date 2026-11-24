@@ -2,11 +2,13 @@
 
 Grand Cru Vault ist eine React/Vite-Anwendung zur Verwaltung eines Weinkellers mit KI-gestützter Datenerfassung, Trinkfenster-Analyse und Backend-Proxy für AI-Provider.
 
+Betrieben wird sie auf **Firebase**: Hosting (Frontend), Authentication, Firestore (Daten), Cloud Storage (Weinfotos) und eine Cloud Function (KI-Backend). Einrichtung und Kosten: [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md).
+
 ## Voraussetzungen
 
 - Node.js 20+
 - npm 10+
-- Supabase CLI (optional für lokale DB-Workflows)
+- Java 11+ (nur für die lokalen Firebase-Emulatoren)
 - API Key für OpenRouter (für AI-Endpunkte - Gemini/GPT/Nemotron laufen alle darüber)
 
 ## Setup
@@ -21,8 +23,10 @@ npm install
 
 ```bash
 cp .env.example .env.local
-cp server/.env.example server/.env
+cp server/.env.example server/.env.local
 ```
+
+Werte stammen aus der Firebase Console (siehe `docs/FIREBASE_SETUP.md`). Ohne eigenes Firebase-Projekt geht es auch komplett lokal: `VITE_FIREBASE_USE_EMULATOR=true` in `.env.local` setzen und in einem zweiten Terminal `npm run emulators` starten.
 
 3. Entwicklungsbetrieb starten:
 
@@ -52,6 +56,10 @@ npm run ci:check
 - `npm run dev`: Frontend (Vite)
 - `npm run server`: Backend (Express)
 - `npm run test:unit`: Vitest Unit/API-Tests
+- `npm run test:emulator`: Firestore-/Storage-Regeln und Datenschicht gegen die Firebase-Emulatoren
+- `npm run emulators`: Firebase-Emulatoren (Auth, Firestore, Storage) für lokale Entwicklung
+- `npm run deploy`: Build + Deployment nach Firebase (Hosting, Function, Regeln)
+- `npm run migrate:supabase`: Einmaliger Datenumzug aus dem alten Supabase-Projekt
 - `npm run test:ui`: Playwright Tests
 - `npm run test:ui:pwa`: Playwright PWA-Smoke
 - `npm run format`: Prettier Write
@@ -78,8 +86,11 @@ npm run ci:check
 - Storage-Fassade:
   - `services/storage.ts` (kompatibler Einstieg)
   - `services/storage/*.ts` (fachliche Repositories)
+  - `services/storage.legacy.ts` (Firestore-Implementierung, Daten unter `users/{uid}/...`)
+  - `services/firebase.ts` (Firebase-Initialisierung, Auth-Helfer)
 - Backend modularisiert:
-  - `server/index.js` (Bootstrap)
+  - `server/index.js` (Bootstrap für lokalen Betrieb)
+  - `server/functions.js` (Cloud-Function-Einstieg, `/api/**` via Hosting-Rewrite)
   - `server/src/app.js` (Express Setup)
   - `server/src/ai/*`, `server/src/routes/*`, `server/src/cache/*`
 

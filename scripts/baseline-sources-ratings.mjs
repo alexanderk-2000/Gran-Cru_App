@@ -1,6 +1,6 @@
 import {
   loadEnvFiles,
-  createSupabaseClient,
+  createFirebaseClient,
   authenticate,
   fetchActiveWines,
   normalizeDomain,
@@ -21,9 +21,9 @@ const criticMatch = (name, target) => name.toLowerCase().includes(target.toLower
 
 const run = async () => {
   await loadEnvFiles();
-  const supabase = createSupabaseClient();
-  const authMode = await authenticate(supabase);
-  const wines = await fetchActiveWines(supabase);
+  const client = createFirebaseClient();
+  const authMode = await authenticate(client);
+  const wines = await fetchActiveWines(client);
 
   const analyzed = wines.filter((wine) => Array.isArray(wine.ai_sources) && wine.ai_sources.length > 0);
   const domainCounts = {};

@@ -1,0 +1,43 @@
+rules_version = '2';
+
+// Every document a user owns lives below users/{uid}/ - the Firestore
+// equivalent of the former Supabase RLS policies (auth.uid() = user_id).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Owner-stamped documents must not claim another user's id.
+    function keepsOwner(uid) {
+      return !('user_id' in request.resource.data) || request.resource.data.user_id == uid;
+    }
+
+    // users/{uid} itself holds the user's settings.
+    match /users/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && keepsOwner(uid);
+
+      match /{collection}/{docId} {
+        allow read: if isOwner(uid) && collection in [
+          'wines', 'inventory_events', 'occasions', 'occasion_instances',
+          'occasion_wine_pool', 'tastings', 'cellar_pockets', 'wine_catalog'
+        ];
+        allow delete: if isOwner(uid) && collection in [
+          'wines', 'inventory_events', 'occasions', 'occasion_instances',
+          'occasion_wine_pool', 'tastings', 'cellar_pockets', 'wine_catalog'
+        ];
+        allow create: if isOwner(uid) && keepsOwner(uid) && collection in [
+          'wines', 'inventory_events', 'occasions', 'occasion_instances',
+          'occasion_wine_pool', 'tastings', 'cellar_pockets', 'wine_catalog'
+        ];
+        // inventory_events is an append-only audit log: no in-place edits
+        // (it can still be removed together with its wine).
+        allow update: if isOwner(uid) && keepsOwner(uid) && collection in [
+          'wines', 'occasions', 'occasion_instances',
+          'occasion_wine_pool', 'tastings', 'cellar_pockets', 'wine_catalog'
+        ];
+      }
+    }
+  }
+}

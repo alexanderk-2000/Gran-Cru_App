@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createClient } from '@supabase/supabase-js';
+import { initializeApp } from 'firebase/app';
+import { connectAuthEmulator, getAuth, signInAnonymously, signInWithEmailAndPassword } from 'firebase/auth';
+import { collection, connectFirestoreEmulator, getDocs, getFirestore } from 'firebase/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,27 +65,39 @@ const isFilled = (value) => {
   return Boolean(value);
 };
 
-const createSupabaseClient = () => {
-  const url = process.env.VITE_SUPABASE_URL;
-  const anon = process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anon) {
-    throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env.local');
+const createFirebaseClient = () => {
+  const useEmulator = process.env.VITE_FIREBASE_USE_EMULATOR === 'true';
+  const apiKey = process.env.VITE_FIREBASE_API_KEY || (useEmulator ? 'demo-api-key' : '');
+  const projectId = process.env.VITE_FIREBASE_PROJECT_ID || (useEmulator ? 'demo-gran-cru' : '');
+  if (!apiKey || !projectId) {
+    throw new Error('Missing VITE_FIREBASE_API_KEY or VITE_FIREBASE_PROJECT_ID in .env.local');
   }
-  return createClient(url, anon, { auth: { persistSession: false } });
+  const app = initializeApp({ apiKey, projectId, authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN }, `baseline-${Date.now()}`);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  if (useEmulator) {
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  }
+  return { auth, db };
 };
 
-const authenticate = async (supabase) => {
+const authenticate = async (client) => {
   const email = process.env.BASELINE_USER_EMAIL || process.env.E2E_EMAIL;
   const password = process.env.BASELINE_USER_PASSWORD || process.env.E2E_PASSWORD;
 
   if (email && password) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(`Sign-in failed for BASELINE_USER_EMAIL: ${error.message}`);
+    try {
+      await signInWithEmailAndPassword(client.auth, email, password);
+    } catch (error) {
+      throw new Error(`Sign-in failed for BASELINE_USER_EMAIL: ${error.message}`);
+    }
     return 'password';
   }
 
-  const { error } = await supabase.auth.signInAnonymously();
-  if (error) {
+  try {
+    await signInAnonymously(client.auth);
+  } catch (error) {
     throw new Error(
       `Anonymous sign-in failed (${error.message}). Set BASELINE_USER_EMAIL and BASELINE_USER_PASSWORD in .env.local.`
     );
@@ -91,14 +105,18 @@ const authenticate = async (supabase) => {
   return 'anonymous';
 };
 
-const fetchActiveWines = async (supabase) => {
-  const { data, error } = await supabase
-    .from('wines')
-    .select('*')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(`Failed to fetch wines: ${error.message}`);
-  return data || [];
+const fetchActiveWines = async (client) => {
+  const uid = client.auth.currentUser?.uid;
+  if (!uid) throw new Error('Failed to fetch wines: not signed in');
+  try {
+    const snapshot = await getDocs(collection(client.db, 'users', uid, 'wines'));
+    return snapshot.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }))
+      .filter((wine) => !wine.deleted_at)
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  } catch (error) {
+    throw new Error(`Failed to fetch wines: ${error.message}`);
+  }
 };
 
 const writeReport = async (filename, payload) => {
@@ -115,7 +133,7 @@ export {
   normalizeDomain,
   getPath,
   isFilled,
-  createSupabaseClient,
+  createFirebaseClient,
   authenticate,
   fetchActiveWines,
   writeReport

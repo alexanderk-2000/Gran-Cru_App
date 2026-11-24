@@ -6,7 +6,8 @@ import { Auth } from './components/Auth.tsx';
 import { AlertCircle } from 'lucide-react';
 import { Wine, UserProfile } from './types.ts';
 import { storageService } from './services/storage.ts';
-import { supabase, isConfigured } from './services/supabase.ts';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, isConfigured } from './services/firebase.ts';
 import { runSyncCycle, clearOfflineUserAndQueues } from './services/pwa/syncEngine.ts';
 
 const Dashboard = lazy(() => import('./features/Dashboard.tsx').then((m) => ({ default: m.Dashboard })));
@@ -39,17 +40,17 @@ const MissingConfigScreen: React.FC = () => (
       </div>
       <h1 className="font-serif text-3xl text-burgundy mb-3">Konfiguration fehlt</h1>
       <p className="text-stone-gray leading-relaxed mb-6">
-        Die Verbindung zu Supabase konnte nicht hergestellt werden. Bitte stellen Sie sicher, dass die Umgebungsvariablen
-        <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_URL</code>
+        Die Verbindung zu Firebase konnte nicht hergestellt werden. Bitte stellen Sie sicher, dass die Umgebungsvariablen
+        <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_FIREBASE_API_KEY</code>
         und
-        <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_SUPABASE_ANON_KEY</code>
+        <code className="mx-1 px-1.5 py-0.5 bg-alabaster rounded border border-burgundy/10 text-burgundy text-xs font-mono">VITE_FIREBASE_PROJECT_ID</code>
         korrekt gesetzt sind.
       </p>
       <div className="p-4 bg-red-50/50 rounded-xl text-left border border-red-100">
         <p className="text-[10px] font-black uppercase tracking-widest text-red-700 mb-2">Checkliste:</p>
         <ul className="text-xs text-red-800 space-y-1">
-          <li>• Vercel Dashboard → Project Settings → Environment Variables</li>
-          <li>• Lokale Entwicklung: <code className="text-red-900 font-mono">.env.local</code> erstellt?</li>
+          <li>• Firebase Console → Projekteinstellungen → Web-App-Konfiguration</li>
+          <li>• Lokale Entwicklung: <code className="text-red-900 font-mono">.env.local</code> erstellt? (siehe docs/FIREBASE_SETUP.md)</li>
           <li>• Wurde die App nach dem Ändern neu deployed?</li>
         </ul>
       </div>
@@ -82,57 +83,40 @@ const App: React.FC = () => {
     window.addEventListener('online', handleOnlineState);
     window.addEventListener('offline', handleOnlineState);
 
-    // Check current session
-    const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        activeUserIdRef.current = session.user.id;
-        setUser({
-          id: session.user.id,
-          email: session.user.email || '',
-          currency: 'EUR',
-          target_date: '2044-12-31'
-        });
-        await fetchWines();
-        void runSyncCycle(storageService);
-      } else {
-        setLoading(false);
-      }
-    };
-
-    initAuth();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // onAuthStateChanged fires once with the restored (persisted) session -
+    // or null - and again on every login/logout/account switch.
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       const previousUserId = activeUserIdRef.current;
 
-      if (session?.user) {
+      if (firebaseUser) {
         // Account switch without an explicit logout: purge the outgoing user's local data first.
-        if (previousUserId && previousUserId !== session.user.id) {
+        if (previousUserId && previousUserId !== firebaseUser.uid) {
           void clearOfflineUserAndQueues(previousUserId);
         }
-        activeUserIdRef.current = session.user.id;
+        if (previousUserId === firebaseUser.uid) return; // token refresh / same user
+        activeUserIdRef.current = firebaseUser.uid;
         setUser({
-          id: session.user.id,
-          email: session.user.email || '',
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
           currency: 'EUR',
           target_date: '2044-12-31'
         });
         void fetchWines();
         void runSyncCycle(storageService);
       } else {
-        // Session expired, was revoked, or auto-signed-out: lock/clear the previous user's local data.
+        // Signed out or session revoked: lock/clear the previous user's local data.
         if (previousUserId) {
           void clearOfflineUserAndQueues(previousUserId);
         }
         activeUserIdRef.current = null;
         setUser(null);
         setWines([]);
+        setLoading(false);
       }
     });
 
     return () => {
-      subscription.unsubscribe();
+      unsubscribeAuth();
       window.removeEventListener('online', handleOnlineState);
       window.removeEventListener('offline', handleOnlineState);
     };

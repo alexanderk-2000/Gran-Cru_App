@@ -32,3 +32,12 @@ playwright-report
 test-results
 reports/*
 !reports/.gitkeep
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+storage-debug.log*
+server/.env.local
+server/.secret.local
