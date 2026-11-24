@@ -44,7 +44,10 @@ jobs:
         run: npm run build
 
   quality-gate:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.58 cannot
+    # install browser dependencies for ("does not support chromium on
+    # ubuntu26.04-x64").
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -61,39 +64,42 @@ jobs:
       - name: Install server dependencies
         run: npm ci --prefix server
 
-      - name: Install Supabase CLI
-        run: npm install --global supabase@latest
+      # Firebase emulators (Firestore/Storage rules runtime) need a JVM.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
 
-      - name: Start local Supabase stack
-        run: supabase start -x studio,edge-runtime,imgproxy,logflare,vector,pgadmin-schema-diff,migra,realtime
-
-      - name: Run RLS tests (pgTAP)
-        run: supabase test db
-
-      - name: Configure environment from local Supabase
-        run: |
-          supabase status -o env \
-            --override-name api.url=VITE_SUPABASE_URL \
-            --override-name auth.anon_key=VITE_SUPABASE_ANON_KEY \
-            >> .env.local
-          mkdir -p server
-          supabase status -o env \
-            --override-name api.url=SUPABASE_URL \
-            --override-name auth.anon_key=SUPABASE_ANON_KEY \
-            >> server/.env
+      - name: Cache Firebase emulator binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      # Re-run (not just checks' copy): only here is SUPABASE_URL/ANON_KEY
-      # populated, so this is the one run that actually exercises the
-      # auth-gated /api/ai/* cases in tests/unit/server.routes.test.ts
-      # against a real session instead of skipping them.
-      - name: Unit tests (live Supabase)
-        run: npm run test:unit
+      # Security rules + Firestore storage service, end to end.
+      - name: Emulator tests (rules + storage service)
+        run: npm run test:emulator
+
+      # Re-run (not just checks' copy): only here is the Auth emulator up,
+      # so this is the one run that actually exercises the auth-gated
+      # /api/ai/* cases in tests/unit/server.routes.test.ts.
+      - name: Unit tests (live Auth emulator)
+        run: >-
+          npx firebase emulators:exec --only auth --project demo-gran-cru
+          "FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIREBASE_PROJECT_ID=demo-gran-cru npm run test:unit"
 
       - name: E2E tests
-        run: npm run test:ui
+        env:
+          VITE_FIREBASE_USE_EMULATOR: "true"
+          VITE_FIREBASE_PROJECT_ID: demo-gran-cru
+          VITE_FIREBASE_STORAGE_BUCKET: demo-gran-cru.appspot.com
+        run: >-
+          npx firebase emulators:exec --only auth,firestore,storage --project demo-gran-cru
+          "npm run test:ui"
 
       - name: Upload Playwright report
         if: always()
@@ -107,10 +113,5 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Stop local Supabase stack
-        if: always()
-        run: supabase stop
-
-  # Note: Vercel deployment is handled automatically by the Vercel-GitHub integration.
-  # This workflow ensures that the code passing the 'quality-gate' is what gets deployed.
-  # If quality-gate fails, the push is still there, but you'll see a red cross in GitHub.
+  # Note: deployment to Firebase (Hosting + Cloud Function + rules) is a
+  # manual `npm run deploy` for now - see docs/FIREBASE_SETUP.md.

@@ -1,18 +1,12 @@
 
-import { supabase } from './supabase.ts';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { requireUid, storage } from './firebase.ts';
 
 export type ImageSlot = 'bottle' | 'label' | 'case';
 
-const BUCKET = 'wine-images';
 const MAX_WIDTH = 1200;
 const QUALITY = 0.82;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB before compression
-// The bucket is private (see 20260722000032_private_wine_images_bucket.sql) -
-// every image URL is a signed link, not a bare public URL. 1 year matches
-// the existing upload cacheControl below; a fresh signed URL is minted on
-// every new upload, so this only matters for images left untouched longer
-// than that (known follow-up: proactively refresh near expiry).
-const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 /**
  * Compress an image file using Canvas API.
@@ -79,22 +73,22 @@ async function compressImage(file: File, maxWidth = MAX_WIDTH): Promise<Blob> {
  * Build the storage path for a wine image.
  */
 function buildPath(userId: string, wineId: string, slot: ImageSlot): string {
-  return `${userId}/${wineId}/${slot}`;
+  return `users/${userId}/wine-images/${wineId}/${slot}`;
 }
 
-/**
- * Get the current user id, or throw.
- */
-async function requireUserId(): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Nicht eingeloggt.');
-  return user.id;
+/** deleteObject() rejects for missing files; deleting a missing image is a no-op here. */
+async function deleteIfExists(path: string): Promise<void> {
+  try {
+    await deleteObject(ref(storage, path));
+  } catch (error) {
+    if ((error as { code?: string })?.code !== 'storage/object-not-found') throw error;
+  }
 }
 
 export const imageStorageService = {
   /**
    * Upload a wine image. Compresses before upload.
-   * Returns a signed URL for the uploaded image.
+   * Returns a download URL for the uploaded image.
    */
   async upload(wineId: string, slot: ImageSlot, file: File): Promise<string> {
     if (file.size > MAX_FILE_SIZE) {
@@ -105,36 +99,32 @@ export const imageStorageService = {
       throw new Error('Nur Bilddateien sind erlaubt.');
     }
 
-    const userId = await requireUserId();
+    const userId = await requireUid();
     const compressed = await compressImage(file);
     const path = buildPath(userId, wineId, slot);
 
-    // Delete existing file first (upsert is not reliable on storage)
-    await supabase.storage.from(BUCKET).remove([path]);
-
-    const { error } = await supabase.storage.from(BUCKET).upload(path, compressed, {
-      contentType: compressed.type || 'image/webp',
-      upsert: true,
-      cacheControl: '31536000' // 1 year cache
-    });
-
-    if (error) {
-      throw new Error(`Upload fehlgeschlagen: ${error.message}`);
+    try {
+      // Storage rules only allow the owner to read/write below users/{uid}/.
+      // The download URL carries an unguessable token and does not expire.
+      await uploadBytes(ref(storage, path), compressed, {
+        contentType: compressed.type || 'image/webp',
+        cacheControl: 'private, max-age=31536000'
+      });
+      return await getDownloadURL(ref(storage, path));
+    } catch (error) {
+      throw new Error(`Upload fehlgeschlagen: ${(error as Error)?.message ?? 'unbekannter Fehler'}`);
     }
-
-    return imageStorageService.getSignedUrl(wineId, userId, slot);
   },
 
   /**
    * Delete a wine image from storage.
    */
   async delete(wineId: string, slot: ImageSlot): Promise<void> {
-    const userId = await requireUserId();
-    const path = buildPath(userId, wineId, slot);
-
-    const { error } = await supabase.storage.from(BUCKET).remove([path]);
-    if (error) {
-      throw new Error(`Löschen fehlgeschlagen: ${error.message}`);
+    const userId = await requireUid();
+    try {
+      await deleteIfExists(buildPath(userId, wineId, slot));
+    } catch (error) {
+      throw new Error(`Löschen fehlgeschlagen: ${(error as Error)?.message ?? 'unbekannter Fehler'}`);
     }
   },
 
@@ -142,26 +132,9 @@ export const imageStorageService = {
    * Delete all images for a wine.
    */
   async deleteAll(wineId: string): Promise<void> {
-    const userId = await requireUserId();
+    const userId = await requireUid();
     const slots: ImageSlot[] = ['bottle', 'label', 'case'];
-    const paths = slots.map(slot => buildPath(userId, wineId, slot));
-
-    await supabase.storage.from(BUCKET).remove(paths);
-  },
-
-  /**
-   * Mint a signed URL for a wine image slot. The bucket is private, so this
-   * requires the caller's own session to have SELECT rights on the path
-   * (owner-scoped RLS policy) - only the uploading user can ever create a
-   * working link in the first place.
-   */
-  async getSignedUrl(wineId: string, userId: string, slot: ImageSlot): Promise<string> {
-    const path = buildPath(userId, wineId, slot);
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
-    if (error || !data?.signedUrl) {
-      throw new Error(`Signierte URL konnte nicht erstellt werden: ${error?.message ?? 'unbekannter Fehler'}`);
-    }
-    return data.signedUrl;
+    await Promise.all(slots.map((slot) => deleteIfExists(buildPath(userId, wineId, slot)).catch(() => undefined)));
   },
 
   /**

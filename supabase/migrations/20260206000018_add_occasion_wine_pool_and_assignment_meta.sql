@@ -1,5 +1,0 @@
--- Superseded by:
--- 20260206000019_consolidate_recent_changes.sql
---
--- This file is intentionally left as a no-op to keep migration version history
--- stable across distributed environments while avoiding duplicated DDL execution.

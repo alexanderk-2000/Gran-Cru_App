@@ -1,34 +1,35 @@
 // @vitest-environment node
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createClient } from '@supabase/supabase-js';
 import { app } from '../../server/src/app.js';
 
-// The AI routes now require a valid Supabase session (see
+// The AI routes require a valid Firebase ID token (see
 // server/src/middleware/requireAuth.js) - every request otherwise incurs
-// paid OpenRouter cost with no gate at all. In CI a local
-// Supabase stack is running (see .github/workflows/ci-deploy.yml) and
-// server/.env is populated with its URL/anon key, so we can obtain a real
-// anonymous session token here. Locally without `supabase start`, these
-// auth-gated cases are skipped rather than failing on an unrelated
-// environment gap.
-let authHeader: string | null = null;
-
-beforeAll(async () => {
-  const url = process.env.SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return;
-
+// paid OpenRouter cost with no gate at all. In CI the Firebase Auth
+// emulator is running (see .github/workflows/ci-deploy.yml), so we can mint
+// a real anonymous-user token through its REST API. Locally without the
+// emulator, these auth-gated cases are skipped rather than failing on an
+// unrelated environment gap.
+//
+// Resolved with top-level await (not beforeAll): it.skipIf() is evaluated
+// at collection time, before any beforeAll hook runs, so a token fetched
+// in beforeAll always left these cases skipped.
+const fetchEmulatorToken = async (): Promise<string | null> => {
+  const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  if (!emulatorHost || !process.env.FIREBASE_PROJECT_ID) return null;
   try {
-    const client = createClient(url, anonKey, { auth: { persistSession: false } });
-    const { data, error } = await client.auth.signInAnonymously();
-    if (!error && data?.session?.access_token) {
-      authHeader = `Bearer ${data.session.access_token}`;
-    }
+    const response = await fetch(
+      `http://${emulatorHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true }) }
+    );
+    const body = await response.json() as { idToken?: string };
+    return body.idToken ? `Bearer ${body.idToken}` : null;
   } catch {
-    authHeader = null;
+    return null;
   }
-});
+};
+
+const authHeader = await fetchEmulatorToken();
 
 describe('server routes', () => {
   it('returns health payload', async () => {

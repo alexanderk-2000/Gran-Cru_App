@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Wine, Mail, Lock, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { storageService } from '../services/storage.ts';
-import { isConfigured } from '../services/supabase.ts';
+import { isConfigured } from '../services/firebase.ts';
 
 interface AuthProps {
   onLogin: (user: any) => void;
@@ -41,7 +41,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     try {
       if (isSignUp) {
         await storageService.signUp(email, password);
-        setSuccess("Konto erstellt! Bitte prüfen Sie Ihre E-Mails.");
+        setSuccess("Konto erstellt! Wir haben Ihnen eine Bestätigungs-E-Mail geschickt.");
         setIsSignUp(false);
         setPassword('');
       } else {
@@ -57,7 +57,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   const handleDemoMode = async () => {
     if (!isConfigured) {
-      setError("Demo-Modus nicht verfügbar: Supabase ist nicht konfiguriert. Bitte prüfe deine Umgebungsvariablen.");
+      setError("Demo-Modus nicht verfügbar: Firebase ist nicht konfiguriert. Bitte prüfe deine Umgebungsvariablen.");
       return;
     }
     setIsDemoLoading(true);

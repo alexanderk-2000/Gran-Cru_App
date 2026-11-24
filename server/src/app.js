@@ -9,10 +9,15 @@ import { registerAiVisionRoute } from './routes/aiVision.js';
 import { createAiRuntime } from './ai/runtime.js';
 import { createRequireAuth } from './middleware/requireAuth.js';
 import { createAiRateLimiter } from './middleware/rateLimit.js';
+import { isFirebaseAdminConfigured, verifyFirebaseIdToken } from './firebaseAdmin.js';
 
 // Resolve relative to this file rather than process.cwd() - `npm run server`
 // runs with cwd=server/ but `vitest run` (repo root) imports this module
 // with cwd=repo root, which would otherwise silently load the wrong .env.
+// server/.env.local is the local-dev file (see server/.env.example);
+// server/.env is still read for older setups. Neither exists in Cloud
+// Functions, where the key comes from the OPENROUTER_API_KEY secret.
+dotenv.config({ path: fileURLToPath(new URL('../.env.local', import.meta.url)) });
 dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) });
 
 const app = express();
@@ -46,8 +51,8 @@ const aiRuntime = createAiRuntime({
 });
 
 const requireAuth = createRequireAuth({
-  supabaseUrl: process.env.SUPABASE_URL,
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+  verifyIdToken: verifyFirebaseIdToken,
+  isConfigured: isFirebaseAdminConfigured
 });
 const aiRateLimiter = createAiRateLimiter({
   windowMs: AI_RATE_LIMIT_WINDOW_MS,
@@ -79,7 +84,7 @@ registerHealthRoute(app, () => ({
 }));
 
 // Every AI endpoint incurs paid provider cost via OpenRouter - require a
-// valid Supabase session and rate-limit before any of them run.
+// valid Firebase session and rate-limit before any of them run.
 app.use('/api/ai', requireAuth, aiRateLimiter);
 
 const providerLabel = (provider) => (provider === 'openai' ? 'OpenAI' : provider === 'openrouter' ? 'OpenRouter' : 'Gemini');

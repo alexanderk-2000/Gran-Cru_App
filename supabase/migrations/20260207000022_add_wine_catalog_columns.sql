@@ -1,3 +1,0 @@
-ALTER TABLE public.wine_catalog
-ADD COLUMN IF NOT EXISTS vineyard TEXT,
-ADD COLUMN IF NOT EXISTS wine_type TEXT;

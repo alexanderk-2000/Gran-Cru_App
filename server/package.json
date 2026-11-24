@@ -4,12 +4,19 @@
     "type": "module",
     "scripts": {
         "start": "node index.js",
-        "dev": "node --watch index.js"
+        "dev": "node --watch index.js",
+        "serve:functions": "firebase emulators:start --only functions"
     },
     "dependencies": {
         "cors": "^2.8.5",
         "dotenv": "^16.4.5",
         "express": "^4.21.0",
+        "firebase-admin": "^13.10.0",
+        "firebase-functions": "^6.6.0",
         "openai": "^4.77.0"
+    },
+    "main": "functions.js",
+    "engines": {
+        "node": "22"
     }
 }

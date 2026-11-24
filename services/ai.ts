@@ -4,7 +4,7 @@ import { runOfflineRuleEngine, type OfflineRuleEngineOutput } from './offlineRul
 import { storageService } from './storage.ts';
 import { enqueueAiQueueItem } from './pwa/aiQueue.ts';
 import { isOnline } from './pwa/networkState.ts';
-import { getAccessToken } from './supabase.ts';
+import { getAccessToken } from './firebase.ts';
 
 const authHeaders = async (): Promise<Record<string, string>> => {
     const token = await getAccessToken();
